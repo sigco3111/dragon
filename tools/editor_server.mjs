@@ -391,6 +391,8 @@ const routes = {
     json(res, { gameId, unpublished: true });
   },
   "GET /api/published-games": (res) => {
+    // localhost 開發期: 允許靜態遊戲殼 (如 8321) 跨源讀列表；服務只綁 127.0.0.1，無遠端暴露。
+    res.setHeader("access-control-allow-origin", "*");
     const pins = [];
     for (const gameId of localGameIds()) {
       let raw;

@@ -78,7 +78,15 @@ export class StartMenu {
       await runStartFlow(
         {
           chooseAction: () => this._yesNo(),
-          chooseChapter: () => this._chooseChapter(),
+          chooseChapter: async () => {
+            // B 方案分流: 非內置不走主殼選章, 離殼進同源 play 持久會話槽 (章/勢力在 play 側選)。
+            // 內置走老路 (零影響); 導航後頁面卸載, 返回值僅守流程。
+            if ((this.selectedGameId ?? "wolong-builtin") !== "wolong-builtin") {
+              location.href = `${this._gamesBase ?? ""}/play?game=${encodeURIComponent(this.selectedGameId)}`;
+              return -1;
+            }
+            return this._chooseChapter();
+          },
           chooseFaction: (idx) => this._factionDialog(idx),
           chooseAdvisor: (idx, faction) => this._advisorDialog(idx, faction),
           chooseSave: () => this._chooseSave(),
@@ -619,25 +627,32 @@ export class StartMenu {
     });
   }
 
-  // ── 遊戲選擇 (多遊戲 step1 基礎): 內置降格為列表首項 `臥龍傳·制霸天下`。
-  // 同源 /api/published-games 可達則取發布列表, 靜態殼 (無 API) 回落僅內置。
-  // 選擇態記 selectedGameId, 主殼內容切換 (step2) 前僅內置可進, 行為與舊版一致。
+  // ── 遊戲選擇 (B 方案: 主殼固定槽位, 非內置進持久會話槽): 內置降格為列表首項。
+  // 列表源: 同源 /api/published-games, 不可達則回落 localhost 編輯器 (8322, 開發期 CORS)。
+  // 跳轉 play 跟列表源同基 (listBase + "/play"), 內置項不跳轉、走老路 (零影響)。
   async _loadGames() {
     const builtin = { gameId: "wolong-builtin", displayName: "臥龍傳·制霸天下" };
-    let list = [builtin];
-    try {
-      const r = await fetch("/api/published-games");
-      if (r.ok) {
+    const bases = ["", "http://127.0.0.1:8322"]; // "" = 同源; 靜態殼 (8321) 無 API, 回落編輯器源。
+    for (const base of bases) {
+      try {
+        const r = await fetch(`${base}/api/published-games`);
+        if (!r.ok) continue;
         const data = await r.json();
-        const names = data?.displayNames ?? {};
-        const games = [builtin.gameId, ...((data?.games ?? []).filter((g) => g !== builtin.gameId))];
-        list = games.map((g) => ({ gameId: g, displayName: names[g] ?? (g === builtin.gameId ? builtin.displayName : g) }));
+        const entries = (Array.isArray(data?.games) ? data.games : []).filter((g) => g && typeof g.gameId === "string");
+        const names = new Map([[builtin.gameId, builtin.displayName]]);
+        for (const g of entries) if (!names.has(g.gameId) && typeof g.name === "string" && g.name) names.set(g.gameId, g.name);
+        this._games = [builtin.gameId, ...entries.map((g) => g.gameId).filter((id) => id !== builtin.gameId)]
+          .map((id) => ({ gameId: id, displayName: names.get(id) ?? id }));
+        this._gamesBase = base;
+        if (!this._games.some((g) => g.gameId === this.selectedGameId)) this.selectedGameId = builtin.gameId;
+        return;
+      } catch {
+        continue;
       }
-    } catch {
-      list = [builtin];
     }
-    this._games = list;
-    if (!list.some((g) => g.gameId === this.selectedGameId)) this.selectedGameId = builtin.gameId;
+    this._games = [builtin];
+    this._gamesBase = "";
+    this.selectedGameId = builtin.gameId;
   }
 
   _selectedGame() {
