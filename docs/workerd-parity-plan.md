@@ -17,7 +17,9 @@
 
 ## 任务分解
 
-1. **裁决**：玩/发布在 workerd 的身份要求（登录？admin？过期？）。阻塞后续，不可先码。
+1. **裁决（已定 2026-10-11，用户设计）**：玩免登——玩家入口与编辑器入口分离（将来绑两个域名）；编辑器＝游戏后台，有用户登录。
+   落点：玩侧（`/play` 壳、发布列表、已发布游戏的持久会话）匿名可达；发侧（publish/unpublish 及编辑器全路由）保持登录/admin。
+   workerd 需新增匿名 actor 能力（仅已发布游戏可玩，会话/ fence 隔离；b2 无过期沿 localhost 理由，公网玩侧过期策略随部署定）。
 2. **存储**：发布登记落 Durable Object（对标 node `gameDir/publish.json`），损坏 fail-closed 500（同 node 语义）。
 3. **路由**：publish/unpublish/published-games（鉴真规则同 node：gameId 名非空/已编译修订/损坏拒），`/play` 壳（换 boot，不动 trial 壳）。
 4. **持久语义**：`persistent` 透传＋`playSaveDatabaseName` 隔离（浏览器侧已就绪，workerd 会话侧接）。
