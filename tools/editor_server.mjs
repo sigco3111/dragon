@@ -862,8 +862,12 @@ export function startEditorServer(port = PORT, store = STORE) {
   });
 }
 
-// Self-check (only when executed directly; importing for startEditorServer
-// must not run it).
+// --serve keeps a listener (self-check otherwise). Importing for
+// startEditorServer must not run either branch.
+if (SERVE && process.argv[1] === fileURLToPath(import.meta.url)) {
+  const server = await startEditorServer();
+  process.stdout.write(`editor service listening on http://127.0.0.1:${server.address().port}\n`);
+}
 if (!SERVE && process.argv[1] === fileURLToPath(import.meta.url)) {
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");

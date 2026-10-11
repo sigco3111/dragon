@@ -74,6 +74,7 @@ export class StartMenu {
     this.cv.style.display = "block";
     try {
       await this._loadAssets();
+      await this._loadGames();
       await runStartFlow(
         {
           chooseAction: () => this._yesNo(),
@@ -618,18 +619,77 @@ export class StartMenu {
     });
   }
 
+  // ── 遊戲選擇 (多遊戲 step1 基礎): 內置降格為列表首項 `臥龍傳·制霸天下`。
+  // 同源 /api/published-games 可達則取發布列表, 靜態殼 (無 API) 回落僅內置。
+  // 選擇態記 selectedGameId, 主殼內容切換 (step2) 前僅內置可進, 行為與舊版一致。
+  async _loadGames() {
+    const builtin = { gameId: "wolong-builtin", displayName: "臥龍傳·制霸天下" };
+    let list = [builtin];
+    try {
+      const r = await fetch("/api/published-games");
+      if (r.ok) {
+        const data = await r.json();
+        const names = data?.displayNames ?? {};
+        const games = [builtin.gameId, ...((data?.games ?? []).filter((g) => g !== builtin.gameId))];
+        list = games.map((g) => ({ gameId: g, displayName: names[g] ?? (g === builtin.gameId ? builtin.displayName : g) }));
+      }
+    } catch {
+      list = [builtin];
+    }
+    this._games = list;
+    if (!list.some((g) => g.gameId === this.selectedGameId)) this.selectedGameId = builtin.gameId;
+  }
+
+  _selectedGame() {
+    return this._games?.find((g) => g.gameId === this.selectedGameId) ?? { gameId: "wolong-builtin", displayName: "臥龍傳·制霸天下" };
+  }
+
   // ── YES/NO 對話框: comp7 @ (216,136), 金框 @ (208,128) 208×96 (0x8DC8) ──
   _yesNo() {
     return new Promise((resolve) => {
       const ox = 216,
         oy = 136;
       this._renderYesNo(ox, oy);
+      // 多遊戲 step1: 原生下拉獨立懸於彈窗上方 (fixed 定位, 見效果圖), 選中記 selectedGameId。
+      const sel = document.createElement("select");
+      sel.id = "startmenu-game";
+      sel.setAttribute("aria-label", "選擇遊戲");
+      for (const g of this._games ?? []) {
+        const opt = document.createElement("option");
+        opt.value = g.gameId;
+        opt.textContent = g.displayName;
+        sel.append(opt);
+      }
+      sel.value = this.selectedGameId ?? "wolong-builtin";
+      sel.addEventListener("change", () => {
+        this.selectedGameId = sel.value;
+      });
+      const r = this.cv.getBoundingClientRect();
+      const sx = r.width / (this.cv.width || 640);
+      const sy = r.height / (this.cv.height || 400);
+      const selW = 250 * sx;
+      const selH = Math.max(32, 36 * sy);
+      Object.assign(sel.style, {
+        position: "fixed",
+        left: `${r.left + (ox + 96) * sx - selW / 2}px`,
+        top: `${r.top + (oy - 8) * sy - selH - 28 * sy}px`,
+        width: `${selW}px`,
+        height: `${selH}px`,
+        padding: `${4 * sy}px ${8 * sx}px`,
+        fontSize: `${14 * sx}px`,
+        zIndex: "9999", // 蓋過遊戲 Canvas 合成層 (實測 zIndex 5 會被 #startv 蓋住)
+      });
+      document.body.append(sel);
+      const done = (v) => {
+        sel.remove();
+        resolve(v);
+      };
       this._bind((x, y, btn) => {
         if (btn === 2) return; // 右鍵不取消 (0x8E19 jb 重試)
         if (this._in(x, y, ox + 30, oy + 30, ox + 161, oy + 49))
-          resolve(0); // 是
+          done(0); // 是
         else if (this._in(x, y, ox + 30, oy + 54, ox + 161, oy + 73))
-          resolve(1); // 否
+          done(1); // 否
       }, null);
     });
   }
@@ -1004,6 +1064,7 @@ export class StartMenu {
   }
 
   // ── comp7 @rel: 雲窗(0,0,191,79) 白線y23 按鈕×2 描邊×4 文字×2 ──
+  // 多遊戲 step1 遊戲下拉為頁面 DOM (懸於彈窗上方), Canvas 恢復原版 208×96 幾何。
   _renderYesNo(ox, oy) {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, 640, 400);
