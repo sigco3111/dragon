@@ -46,12 +46,28 @@ assert.equal(shellOut.split(BOOT).length, 2, 'boot anchor unique');
 shellOut = shellOut.replace(BOOT, BANNER);
 const shellText = JSON.stringify({ schema: 'dragon-trial-app-shell-1', sha256: sha(shellOut), byteLength: Buffer.byteLength(shellOut), html: shellOut }) + '\n';
 const SHELL_OUT = fileURLToPath(new URL('../server/public/trialapp.txt', import.meta.url));
+// Play shell: same skeleton, boot swapped to the anonymous play entry (node /play
+// parity: title + #play-status + playapp.js, trial shell untouched). Engine and
+// stylesheet resolve against the anonymous /api/play/web/ bundle route, so the
+// shell works on either bound domain without login.
+const PLAY_BANNER = '<div id="play-status" style="position:fixed;left:4px;bottom:4px;z-index:100;color:#fff;background:#141414;pointer-events:none">載入遊戲列表…</div><script type="module" src="/api/play/web/src/editor/playapp.js"></script>';
+let playOut = shellOut;
+assert.equal(playOut.split('<title>臥龍傳</title>').length, 2, 'play title anchor unique');
+playOut = playOut.replace('<title>臥龍傳</title>', '<title>選擇遊戲 — 臥龍傳</title>');
+assert.equal(playOut.split(BANNER).length, 2, 'play boot anchor unique');
+playOut = playOut.replace(BANNER, PLAY_BANNER);
+assert.equal(playOut.split('href="intro/styles.css"').length, 2, 'play stylesheet anchor unique');
+playOut = playOut.replace('href="intro/styles.css"', 'href="/api/play/web/intro/styles.css"');
+const playText = JSON.stringify({ schema: 'dragon-play-app-shell-1', sha256: sha(playOut), byteLength: Buffer.byteLength(playOut), html: playOut }) + '\n';
+const PLAY_OUT = fileURLToPath(new URL('../server/public/playapp.txt', import.meta.url));
 const existing = existsSync(OUT) ? readFileSync(OUT, 'utf8') : null;
 const existingShell = existsSync(SHELL_OUT) ? readFileSync(SHELL_OUT, 'utf8') : null;
-if (existing === text && existingShell === shellText) {
-  process.stdout.write(JSON.stringify({ bundle: 'server/public/trialweb.txt', shell: 'server/public/trialapp.txt', files: files.length, sha256: sha(text), shellSha256: sha(shellText), unchanged: true }) + '\n');
+const existingPlay = existsSync(PLAY_OUT) ? readFileSync(PLAY_OUT, 'utf8') : null;
+if (existing === text && existingShell === shellText && existingPlay === playText) {
+  process.stdout.write(JSON.stringify({ bundle: 'server/public/trialweb.txt', shell: 'server/public/trialapp.txt', play: 'server/public/playapp.txt', files: files.length, sha256: sha(text), shellSha256: sha(shellText), playSha256: sha(playText), unchanged: true }) + '\n');
 } else {
   writeFileSync(OUT, text);
   writeFileSync(SHELL_OUT, shellText);
-  process.stdout.write(JSON.stringify({ bundle: 'server/public/trialweb.txt', shell: 'server/public/trialapp.txt', files: files.length, sha256: sha(text), shellSha256: sha(shellText), unchanged: false }) + '\n');
+  writeFileSync(PLAY_OUT, playText);
+  process.stdout.write(JSON.stringify({ bundle: 'server/public/trialweb.txt', shell: 'server/public/trialapp.txt', play: 'server/public/playapp.txt', files: files.length, sha256: sha(text), shellSha256: sha(shellText), playSha256: sha(playText), unchanged: false }) + '\n');
 }

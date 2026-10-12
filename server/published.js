@@ -1,0 +1,80 @@
+// Published-game registry: workerd Durable Object counterpart of the node
+// `gameDir/publish.json` record (tools/editor_server.mjs POST /api/publish).
+// One row per game; the pin shape mirrors node exactly
+// ({gameId,name,revision,sourceDigest,chapters,publishedAt}), owner tracked in
+// its own column for unpublish auth. Corrupt rows fail closed (503/500-class),
+// never silently skipped — same fail-closed semantic as node.
+// Routes (publish/unpublish/published-games auth + compiled-revision proof)
+// arrive with task 3; deletion-fence cascade is wired in deletionfence.js.
+import { checkGameName } from '../web/src/content/authoring/gamesource.js';
+import { fail, fields } from './security.js';
+const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+const revision = value => typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
+const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+export class PublishedGames {
+  #sql; #principal;
+  constructor({ storage, principal }) {
+    if (!storage?.sql || typeof principal !== 'function') { throw new TypeError('actual SQLite and trusted principal required'); }
+    this.#sql = storage.sql; this.#principal = principal;
+    storage.transactionSync(() => this.#sql.exec('CREATE TABLE IF NOT EXISTS published_games (game_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, pin_json TEXT NOT NULL, updated_at TEXT NOT NULL)'));
+  }
+  #one(query, ...values) { return this.#sql.exec(query, ...values).toArray()[0]; }
+  #actor(tokenHash) {
+    const actor = this.#principal(tokenHash);
+    if (actor.must_change) { fail(403, 'PASSWORD_CHANGE_REQUIRED'); }
+    return actor;
+  }
+  #gameId(gameId) {
+    if (gameId === 'wolong-builtin') { fail(403, 'BUILTIN_PROTECTED'); }
+    if (!uuid(gameId)) { fail(422, 'PUBLISH_GAME_ID'); }
+    return gameId;
+  }
+  #displayName(name) {
+    if (typeof name !== 'string' || !name.trim()) { fail(422, 'PUBLISH_NAME'); }
+    try { return checkGameName(name, 40); }
+    catch { fail(422, 'PUBLISH_NAME'); }
+  }
+  // Read-path shape check mirrors the node published-games handler; any
+  // mismatch is a corrupt registry row → fail closed, never skip.
+  #readPin(gameId, raw) {
+    let pin;
+    try { pin = JSON.parse(raw); }
+    catch { fail(500, 'PUBLISH_CORRUPT'); }
+    if (!pin || pin.gameId !== gameId || typeof pin.name !== 'string' || !revision(pin.revision ?? null) || !digest(pin.sourceDigest) || !Array.isArray(pin.chapters) || !pin.chapters.every(entry => typeof entry === 'string' && entry.length > 0) || typeof pin.publishedAt !== 'string') { fail(500, 'PUBLISH_CORRUPT'); }
+    return Object.freeze({ gameId: pin.gameId, name: pin.name, revision: pin.revision, sourceDigest: pin.sourceDigest, chapters: Object.freeze([...pin.chapters]), publishedAt: pin.publishedAt });
+  }
+  // Registry write: node stamps publishedAt server-side; owner is stamped here
+  // for unpublish auth. Game existence/ownership/compiled-revision proof stays
+  // with the route layer (games.snapshotReference + drafts read), same split
+  // as node (loadDraft + readBuild before the write).
+  publish(tokenHash, input) {
+    const actor = this.#actor(tokenHash);
+    fields(input, ['gameId', 'name', 'revision', 'sourceDigest', 'chapters']);
+    const gameId = this.#gameId(input.gameId), name = this.#displayName(input.name);
+    if (!revision(input.revision)) { fail(422, 'PUBLISH_REVISION'); }
+    if (!digest(input.sourceDigest)) { fail(422, 'PUBLISH_DIGEST'); }
+    if (!Array.isArray(input.chapters) || !input.chapters.every(entry => typeof entry === 'string' && entry.length > 0)) { fail(422, 'PUBLISH_CHAPTERS'); }
+    const now = new Date().toISOString();
+    const pin = Object.freeze({ gameId, name, revision: input.revision, sourceDigest: input.sourceDigest, chapters: Object.freeze([...input.chapters]), publishedAt: now });
+    this.#sql.exec('INSERT OR REPLACE INTO published_games VALUES(?,?,?,?)', gameId, actor.id, JSON.stringify(pin), now);
+    return pin;
+  }
+  // Node unpublish is idempotent (missing file → still success); missing rows
+  // and the builtin no-op the same way. Only the recorded owner (or an admin)
+  // may remove another owner's pin.
+  unpublish(tokenHash, gameId) {
+    const actor = this.#actor(tokenHash);
+    if (gameId === 'wolong-builtin') { return Object.freeze({ gameId, unpublished: true }); }
+    if (!uuid(gameId)) { fail(422, 'PUBLISH_GAME_ID'); }
+    const row = this.#one('SELECT * FROM published_games WHERE game_id=?', gameId);
+    if (!row) { return Object.freeze({ gameId, unpublished: true }); }
+    if (row.owner_id !== actor.id && actor.role !== 'admin') { fail(403, 'PUBLISH_OWNER'); }
+    this.#sql.exec('DELETE FROM published_games WHERE game_id=?', gameId);
+    return Object.freeze({ gameId, unpublished: true });
+  }
+  // No auth here: the route layer decides anonymity (玩侧匿名可达 per task 1).
+  // The builtin head entry is prepended by the route, as in node.
+  list() {
+    return Object.freeze(this.#sql.exec('SELECT * FROM published_games ORDER BY game_id').toArray().map(row => this.#readPin(row.game_id, row.pin_json)));
+  }
+}

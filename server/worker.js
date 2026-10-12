@@ -19,6 +19,10 @@ import { HttpCommandTargets } from './commandtargets.js';
 import { PrivateWriteJournal } from './privatewrites.js';
 import { PrivateLibraryAssets } from './libraryassets.js';
 import { TrialSessions } from './trials.js';
+import { PublishedGames } from './published.js';
+import { PublishedPacks } from './playpacks.js';
+import { validateGameSource } from '../web/src/content/authoring/gamesource.js';
+import { compileTrialSource } from '../web/src/content/authoring/trialcompile.js';
 import worldManifest from './pinned/world-manifest.txt';
 import entityManifest from './pinned/entity-manifest.txt';
 import { HttpError, fail, config, fields, body, account, password, passwordHash, passwordMatches, randomToken, sha, mac, seal, unseal, equal } from './security.js';
@@ -33,6 +37,7 @@ import stageAssetsClient from './public/stageassets.txt';
 import style from './public/style.css';
 import trialwebBundle from './public/trialweb.txt';
 import trialappShell from './public/trialapp.txt';
+import playappShell from './public/playapp.txt';
 import { decodeSourceChunks } from '../web/src/content/authoring/sourcejson.js';
 const COOKIE = '__Secure-dragon-editor';
 function requestURL(request) { try { return new URL(request.url); } catch { fail(400, 'INVALID_URL'); } }
@@ -43,6 +48,18 @@ const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosnif
 const trialHeaders = { ...headers, 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; media-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" };
 const trialWebFiles = new Map(parseTrialJson(trialwebBundle, 'trial web bundle').files.map(file => [file.path, file]));
 const trialAppPage = parseTrialJson(trialappShell, 'trial app shell').html;
+const playAppPage = parseTrialJson(playappShell, 'play app shell').html;
+// Entry-level play-origin read (never throws: unset/invalid means no play
+// domain; hard misconfiguration still surfaces as 503 on /api/* via config).
+function playOriginOf(env) {
+  try {
+    const raw = env?.EDITOR_PLAY_ORIGIN;
+    if (raw === undefined || raw === '') { return null; }
+    const u = new URL(raw);
+    if (u.protocol !== 'https:' || u.username || u.password || u.pathname !== '/' || u.search || u.hash) { return null; }
+    return u.origin;
+  } catch { return null; }
+}
 function parseTrialJson(text, label) { try { return JSON.parse(text); } catch (cause) { throw new Error(`${label} corrupt`, { cause }); } }
 const TRIAL_WAIT_PAGE = '<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>草稿試運行</title><p>正在建立試運行工作階段…若啟動失敗，請返回工作台查看診斷並重新開啟。</p></html>';
 const TRIAL_WEB_TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.txt': 'text/plain', '.flac': 'audio/flac', '.wav': 'audio/wav' };
@@ -87,6 +104,8 @@ export class EditorMetadata extends DurableObject {
       recoverAllocation: (hash, cap) => { if (!copies) { fail(503, 'COPY_NOT_CONFIGURED');  }return copies.resolveAllocation(hash, cap); } });
     // Reuses permanent content reservation slots; historical 'copy' namespace name is not a copy capability.
     this.management = new GameManagement({ storage: ctx.storage, principal: hash => this.principal(hash), operationGuard: (actor, key) => this.contentKey(actor, key, 'copy') });
+    // Published-game registry (node publish.json counterpart); pure SQLite, no blob dependency.
+    this.publishedGames = new PublishedGames({ storage: ctx.storage, principal: hash => this.principal(hash) });
     this.trialSessions = null;
     this.blobs = null; this.installedSources = null; this.adminCopies = null; this.privateDrafts = null; this.stageApi = null; this.availableLibrary = null; this.libraryAssets = null;
     if (env.EDITOR_BLOBS) {
@@ -109,6 +128,9 @@ export class EditorMetadata extends DurableObject {
       const fallbacks = Object.fromEntries(['spring', 'summer', 'autumn', 'winter'].map(season => [`fallback-${season}`, new FixedCopyFallbackJobs({ ...ports, images: imagePlanner, season })]));
       this.stageApi = new StageJobsAPI({ ...ports, requestKey: env.EDITOR_REQUEST_KEY, services: { data: new FixedCopyDataCompiler({ ...ports, drafts: this.privateDrafts }), images: new FixedCopyImageJobs({ ...ports, images: imagePlanner }), ...fallbacks }, operationGuard: (actor, key) => this.contentKey(actor, key, 'stage-command') });
     }
+    // Frozen public play snapshots (node build/ counterpart); catalog may be
+    // null in blobless dev, in which case publish/pack reads fail 503.
+    this.playPacks = new PublishedPacks({ storage: ctx.storage, principal: hash => this.principal(hash), catalog: this.installedSources });
   }
   one(query, ...args) { return this.sql.exec(query, ...args).toArray()[0]; }
   // Read-only public registry role bytes for the trial web route: pinned index roles, chunked R2 reads, sha re-verified.
@@ -173,11 +195,105 @@ export class EditorMetadata extends DurableObject {
     catch (error) { return response({ error: error instanceof HttpError ? error.code : 'INTERNAL_ERROR' }, error instanceof HttpError ? error.status : 500); }
   }
   #gateEntry(request, policy, url, method, path) {
-    if (url.origin !== policy.origin) { fail(403, 'ORIGIN_REJECTED'); }
+    // Dual-domain: the bound play origin is welcome wherever the editor
+    // origin is (route-level split happens in handle, not here).
+    const welcome = value => value === policy.origin || (policy.playOrigin !== null && value === policy.playOrigin);
+    if (!welcome(url.origin)) { fail(403, 'ORIGIN_REJECTED'); }
     if (method === 'GET' && path === '/api/health') { return response({ service: 'dragon-editor', stage: 'accounts-sessions', initialized: Boolean(this.one("SELECT id FROM users WHERE account='tianyi'")) }); }
-    if (method !== 'GET' && (method !== 'POST' || request.headers.get('Origin') !== policy.origin)) { fail(403, 'ORIGIN_REJECTED'); }
-    const suppliedOrigin = request.headers.get('Origin'); if (suppliedOrigin && suppliedOrigin !== policy.origin) { fail(403, 'ORIGIN_REJECTED'); }
+    if (method !== 'GET' && (method !== 'POST' || !welcome(request.headers.get('Origin')))) { fail(403, 'ORIGIN_REJECTED'); }
+    const suppliedOrigin = request.headers.get('Origin'); if (suppliedOrigin && !welcome(suppliedOrigin)) { fail(403, 'ORIGIN_REJECTED'); }
     return null;
+  }
+  // Anonymous play surface (task 4 extends with play sessions/pack). Trial
+  // and editor routes never match here, so they 404 on the play domain.
+  #isPlayRoute(method, path) {
+    return method === 'GET' && (path === '/api/published-games' || path === '/api/trial-pack' || path === '/api/trial-asset' || path.startsWith('/api/play/web/') || path.startsWith('/content/builtin/compiled/'));
+  }
+  #getPlayAnonymous(url, path) {
+    if (path === '/api/published-games') {
+      // Node parity: query ignored; builtin head first, registry pins after.
+      return response({ games: [{ gameId: 'wolong-builtin', name: '卧龙传·制霸天下', builtin: true }, ...this.publishedGames.list()] });
+    }
+    if (path === '/api/trial-pack') { return response(this.#getPlayPack(url)); }
+    if (path === '/api/trial-asset') { return this.#getPlayAsset(url); }
+    if (path.startsWith('/content/builtin/compiled/')) { return this.#getPlayRegistryFile(url, path); }
+    return this.#getPlayWebFile(url, path);
+  }
+  #getPlayPack(url) {
+    // Node parity: revision defaults to the pin, chapter to the first;
+    // unknown extras ignored, known keys validated.
+    const game = url.searchParams.get('game'), revision = url.searchParams.get('revision'), chapter = url.searchParams.get('chapter');
+    if (typeof game !== 'string' || !game) { fail(422, 'PLAY_PACK_GAME'); }
+    if (url.searchParams.has('revision') && typeof revision !== 'string') { fail(422, 'PLAY_PACK_REVISION'); }
+    if (url.searchParams.has('chapter') && typeof chapter !== 'string') { fail(422, 'PLAY_PACK_CHAPTER'); }
+    return this.playPacks.pack(game, revision, chapter);
+  }
+  #getPlayAsset(url) {
+    const game = url.searchParams.get('game'), revision = url.searchParams.get('revision'), sourceDigest = url.searchParams.get('digest'), assetId = url.searchParams.get('asset');
+    if (typeof game !== 'string' || !game) { fail(422, 'PLAY_ASSET_GAME'); }
+    const served = this.playPacks.asset(game, revision, sourceDigest, assetId);
+    return new Response(served.bytes, { headers: { ...headers, 'Content-Type': served.mime, 'X-Content-SHA256': served.sha256 } });
+  }
+  async #getPlayRegistryFile(url, path) {
+    // Anonymous season-visual art for play manifests: exact installed-policy
+    // role paths only, bytes re-verified (same registry, no game data).
+    if (!this.installedSources) { fail(503, 'PLAY_NOT_CONFIGURED'); }
+    if (url.search) { fail(422, 'PLAY_QUERY'); }
+    const rel = path.slice(1);
+    const policy = this.playPacks.policy;
+    const role = policy.roles.find(item => item.path === rel);
+    if (!role || !/^content\/builtin\/compiled\/map-2-[a-f0-9]{64}\/(map_atlas|map_tiles)_(spring|summer|autumn|winter)\.png$/.test(rel)) { fail(404, 'PLAY_REGISTRY_PATH'); }
+    const bytes = await this.trialRegistryBytes(this.installedSources, rel);
+    return new Response(bytes, { headers: { ...trialHeaders, 'Content-Type': trialWebType(rel), 'X-Content-SHA256': createHash('sha256').update(bytes).digest('hex') } });
+  }
+  #getPlayWebFile(url, path) {
+    // Anonymous read-only engine bundle (public client code only; per-game
+    // derived assets stay behind sessions). Same single-bust allowance as trial.
+    if (url.search && !([...url.searchParams.keys()].join(',') === 'v' && url.searchParams.get('v') === 'original-sprites-1')) { fail(422, 'PLAY_QUERY'); }
+    const rel = path.slice('/api/play/web/'.length);
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_/.-]{0,255}$/.test(rel) || rel.includes('..') || rel.includes('\\') || rel.endsWith('/')) { fail(404, 'PLAY_WEB_PATH'); }
+    const bundled = trialWebFiles.get(rel);
+    if (!bundled) { fail(404, 'PLAY_WEB_PATH'); }
+    return new Response(bundled.text, { headers: { ...trialHeaders, 'Content-Type': `${trialWebType(rel)}; charset=utf-8`, 'X-Content-SHA256': bundled.sha256 } });
+  }
+  async #postPublishRoutes(rt) {
+    const { request, tokenHash, user, policy, url, path, value } = rt;
+    if (path !== '/api/publish' && path !== '/api/unpublish') { return null; }
+    if (url.search) { fail(422, 'PUBLISH_QUERY'); }
+    if (path === '/api/unpublish') { fields(value, ['gameId']); } else { fields(value, ['gameId', 'name']); }
+    // 发侧保持登录；幂等键只做格式/跨域守卫，登记按 game PK upsert/delete，天然幂等。
+    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'publish');
+    let result;
+    if (path === '/api/unpublish') {
+      result = this.publishedGames.unpublish(tokenHash, value.gameId);
+      this.playPacks.retire(value.gameId);
+    } else {
+      result = await this.#publishPin(tokenHash, value.gameId, value.name);
+    }
+    this.touch(tokenHash, policy);
+    return response(result);
+  }
+  async #publishPin(tokenHash, gameId, name) {
+    // 对标 node publish：owner 当前修订＋快照存在＋严格校验＋即时编译，
+    // 任一不满足即拒（未编译/坏草稿 422；空名先于权属判 422，
+    // 与 node 先验名后查 draft 的可观察顺序一致）。
+    if (!this.privateDrafts) { fail(503, 'PUBLISH_NOT_CONFIGURED'); }
+    if (typeof name !== 'string' || !name.trim()) { fail(422, 'PUBLISH_NAME'); }
+    const owned = this.games.listOwn(tokenHash).find(entry => entry.gameId === gameId);
+    if (!owned) { fail(404, 'GAME_NOT_FOUND'); }
+    const reference = this.games.snapshotReference(tokenHash, gameId, owned.draftRevision);
+    const captured = await this.privateDrafts.captureForCompile(tokenHash, gameId, owned.draftRevision);
+    if (captured.reference.rootKey !== reference.rootKey || captured.reference.sourceDigest !== reference.sourceDigest) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
+    try { validateGameSource(captured.game); }
+    catch { fail(422, 'PUBLISH_NOT_COMPILED'); }
+    let compiled;
+    try { compiled = compileTrialSource(captured.game, bytes => createHash('sha256').update(bytes).digest('hex')); }
+    catch { fail(422, 'PUBLISH_NOT_COMPILED'); }
+    if (compiled?.sourceDigest !== reference.sourceDigest) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
+    if (!Array.isArray(captured.game.chapterOrder)) { fail(422, 'PUBLISH_NOT_COMPILED'); }
+    // Pack first (orphan rows stay invisible), pin second (visible ⇒ servable).
+    await this.playPacks.buildAndStore(tokenHash, { game: captured.game, reference, compiled });
+    return this.publishedGames.publish(tokenHash, { gameId, name, revision: reference.draftRevision, sourceDigest: reference.sourceDigest, chapters: captured.game.chapterOrder });
   }
   #assertPasswordCurrent(user, path) {
     if (user.must_change && path !== '/api/auth/password' && path !== '/api/auth/logout') { fail(403, 'PASSWORD_CHANGE_REQUIRED'); }
@@ -517,6 +633,10 @@ export class EditorMetadata extends DurableObject {
     if (gate) { return gate; }
     this.seed(policy);
     if (method === 'POST' && path === '/api/auth/login') { return this.#postLogin(request, policy); }
+    // Dual-domain split: on the play domain only the anonymous play routes
+    // exist; the editor domain keeps every route with its own auth.
+    if (policy.playOrigin !== null && url.origin === policy.playOrigin && !this.#isPlayRoute(method, path)) { fail(404, 'NOT_FOUND'); }
+    if (this.#isPlayRoute(method, path)) { return this.#getPlayAnonymous(url, path); }
     const token = cookie(request), tokenHash = await sha(token), user = this.principal(tokenHash), csrf = await mac(`csrf:${token}`, policy.secret);
     this.#assertPasswordCurrent(user, path);
     const managementQuery = /^\/api\/admin\/games\/([a-f0-9-]{36}|wolong-builtin)\/management-operations\/([A-Za-z0-9_-]{16,128})$/.exec(path);
@@ -539,7 +659,7 @@ export class EditorMetadata extends DurableObject {
     if (method !== 'POST') { fail(404, 'NOT_FOUND'); }
     if (!equal(request.headers.get('X-CSRF-Token'), csrf)) { fail(403, 'CSRF_REJECTED'); }
     const value = await body(request);
-    return (await this.#postEntryRoutes({ ...rt, value })) ?? (await this.#postTrialStart({ ...rt, value })) ?? (await this.#postTrialEnd({ ...rt, value })) ?? (await this.#postTrialPortrait({ ...rt, value })) ?? (await this.#postAuthMutation({ ...rt, value }));
+    return (await this.#postEntryRoutes({ ...rt, value })) ?? (await this.#postTrialStart({ ...rt, value })) ?? (await this.#postTrialEnd({ ...rt, value })) ?? (await this.#postTrialPortrait({ ...rt, value })) ?? (await this.#postPublishRoutes({ ...rt, value })) ?? (await this.#postAuthMutation({ ...rt, value }));
   }
   #checkContentKeyNamespaces(actor, key, namespace) {
     for (const [table, kind, actorColumn] of [['operations', 'auth', 'actor'], ['source_operations', 'source', 'actor'], ['content_reservations', 'copy', 'actor'], ['copy_http_commands', 'command', 'actor'], ['draft_requests', 'draft', 'actor'], ['compile_operations', 'compile', 'actor_id'], ['stage_http_commands', 'stage-command', 'actor']]) {
@@ -610,11 +730,19 @@ export class EditorMetadata extends DurableObject {
 export default {
   async fetch(request, env) {
     const url = requestURL(request);
+    // Play domain serves the shell only; /api/* play routes are gated in the DO.
+    if (playOriginOf(env) !== null && url.origin === playOriginOf(env) && request.method === 'GET' && !url.pathname.startsWith('/api/') && url.pathname !== '/play' && !url.pathname.startsWith('/content/builtin/compiled/')) { return response({ error: 'NOT_FOUND' }, 404); }
+    if (request.method === 'GET' && url.pathname === '/play') {
+      // Anonymous play shell (?game= preselect read by the shell itself).
+      return new Response(playAppPage, { headers: { ...trialHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
+    }
     if (request.method === 'GET' && ['/', '/client.js', '/draft.js', '/stage.js', '/library.js', '/catalog.js', '/management.js', '/stage-assets.js', '/style.css'].includes(url.pathname)) {
       const asset = staticAsset(url.pathname);
       return new Response(asset.content, { headers: { ...headers, 'Content-Type': `${asset.type}; charset=utf-8` } });
     }
-    if (!url.pathname.startsWith('/api/')) { return response({ error: 'NOT_FOUND' }, 404); }
+    // Anonymous season-visual art for play manifests resolves registry-
+    // relative against /play; only the DO serves it (role-checked, task 4).
+    if (!url.pathname.startsWith('/api/') && !(request.method === 'GET' && url.pathname.startsWith('/content/builtin/compiled/'))) { return response({ error: 'NOT_FOUND' }, 404); }
     // CF supplies this header at the ingress. Never accept caller-selected X-Editor-Source.
     // Capture bounded POST input before the DO RPC. Early authorization rejection must
     // not abandon a still-streaming RPC request and truncate the HTTP error response.

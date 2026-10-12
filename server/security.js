@@ -43,7 +43,14 @@ export function config(env) {
   if (!/^[a-f0-9]{64}$/.test(env.EDITOR_REQUEST_KEY ?? '') || typeof env.EDITOR_DEFAULT_PASSWORD !== 'string') fail(503, 'SECRETS_NOT_CONFIGURED');
   password(env.EDITOR_DEFAULT_PASSWORD);
   const integer = (key, fallback) => { const n = env[key] === undefined ? fallback : Number(env[key]); if (!Number.isSafeInteger(n) || n < 1) fail(503, 'INVALID_POLICY'); return n; };
-  return { origin, secret: env.EDITOR_REQUEST_KEY, defaultPassword: env.EDITOR_DEFAULT_PASSWORD, sessionMs: integer('EDITOR_SESSION_MS', 8 * 3600000), idleMs: integer('EDITOR_IDLE_MS', 30 * 60000), rateMs: integer('EDITOR_RATE_MS', 10 * 60000), accountLimit: integer('EDITOR_ACCOUNT_LIMIT', 5), sourceLimit: integer('EDITOR_SOURCE_LIMIT', 30) };
+  // Optional play-domain binding (dual-domain deployment: same Worker, Host
+  // split. unset/empty = single-origin dev mode). Must be a distinct https
+  // origin; bound at deploy time, no code change.
+  let playOrigin = null;
+  if (env.EDITOR_PLAY_ORIGIN !== undefined && env.EDITOR_PLAY_ORIGIN !== '') {
+    try { const u = new URL(env.EDITOR_PLAY_ORIGIN); if (u.protocol !== 'https:' || u.username || u.password || u.pathname !== '/' || u.search || u.hash || u.origin === origin) { throw new Error(); } playOrigin = u.origin; } catch { fail(503, 'PLAY_ORIGIN_NOT_CONFIGURED'); }
+  }
+  return { origin, playOrigin, secret: env.EDITOR_REQUEST_KEY, defaultPassword: env.EDITOR_DEFAULT_PASSWORD, sessionMs: integer('EDITOR_SESSION_MS', 8 * 3600000), idleMs: integer('EDITOR_IDLE_MS', 30 * 60000), rateMs: integer('EDITOR_RATE_MS', 10 * 60000), accountLimit: integer('EDITOR_ACCOUNT_LIMIT', 5), sourceLimit: integer('EDITOR_SOURCE_LIMIT', 30) };
 }
 export function fields(value, expected) { if (!value || Array.isArray(value) || typeof value !== 'object' || Object.keys(value).length !== expected.length || expected.some(key => !Object.hasOwn(value, key))) fail(422, 'REQUEST_FIELDS'); }
 export async function body(request) {

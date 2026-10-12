@@ -42,6 +42,15 @@ export class GameDeletionFence {
       this.#sql.exec('DELETE FROM trial_assets WHERE trial_id IN (SELECT trial_id FROM trial_sessions WHERE game_id=?)', gameId);
     }
   }
+  #cascadePublishForGame(gameId) {
+    // Publish cascade: a fenced (deleted) game must not stay listed or
+    // servable. Mirrors the trial cascade above; tables may not exist on DBs
+    // created before the publish registry, hence the sqlite_master guard.
+    const tables = new Set(this.#sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('published_games','published_packs','published_pack_assets')").toArray().map(entry => entry.name));
+    if (tables.has('published_games')) { this.#sql.exec('DELETE FROM published_games WHERE game_id=?', gameId); }
+    if (tables.has('published_packs')) { this.#sql.exec('DELETE FROM published_packs WHERE game_id=?', gameId); }
+    if (tables.has('published_pack_assets')) { this.#sql.exec('DELETE FROM published_pack_assets WHERE game_id=?', gameId); }
+  }
   #target(actor, gameId) {
     if (gameId === 'wolong-builtin') { fail(403, 'BUILTIN_PROTECTED'); }
     if (!uuid(gameId)) { fail(422, 'DELETE_GAME_ID'); }
@@ -74,6 +83,7 @@ export class GameDeletionFence {
       if (!updated) { fail(409, 'GAME_CHANGED'); }
       this.#sql.exec('INSERT INTO content_deletion_fences VALUES(?,?,?,?,?,?)', row.game_id, row.owner_id, actor.id, row.row_revision, next, time);
       this.#cascadeTrialsForGame(row.game_id);
+      this.#cascadePublishForGame(row.game_id);
       const result = { gameId: row.game_id, state: 'fenced', rowRevision: next, createdAt: time };
       this.#sql.exec('INSERT INTO content_deletion_operations VALUES(?,?,?,?,?,?)', actor.id, operationKey, digest, actor.epoch, row.game_id, JSON.stringify(result));
       this.#sql.exec('INSERT INTO content_audits VALUES(?,?,?,?,?,?,?)', crypto.randomUUID(), actor.id, 'delete-fence', row.game_id, row.row_revision, next, time);

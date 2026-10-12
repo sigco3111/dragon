@@ -61,3 +61,35 @@
 - step2 按 B 落定封验（用户裁决 2026-10-11，非原版机制）：主壳固定槽位（内置焊死），非内置离壳进持久会话槽（同引擎同规则，存档按游戏隔离）。标题下拉→8322/play?game= 预选→选章选势力→持久开局，全链真机绿；发布列表对象归一化 bug 修；published-games 加 localhost CORS（只绑 127.0.0.1）；curl GBK 发名致 � 入库教训（node UTF-8 重发）。测试剧本 step2-full 已撤发布（2026-10-11，用户定“去”），列表回仅内置；拷贝残留 store（无删除 API，無害）。
 - **Web 产品决定双入口（用户裁决 2026-10-11，非原版机制）**：玩免登；玩家入口与编辑器（后台，有登录）分离，将来绑两个域名。玩侧匿名可达（仅已发布），发侧保持登录/admin。
 - **当前阻塞**：无。**下一步**：workerd 对等（裁决已定，新对话按计划执行）、Q70/Q71、E-01、城数/将数改造，或收尾 push。
+
+## 本轮会话记录（2026-10-11，workerd 对等任务 2 存储）
+
+- 新文件 `server/published.js`：PublishedGames（`published_games` 表；pin 形同 node publish.json；写时 checkGameName-40/UUIDv4/revision/sourceDigest/chapters 422，读坏 fail-closed 500；unpublish 幂等＋owner/admin 403；list 无 auth 由路由定匿名）。
+- `server/worker.js` 接线（无 blob 依赖，与 games/management 同级构造）；`server/deletionfence.js` begin 级联删发布行（sqlite_master 守卫，对标 trial 级联）。路由/已编译鉴真/published-games 匿名＋/play 壳下批任务 3。
+- 验证：node --check 三文件过；伪 DO 存储单测 17 项绿（往返/覆写/幂等/7 拒收/owner/admin/双 corrupt-500，用后即删）；LSP 三文件 clean；`git diff --check` 过。node 侧未动（回归留任务 5）。改动未提交。
+
+## 本轮会话记录（2026-10-11，workerd 对等任务 3 路由＋壳）
+
+- `tools/build_trial_web_bundle.mjs` 增发 `server/public/playapp.txt`（schema dragon-play-app-shell-1；同骨架换 boot→playapp.js＋#play-status＋title 選擇遊戲 — 臥龍傳＋stylesheet 绝对 bundle URL，对标 node /play 置换；trial 壳字节未动）。顺带重卷 trialweb.txt 216→217（HEAD 后 web/src 漂移：playapp.js 新增＋6 文件变更，含 step1/2 内容；壳未动）。
+- `server/security.js`：config 增可选 `EDITOR_PLAY_ORIGIN`（https/异域/非空校验，错配 503；未设＝单域名）。
+- `server/worker.js`：DO `#isPlayRoute`（GET published-games＋/api/play/web 匿名，cookie 前分流）；玩域名非玩路由 404；publish（登录＋owner＋snapshot＋capture＋validate＋compileTrialSource 即时编译鉴真，`PUBLISH_NOT_COMPILED` 422）/unpublish（登录＋owner/admin，幂等键格式守卫＋天然幂等不复 sealed）；入口 `GET /play` 匿名壳（trialHeaders CSP）＋玩域名编辑 UI 404。无 CORS 白名单（同域即够）。
+- 验证：三文件 --check 过；play 壳 sha/len 自检＋壳引用闭合（2 绝对 URL 皆在束内，零相对残留）；LSP clean；diff --check 过。pack/势力/持久留任务 4，真机留任务 5。改动未提交。
+
+## 本轮会话记录（2026-10-11，workerd 对等任务 4 持久语义）
+
+- 新文件 `server/playpacks.js`：PublishedPacks（`published_packs`＋`published_pack_assets`；发布把已证编译冻结为 node 形 manifest whole-game＋章 states＋6 载荷，minimap 复 node 派生，visuals 复 trial 级 registry 绑定；读坏 fail-closed 500/503，digest 钉死 409，章缺 422）。
+- `server/worker.js`：publish 先冻包后登记（包孤儿不可见优先）；unpublish 同删包；匿名 `GET /api/trial-pack`（原名对等，revision/chapter 缺省对标 node）＋`GET /api/trial-asset`（原名，digest 必须钉 pin）＋`GET /content/builtin/compiled/*`（仅 8 季图 role，sha 重验；入口放行转发，玩域名可达）。playapp 零改动：persistent 透传＋playSaveDatabaseName 按游戏隔离已在浏览器侧就绪（main.js:953）。
+- fence 级联扩展两包表。验证：四文件 --check 过；伪存储 13 项绿（含真 bug 一枚：serve 方法形参 shadow 模块 `revision` 校验函数，已改名；另有两桩 sha 不一致，桩问题）；LSP clean；diff --check 过。R2 实读＋发布全量编译耗时与真机留任务 5。改动未提交。
+
+## 本轮会话记录（2026-10-11，workerd 对等任务 5 验证）
+
+- node 侧：自检绿（含 publish round）；`verify_play_shell_browser.mjs` 7/7 绿（下拉→预选→开局→隔离，IDB 按游戏隔离）。
+- workerd 真机（wrangler CLI 被代理 hang，改用其内置 miniflare 4.x 程序化＋自签 HTTPS＋同源 env）：smoke 17 项绿（/play 壳、health、published-games 内建唯一、bundle、trial-pack/asset 未发布 404＋码、login→rotate→unpublish 幂等 200→publish 未知 404→空名 422→匿名 401）；origin 门 dispatch 探针（同源 200/伪域 403/http 403）。
+- miniflare 程序化坑（已实锤，均环境侧非代码错）：`durableObjects` 对象式须 `useSQLite:true`（否则 SQL 未启用全 /api 500，基线 aca488b 同样复现）；`vars`→`bindings`、`r2`→`r2Buckets`（旧键静默丢弃，entry/DO 双双无 env）；modulesRules ESModule 须含 mjs；Text 含 txt/html/css；须 `rootPath`。
+- 附带修复（真机发现，node 对标 editor_server.mjs:376 先验名）：`#publishPin` 空名 422 先于权属 404（原 404 优先）。
+- 常驻对等段：`tools/verify_workerd_parity.mjs` 20 项绿（路由/门禁/损坏 fail-closed/校验顺序/冻结/幂等/无新绑定）。
+- 缺口（另 lane）：workerd 完整玩链需 installed-source bootstrap（editor_stage_source＋R2 上传＋staged env）；本次覆盖空注册表面的全部新路由/门禁/错误码。改动未提交。
+
+## 本轮会话记录（2026-10-11，workerd 对等任务 6 封存）
+
+- 独立链 `.dragon-analysis/editor-phase/workerd-parity-r1/`（derive→guards→run→audit→postdoc）已封存：derive 冻结 7 authored＋2 generated 文件哈希＋机制/顺序断言；guards（node 版本/批次完整/SAVE.DAT 未碰/仅批次脏）过；run 三收据（自检 OK、矩阵 20、浏览器 7）；audit（收据＋批次不可变）过；post-document sealed。LSP 七文件 clean，diff --check 过。改动未提交（commit/push 待授权）。
