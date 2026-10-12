@@ -44,6 +44,16 @@ import { performScenarioRelocationCommit } from "../game/navigation/scenariocapi
 import { performScenarioMonarchDeployCommit } from "../game/navigation/scenariomonarchdeploy.js";
 import { factionColorEx } from "../game/world.js";
 import { roadNodeAt, roadNodeRawAddress } from "../game/roadgraph.js";
+/** 出征/编成节点解析：剧本 world 路图优先（见 commands.js dispatchSourceRoadNode）；
+ * 试玩壳自建 world，从不加载默认门面实例，用门面恒得 null。 */
+function scenarioRoadNode(sc, x, y) {
+  const context = scenarioNativeRoadContext(sc);
+  return (context ? context.roads.roadNodeAt(x, y) : roadNodeAt(x, y));
+}
+function scenarioRoadRawAddress(sc, nodeId) {
+  const context = scenarioNativeRoadContext(sc);
+  return (context ? context.roads.roadNodeRawAddress(nodeId) : roadNodeRawAddress(nodeId));
+}
 import { isLegionDelegated, setLegionDelegated } from "../game/legionmode.js";
 import { canSnapshotState } from "../game/savegame.js";
 import {
@@ -1350,7 +1360,7 @@ export class GameBar {
     if (!this.legionAcceptsMarchOrder(legion, true)) return false;
     legion.target = targetCity;
     legion.targetCity = targetCity.idx;
-    legion.targetNode = roadNodeAt(targetCity.x, targetCity.y)?.id ?? null;
+    legion.targetNode = scenarioRoadNode(this.app.scenario, targetCity.x, targetCity.y)?.id ?? null;
     // 7FDB writes +0B=1 without changing +1E/+03. 7FB4 immediately calls
     // 4325 (not through the slot gate), then 7FB7 sets bit1. 4548 resolves
     // the new target coordinates/node even when the legion has not arrived.
@@ -2771,7 +2781,7 @@ export class GameBar {
             p.monarch.status = 1;
             p.monarch.is_monarch = true;
             if (!sc.legions) sc.legions = [];
-            const capitalNode = roadNodeAt(cap.x, cap.y);
+            const capitalNode = scenarioRoadNode(sc, cap.x, cap.y);
             const newLegion = {
               leader: p.monarch.name,
               generalIdx: p.monarch.idx,
@@ -2788,7 +2798,7 @@ export class GameBar {
               targetCity: cap.idx,
               targetNode: capitalNode?.id ?? null,
               _currentNode: capitalNode?.id ?? null,
-              roadEdgeOrNode: roadNodeRawAddress(capitalNode?.id),
+              roadEdgeOrNode: scenarioRoadRawAddress(sc, capitalNode?.id),
               commandState: 0,
               status: 0x80,
               delegated: false,
@@ -3847,6 +3857,10 @@ export class GameBar {
     }
     this.proposalAudience = null;
     this.app.view.draw();
+    // 采纳时排入的后继对白（如敌对接受的 3526 宣战 TALK，其 onClose 才是提交）
+    // 在 audience 存续期间被 _canShowStrategicMessage 拦下；关闭时补一次 drain
+    // （同 _closeBudgetAudience 尾段模式），否则提交无限期滞留队列。
+    this._drainStrategicMessages();
   }
 
   /** 返回标题时丢弃旧剧本的异步对白/计时器，不执行其 onClose 状态回调。 */
@@ -5381,7 +5395,7 @@ export class GameBar {
 
     // 4. 创建新军团并驻守在首都（初始无目标据点 target: null，默认战斗指挥 delegated: false）
     sc.legions = sc.legions || [];
-    const capitalNode = roadNodeAt(cap.x, cap.y);
+    const capitalNode = scenarioRoadNode(sc, cap.x, cap.y);
     const newLegion = {
       leader: gen.name,
       generalIdx: gen.idx,
@@ -5397,7 +5411,7 @@ export class GameBar {
       targetCity: cap.idx,
       targetNode: capitalNode?.id ?? null,
       _currentNode: capitalNode?.id ?? null,
-      roadEdgeOrNode: roadNodeRawAddress(capitalNode?.id),
+      roadEdgeOrNode: scenarioRoadRawAddress(sc, capitalNode?.id),
       commandState: 0,
       status: 0x80,
       delegated: false,

@@ -8,7 +8,8 @@
 - **任务一（编辑器）E-05 Trial 服务端线程：批次 1-7e＋8a-8h 全部闭合**。8h 删除级联：`GameDeletionFence.begin()` 同事务级联 trial 行＋资产，链已封存（deletecascade-r1：derive 双向绿→guards 562/269→gate 12/13 真后端→audit 9785→postdoc 9787）。guards **567/272**（multigame-r1 已继任封存）；Q69-(ii)(iii)、round-trip、多游戏 b2 均已链封存；仍不称 Q69/Q70/Q71 闭包完成。
 - **用户事项队列**：①统一/胜利终局——✅ 关闭（终局属原版规则不管，编辑器只改地图/据点/道路/人物，规则原样，不做实证）；②战术帧实际验证——✅ 8g 闭合；③删除级联——✅ 8h 闭合；④人物头像上传——✅ 链已封存；浏览器整轮 lane 回归——✅ 全绿封存（browser-regres-r1：pin 换新 guards 564/270→gate 17/0→audit 9843→postdoc 9845；talk 23/11＋talkdirect 23/11＋endview 15/7＋tactical 23/7 真浏览器）；⑤commit/push/deploy——✅ 已推送（ebd4d52）＋Release v0.1.6。
 - **Web 产品决定（用户裁决 2026-10-09，非原版机制）**事项④：尺寸不限 128×128（建议值），只保源矩形裁active→64×64，单文件 ≤100K；只收 JPG/PNG；头像资源不绑定 255 槽位（uuid 级 assetId，数量不限）；落盘走 `trial_assets` 派生机制；试运行走 worker（路径 A）。
-- **其它 open lane**：E-01 GameBar 图像 native 全图/SDK 502 根因 UNKNOWN；R12-4：发布登记 node 侧已落地（workerd 对等＋装配器下批）、RuntimeManifest/物理删除仍后端线程；城数/将数改造 deferred（引擎固定扫描）；Q70/Q71 open。任务二（地图改造）已收口。
+- **其它 open lane**：E-01 GameBar 图像 native 全图/SDK 502 根因 UNKNOWN；R12-4：发布登记 node 侧已落地（workerd 对等＋装配器下批）、RuntimeManifest/物理删除仍后端线程；城数/将数改造 deferred（引擎固定扫描）；Q70/Q71 open（战术帧动态浏览器证据已取：trial-tactical-browser-r1 20/20 绿封存，见下）。任务二（地图改造）已收口。
+- **Q70/Q71 战术帧动态浏览器证据（2026-10-13，本轮，未提交）**：真实 Chromium 对 lane 后端一次跑通 workbench→trial 窗→宣战（军师进言敌对提案 AL=1 即时接受，张角 0/0）→编成（何進 6000）→canvas 行军令（洛陽→信都，經官渡）→真实交战开战→`session.frame` 推进→offline 冻结→online 恢复→改密终态停战＋战斗关闭，IDB 0、console/page/outside 0。链已封存（derive→guards→run→audit→postdoc）。沿途修三真缺陷（均规则零改动）：①试玩壳自建 world 路图实例（`ai.js`/`gamebar.js` context.roads 优先，`Uncovered original movement Le` 冻泵）；②`closeProposalAudience` 补 drain（宣战 TALK onClose 提交滞留）；③43D3 外交别名走完整 24×24 native 表（`Uncovered diplomacy 2072`）。回归：road 32/0、war 8/8。
 - **历史批次一句话**：8g 战术帧实证修两真缺陷（`commands.js` 门面路图→`scenarioNativeRoadContext`；trial web `?v=` 白名单）→561/268；lint 收口（barrel 本地再导出＋tlog 约定）journal 瘦身 883→90 行；browser-regres-r1 四 lane 全绿→564/270；q69ii 两级门→564/270；q69iii 五点 FF 跳过；round-trip 字节同一性→565/271；multigame b2（发布＋/play＋隔离存档＋冒烟 7 项）→567/272。
 
 ## 稳定架构事实（Trial 栈，实锤）
@@ -176,3 +177,13 @@
 - 顺带修同类潜 bug：copy 匹配用 `JSON.stringify` 对顺序敏感（快照往返 parser 排序键，baseline 保持 loader 插入序），改走结构 compare＋WeakMap。
 - e2e 本轮全绿 20 项（rename→disband→publish→pack→asset→list→unlist→unpublish→pack-gone，同一 lane DB rev1-4；另补 disband#1 落库复核）。其间 e2e 探针小修：listing expectedRowRevision 改读现值（GAME_CHANGED 守卫行为正确）。
 - 验证：静态 65（＋2 本轮）＋自检绿＋LSP clean（仅预存警告）；独立链 editor-shell-boot1 已重封存。改动未提交。
+
+## 本轮会话记录（2026-10-12，B4e 头像上传管线§4.3/Q37 封存）
+
+- 新文件 `server/portraits.js`：GamePortraits 游戏级库（owner-only；id 1-32 字母＋pack 保留名拒；PNG/JPEG sniff；100KB；128×128 头解析 PNG IHDR/JPEG SOF，不解像素；删拒当前修订在用键，旧修订 kao 回落）。
+- worker：`POST/GET /api/games/:id/portraits`＋`POST :id/portraits/:key` 删除（空体）；幂等键 'portrait' 命名空间；assertNotDeleting。
+- publish：pack manifest.portraits（role game-portrait）＋bytes 进 published_pack_assets；serve 门扩展（manifest 内＋mime 取 entry）；sha/mime 重验。
+- fence 级联 game_portraits；武将节上传面板（canvas 中央裁剪预览＋列表 inUse＋删除）。
+- 真机全链：上传 201（422/409 负例）→列表→绑定→发布→包内→asset 字节→删拒 409→解绑→删除落库。附带修真 bug×2：workerd BLOB 系 ArrayBuffer（instanceof Uint8Array 永假）＋`#postPortraitDelete` 漏解构 request。
+- 环境注记：miniflare HTTPS 慢响应（47s＋）客户端掉线为环境抖动，服务端均 200/落库；探针以同键重试＋状态复核应对。
+- 验证：静态 69（＋4 B4e）＋单测 15＋自检绿＋LSP clean。独立链 editor-shell-b4e 已封存。改动未提交。

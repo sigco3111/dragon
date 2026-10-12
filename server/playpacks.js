@@ -20,14 +20,17 @@ const revision = value => typeof value === 'string' && /^[1-9][0-9]*$/.test(valu
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const shaBytes = value => createHash('sha256').update(value).digest('hex');
 const ASSET_IDS = Object.freeze(['terrain', 'roadGraph', 'roadCost', 'roadOffset', 'minimapBase', 'minimapLarge']);
+// Portrait library ids must never collide with pack asset ids (§4.3 B4e).
+export const RESERVED_ASSET_IDS = ASSET_IDS;
 const ASSET_MIME = Object.freeze({ terrain: 'application/octet-stream', roadGraph: 'application/json', roadCost: 'application/octet-stream', roadOffset: 'application/json', minimapBase: 'image/png', minimapLarge: 'image/png' });
 const ASSET_ROLE = Object.freeze({ terrain: 'rules-initial-terrain', roadGraph: 'native-road-v2', roadCost: 'legacy-grid-visual', roadOffset: 'legacy-grid-visual', minimapBase: 'automatic-minimap', minimapLarge: 'automatic-minimap' });
 const assetURL = (gameId, rev, sourceDigest, assetId) => `/api/trial-asset?game=${encodeURIComponent(gameId)}&revision=${rev}&digest=${sourceDigest}&asset=${assetId}`;
 export class PublishedPacks {
-  #storage; #sql; #principal; #catalog; #policy;
-  constructor({ storage, principal, catalog }) {
+  #storage; #sql; #principal; #catalog; #policy; #portraits;
+  constructor({ storage, principal, catalog, portraits = null }) {
     if (!storage?.sql || typeof principal !== 'function') { throw new TypeError('actual SQLite and trusted principal required'); }
-    this.#storage = storage; this.#sql = storage.sql; this.#principal = principal; this.#catalog = catalog ?? null;
+    if (portraits !== null && typeof portraits?.forPublish !== 'function') { throw new TypeError('portrait reader required'); }
+    this.#storage = storage; this.#sql = storage.sql; this.#principal = principal; this.#catalog = catalog ?? null; this.#portraits = portraits;
     // Same installed-source policy the worker builds for TrialSessions.
     this.#policy = installedSourcePolicy(new TextEncoder().encode(worldManifest), new TextEncoder().encode(entityManifest));
     if (!isInstalledSourcePolicy(this.#policy)) { throw new TypeError('installed source policy required'); }
@@ -68,6 +71,23 @@ export class PublishedPacks {
   }
   // Freeze the proof-compiled snapshot the publish route already ran. Heavy
   // reads (catalog) stay outside the write transaction, as in trial issue.
+  // Game portrait library freeze (§4.3 B4e): bytes re-verified (sha over
+  // stored bytes must match the row), mime allowlisted, ids already
+  // reserved-collision-free at upload. Missing reader = no portraits.
+  #freezePortraits(gameId) {
+    if (!this.#portraits) { return []; }
+    const rows = this.#portraits.forPublish(gameId);
+    if (!Array.isArray(rows)) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
+    const seen = new Set();
+    return rows.map(row => {
+      if (!row || typeof row.assetId !== 'string' || !/^[A-Za-z]{1,32}$/.test(row.assetId) || seen.has(row.assetId) || ASSET_IDS.includes(row.assetId)) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
+      seen.add(row.assetId);
+      // Workerd SQLite returns BLOB columns as ArrayBuffer; node:sqlite gives Buffer. Accept both.
+      const bytes = row.bytes instanceof Uint8Array ? Buffer.from(row.bytes) : row.bytes instanceof ArrayBuffer ? Buffer.from(row.bytes) : null;
+      if (!bytes || bytes.length < 1 || bytes.length !== row.byteLength || shaBytes(bytes) !== row.sha256 || !digest(row.sha256) || (row.mime !== 'image/png' && row.mime !== 'image/jpeg')) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
+      return Object.freeze({ assetId: row.assetId, mime: row.mime, sha256: row.sha256, byteLength: row.byteLength, bytes });
+    });
+  }
   async buildAndStore(tokenHash, { game, reference, compiled }) {
     this.#actor(tokenHash);
     if (!game || game.gameId !== reference.gameId || !Array.isArray(game.chapterOrder) || game.chapterOrder.length < 1) { fail(422, 'PLAY_SNAPSHOT'); }
@@ -94,13 +114,15 @@ export class PublishedPacks {
       if (!(bytes instanceof Uint8Array) || bytes.length < 1) { fail(422, 'PLAY_SNAPSHOT'); }
     }
     const visuals = await this.#visuals(tokenHash, reference.gameId);
+    const portraits = this.#freezePortraits(reference.gameId);
+    const portraitEntries = portraits.map(row => Object.freeze({ assetId: row.assetId, sha256: row.sha256, byteLength: row.byteLength, role: 'game-portrait', url: assetURL(reference.gameId, reference.draftRevision, reference.sourceDigest, row.assetId), mime: row.mime }));
     const entries = Object.entries(payloads).map(([assetId, data]) => Object.freeze({ assetId, sha256: shaBytes(data), byteLength: data.length, role: ASSET_ROLE[assetId], url: assetURL(reference.gameId, reference.draftRevision, reference.sourceDigest, assetId) }));
     const manifest = Object.freeze({
       schemaVersion: 1, compilerRevision: TRIAL_COMPILER_REVISION, buildFormat: 'studio-app-2',
       compatibilityAssetMode: compiled.compatibilityAssetMode, ruleProfile: game.ruleProfile,
       identity: Object.freeze({ gameId: reference.gameId, draftRevision: reference.draftRevision, sourceDigest: reference.sourceDigest, trialSnapshotId: `${reference.gameId}@${reference.draftRevision}:${reference.sourceDigest}` }),
       world: Object.freeze({ id: `${reference.gameId}-world`, revision: reference.sourceDigest, width: compiled.width, height: compiled.height, tileSize: 16 }),
-      chapters: Object.freeze([...game.chapterOrder]), visualAssets: visuals, minimap: Object.freeze({ ...minimap }), portraits: Object.freeze([]),
+      chapters: Object.freeze([...game.chapterOrder]), visualAssets: visuals, minimap: Object.freeze({ ...minimap }), portraits: Object.freeze(portraitEntries),
       minimapAssets: Object.freeze(entries.filter(entry => entry.assetId.startsWith('minimap'))),
       assets: Object.freeze(entries.filter(entry => !entry.assetId.startsWith('minimap'))),
     });
@@ -115,6 +137,9 @@ export class PublishedPacks {
       for (const entry of entries) {
         const data = payloads[entry.assetId];
         this.#sql.exec('INSERT INTO published_pack_assets VALUES(?,?,?,?,?)', reference.gameId, entry.assetId, entry.sha256, entry.byteLength, Buffer.from(data));
+      }
+      for (const row of portraits) {
+        this.#sql.exec('INSERT INTO published_pack_assets VALUES(?,?,?,?,?)', reference.gameId, row.assetId, row.sha256, row.byteLength, Buffer.from(row.bytes));
       }
     });
     return manifest;
@@ -152,13 +177,18 @@ export class PublishedPacks {
     return { manifest, states };
   }
   #serveAsset(pin, manifest, assetId) {
-    const entry = [...(manifest.assets ?? []), ...(manifest.minimapAssets ?? [])].find(item => item?.assetId === assetId);
-    if (!entry || !ASSET_IDS.includes(assetId) || !digest(entry.sha256) || !Number.isSafeInteger(entry.byteLength)) { fail(404, 'PLAY_ASSET'); }
+    const entry = [...(manifest.assets ?? []), ...(manifest.minimapAssets ?? []), ...(manifest.portraits ?? [])].find(item => item?.assetId === assetId);
+    if (!entry || !digest(entry.sha256) || !Number.isSafeInteger(entry.byteLength)) { fail(404, 'PLAY_ASSET'); }
+    const isPortrait = (manifest.portraits ?? []).some(item => item?.assetId === assetId);
+    if (!isPortrait && !ASSET_IDS.includes(assetId)) { fail(404, 'PLAY_ASSET'); }
+    if (isPortrait && entry.role !== 'game-portrait') { fail(500, 'PLAY_PACK_CORRUPT'); }
     const row = this.#one('SELECT * FROM published_pack_assets WHERE game_id=? AND asset_id=?', pin.gameId, assetId);
     if (!row) { fail(500, 'PLAY_PACK_CORRUPT'); }
     const bytes = Buffer.from(row.bytes);
     if (bytes.length !== row.byte_length || shaBytes(bytes) !== row.sha256 || row.sha256 !== entry.sha256 || row.byte_length !== entry.byteLength) { fail(503, 'PLAY_ASSET_CORRUPT'); }
-    return Object.freeze({ bytes, sha256: row.sha256, mime: ASSET_MIME[assetId] });
+    const mime = isPortrait ? entry.mime : ASSET_MIME[assetId];
+    if (isPortrait && mime !== 'image/png' && mime !== 'image/jpeg') { fail(500, 'PLAY_PACK_CORRUPT'); }
+    return Object.freeze({ bytes, sha256: row.sha256, mime });
   }
   // Anonymous pinned-pack slice (node trial-pack parity: game + optional
   // revision defaulting to the pin + chapter defaulting to the first).

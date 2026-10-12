@@ -67,6 +67,11 @@ check("pack-chapters", readFileSync("server/playpacks.js", "utf-8").includes("pu
 check("listing-gate", (() => { const w = readFileSync("server/worker.js", "utf-8"); const mgmt = w.slice(w.indexOf("async #postManagement")); return mgmt.indexOf("MANAGEMENT_ACTION") < mgmt.indexOf("fields(value, ['action', 'expectedRowRevision'])"); })());
 check("unlist-regex", (() => { const w = readFileSync("server/worker.js", "utf-8"); const admin = w.slice(w.indexOf("async #postAdminUnlist")); return admin.includes('/^"([1-9][0-9]*)"$/') && !admin.includes('$"/'); })());
 check("profile-status", htmlIds.has("profile-status"));
+// B4e (§4.3/Q37): game portrait library routes + publish freeze + UI.
+check("portrait-routes", (() => { const w = readFileSync("server/worker.js", "utf-8"); return w.includes("portraits(?:\\/([A-Za-z]{1,32}))?") && w.includes("#getPortraits") && w.includes("#postPortraitUpload") && w.includes("#postPortraitDelete"); })());
+check("portrait-pack", (() => { const p = readFileSync("server/playpacks.js", "utf-8"); return p.includes("#freezePortraits") && p.includes("manifest.portraits") && p.includes("role: 'game-portrait'"); })());
+check("portrait-fence", readFileSync("server/deletionfence.js", "utf-8").includes("game_portraits"));
+check("portrait-ui", htmlIds.has("portrait-file") && htmlIds.has("portrait-preview") && htmlIds.has("portrait-library") && readFileSync("server/public/general.txt", "utf-8").includes("portrait-upload"));
 // BOOT-1 truth: disband revert inserts by baseline relative order (not baseline
 // index — history-compacted arrays misalign); copy-match is order-insensitive.
 check("disband-order", (() => { const c = readFileSync("server/copyprofile.js", "utf-8"); const fn = c.slice(c.indexOf("const revertDisband")); return fn.includes("order.indexOf(factionIdx)") && !fn.includes("findIndex(f => f?.idx === factionIdx)"); })());

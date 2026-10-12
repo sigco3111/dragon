@@ -306,7 +306,9 @@
 **2662/42AB/点推进**：
 
 1. 初批0E==14在266E、NPC节点在4304暂停的边界已由[§3.13](#native-arrival-callers)限定推进，不能再概称全部到达/缓存未覆盖。bit4置仍在267A→2BA8停，不提前清bit4；普通移动其余流程不变。
-2. 边内42AB仅stride byte==FC选+6，其它（含0/5/80）选+8。己方/18h先短路，其它才读显式外交byte；≥80h读另一端并依次写14→20→OR2，然后**同动作**继续2697，不返回`reversed`，不保旧最终目标。city owner实时命名读取；未知外交不补NEUTRAL。
+2. 边内42AB仅stride byte==FC选+6，其它（含0/5/80）选+8。己方/18h先短路，其它才读显式外交byte；≥80h读另一端并依次写14→20→OR2，然后**同动作**继续2697，不返回`reversed`，不保旧最终目标。city owner实时命名读取；未知外交不补NEUTRA
+
+**trial-tactical-browser-r1 实机佐证（Q70/Q71，2026-10-13）**：真实 Chromium 下玩家军团洛陽→河內（外交 0xC4，和平）行军一步后目标被改写回洛陽（targetCity/targetX/targetY 同步归位），与本条实锤一致；随后经军师进言敌对提案宣战（矩阵双向清 bit7），同军团改道官渡/信都（交战中）行军不再翻转。证据收据见 `.dragon-analysis/editor-phase/trial-tactical-browser-r1/receipt.json`（20/20）。L。
 3. DEC旧格后，有bit1先清再47BB；节点新边直接提交0C，不能先26FF错误置bit0。普通边内26C8读取当前完整flags：low3<2继续，否则bit6置且signedStride>0或bit6清且signedStride<0继续，其它27F6/27A2。26FF先OR1、再CBW stride与旧0C按u16相加。
 4. 2708依序读Xword、Y/flagsword、候选occupancy。非零才2831；随后**总先读所属world terrain byte**，再看bit0及tile CE..DD决定2880。候选拒绝未提交；通过后row→offset→0C→独立重读candidate+2→Xword→Y低byte（保高byte）。第二flags门再按同条件决定方向或节点化；一次动作最多一个候选点，不在同动作调用4325。
 5. 2808以u16(currentX-nextX)非零优先取bit15生成0/1；X相等才u8(currentY-nextY)的bit7+2，相同坐标保marker。27F6先NEG **byte**再CBW（80仍80），看反向点后XOR1。27A2仅stride byte4选edge+8，其它+6；先写0E，node<600h再按固定city slot先读X/Y、写完整X/Y，然后offset→row（Y低byte×24）；node≥600h不改坐标/pointer。重读0E==14才marker4；保0A/0C/status/14/20/23。城市桥失败保已写marker/0E。
@@ -336,7 +338,7 @@
 | 消费地址 | 已覆盖命名域 | 未覆盖域 |
 | --- | --- | --- |
 | 28FD owner | wrapped地址841h+20h*j，j0..191：live city.faction | 其它D52别名/缺字段 |
-| 43D3 DI+18h | 600h..83Fh live diplomacy；858h+20h*j stored cache；**000h..5FFh faction 域（P41）**：偶 k→`faction[k/2].nativeGeneralCount`（F+18 live）、奇 k→F+38 静态 raw 字节（strict hex 切片）；4300 拦截 STC 重入以 DI=u16(idx*0x400)，idx=64 回绕 0→势力0 F18 | F+18/F+38 以外的 faction offset与其它别名 |
+| 43D3 DI+18h | 600h..83Fh **完整 24×24 native 表**（trial-tactical-browser-r1 实机修复：旧读 `sc.diplomacy` prefix view，16 势力剧本第三方行（如行 22）`undefined` 冻泵 `Uncovered diplomacy 2072 at 43D3`；改走 `nativeDiplomacyAt`，与 originalcity.js 3FF4 同模式）；858h+20h*j stored cache；**000h..5FFh faction 域（P41）**：偶 k→`faction[k/2].nativeGeneralCount`（F+18 live）、奇 k→F+38 静态 raw 字节（strict hex 切片）；4300 拦截 STC 重入以 DI=u16(idx*0x400)，idx=64 回绕 0→势力0 F18 | F+18/F+38 以外的 faction offset与其它别名 |
 | 4304/441B/4455/4462 | 实际city+18的同一cache能力 | 缺能力/未知byte/非city地址 |
 | 4549/454C | 实际city记录+8/+A的完整X/Y word | 缺坐标、非city pointer，包括首都FF |
 
@@ -591,7 +593,13 @@ Web 接线：`originalformation.js` 新增 `commitOriginalMonarchDeploy`（0..12
 
 **行军标识朝向修复（同批，Web 表现层，非 KI 新规则）**：用户实报行军中凸形标识始终朝一个方向，横走/竖走不变。根因：`mapview.js getLegionRenderPos` 用 `prevX/prevY/target/_march` 反推方向帧，但原生泵内从不维护这些表现派生（`performLegionSlotAction` 的 prevX 写只在无 native 上下文的旧分支；`publish/快照` 剥离 `_march/_path/prevX`；`assignMarchOrder` 只写目标系字段），反推恒得出发点或目标据点方向。原版写/读链完整：`originalroadmovement.js direction()`（dx 符号→0/1，否则 dy→2/3，同坐标保值）/`nodeize()`（^1 翻转）/到达（`[0x0E]==[0x14]`→4）每步写 +8；`0x2808` 按 +8 选帧。修复：表现层以 `L._markerFrame`（+8）为准，0..4 以外或缺失才回退旧推导；静止（无 target/engagement/位移）仍强制帧 4。影响面：仅方向帧来源，不动插值/分支/规则。验证：行军/转向/到达/回退/静止 5 例内存断言全过；`verify_native_road_movement.mjs` 32/32；`verify_native_formation.mjs` 28/28；LSP inconclusive（环境一贯）。
 
-**42AB 通行语义（实测记录，未改规则）**：张飞沛→漢安首跳边 3344（+6 端 448=濟陰/曹操，+8 端 520=沛）。刘备开局与所有势力外交 ≥0x80（24×24 原生=legacy 一致；宣战清 bit7/停战 OR 0x80，故 ≥0x80=和平），首步后 42AB 因“终点非己/非中立且外交 ≥0x80”改写目标为另一端（家）并 dissolve 命令，军团返回首都后转 state9（总兵 500<600）→补员循环。该实现与 §3.12 line 650 静态证据逐项一致（42EE/42F7/42FA 只写 14/20/OR2、同动作继续），故按证据纪律保留，未做“放行和平过境”或“目标选择加宣战门”等经验修改。对曹操设交战值后复测：同一军团沿边推进且目标保持（42AB 放行）、无失败——即现行模型为“只能经己方/交战方节点，远程奔袭需逐城宣战攻取”。7F90 目标选择是否应限交战方、42AB 静态触发与“易主”表述的关系仍未闭合，记为后续原证复核项，不在本轮扩大。
+**42AB 通行语义（实测记录，未改规则）**：张飞沛→漢安首跳边 3344（+6 端 448=濟陰/曹操，+8 端 520=沛）。trial-tactical-browser-r1 真实 Chromium 复测：洛陽→河內（外交 0xC4）首步后目标改写回洛陽，宣战（双向清 bit7）后同军团改道官渡/信都正常行军，见 §306 批注。刘备开局与所有势力外交 ≥0x80（24×24 原生=legacy 一致；宣战清 bit7/停战 OR 0x80，故 ≥0x80=和平），首步后 42AB 因“终点非己/非中立且外交 ≥0x80”改写目标为另一端（家）并 dissolve 命令，军团返回首都后转 state9（总兵 500<600）→补员循环。该实现与 §3.12 line 650 静态证据逐项一致（42EE/42F7/42FA 只写 14/20/OR2、同动作继续），故按证据纪律保留，未做“放行和平过境”或“目标选择加宣战门”等经验修改。对曹操设交战值后复测：同一军团沿边推进且目标保持（42AB 放行）、无失败——即现行模型为“只能经己方/交战方节点，远程奔袭需逐城宣战攻取”。7F90 目标选择是否应限交战方、42AB 静态触发与“易主”表述的关系仍未闭合，记为后续原证复核项，不在本轮扩大。
+
+#### 3.15.12 trial 壳自建 world 的路图实例修复（Web 工程，非 KI 新规则）
+
+**问题**：主游戏装配默认世界（`app.world = defaultWorldResources`），`game/src/game/roadgraph.js` 默认门面与剧本 world 同实例；试玩壳 `createTrialEnvironment` 自建 world，默认门面实例从不加载路图，`roadNodeAt` 恒 null。玩家编成（`gamebar.js _confirmFormation` 两处＋君主亲征旧分支 `monarch_deploy`）与 `assignMarchOrder` 经门面取首都/目标节点 → `roadEdgeOrNode`/`targetNode` 缺失 → publish 跳过 null → 原生首个行军动作 `rw(0x0e)` 抛 `Uncovered original movement Le: undefined` 冻泵（trial-tactical-browser-r1 真实 Chromium 复现：洛陽编成何進军团，slot 2，首步即停）。
+
+**修复**：沿 `commands.js dispatchSourceRoadNode` 既定模式（剧本 world 优先、门面回落）：`gamebar.js` 新增 `scenarioRoadNode/scenarioRoadRawAddress`（assignMarchOrder 用 `this.app.scenario`，编成两处用 `sc`）；`ai.js` 新增 `scenarioRoadNodeId/scenarioRoadNodeById/scenarioRoadRawAddress`，替换 8 处门面调用（含 `markLegionAtRoadNode` 加 `sc` 参、`roadNodeById` 三处）；legacy Web（无 assembly 上下文）回落门面，行为不变。回归：`verify_native_road_movement.mjs` 32/0、`verify_native_war_proposal.mjs` 8/8。
 
 ## 四、不可达与没有走通的处理
 

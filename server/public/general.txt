@@ -1,6 +1,7 @@
-// Generals (§4.3 B4c1): chapter general name/hao edit + portrait bind/clear +
-// delete-blocker report. Person add/delete is 128-locked; the blocker list
-// is the deliverable. Portrait upload pipeline stays trial-scoped (gap).
+// Generals (§4.3 B4c1+B4e): chapter general name/hao edit + portrait bind/clear +
+// delete-blocker report + game portrait library (upload 128×128 center-crop
+// preview, list, delete with in-use guard). Person add/delete is 128-locked;
+// the blocker list is the deliverable.
 export function installGenerals({ api, authority, work, isBusy }) {
   const q = (id) => document.querySelector('#' + id);
   let identity = null, games = [], selected = null, detail = null;
@@ -85,7 +86,7 @@ export function installGenerals({ api, authority, work, isBusy }) {
     selected = game.gameId;
     detail = await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft?revision=' + encodeURIComponent(game.draftRevision));
     render();
-    message('武將增刪鎖定 128 密排；改名／字與頭像綁定經草稿保存寫入。頭像上傳管線仍為試運行域（缺口）。');
+    message('武將增刪鎖定 128 密排；改名／字與頭像綁定經草稿保存寫入。頭像上傳進本遊戲資源庫，發布時凍結進包。');
   }
   function factionPanel(entry) {
     const chapterId = entry.chapterId;
@@ -139,6 +140,58 @@ export function installGenerals({ api, authority, work, isBusy }) {
     }
     return box;
   }
+  // §4.3 B4e portrait library: file → canvas center-crop 1:1 preview (no
+  // stretch) → 128×128 PNG upload → game library; list shows in-use guard.
+  function previewPortrait() {
+    const file = q('portrait-file').files?.[0];
+    const canvas = q('portrait-preview'), context = canvas.getContext('2d');
+    context.clearRect(0, 0, 128, 128);
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      const side = Math.min(image.naturalWidth, image.naturalHeight);
+      context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 128, 128);
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); message('圖片讀取失敗，僅 PNG/JPEG。'); };
+    image.src = url;
+  }
+  function base64(bytes) { let text = ''; for (let at = 0; at < bytes.length; at += 8192) { text += String.fromCharCode(...bytes.subarray(at, at + 8192)); } return btoa(text); }
+  async function listPortraits() {
+    const game = gameOf();
+    const result = await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits');
+    q('portrait-library').replaceChildren();
+    for (const entry of result.portraits ?? []) {
+      const row = document.createElement('div'), label = document.createElement('p');
+      label.textContent = `${entry.assetId}／${entry.mime}／${entry.width}×${entry.height}／${entry.byteLength}B／${entry.inUse ? '使用中（須先解綁）' : '未使用'}`;
+      row.append(label);
+      const del = document.createElement('button');
+      del.type = 'button'; del.textContent = '刪除';
+      del.disabled = isBusy();
+      del.onclick = () => work(async () => {
+        await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits/' + encodeURIComponent(entry.assetId), {}, { key: crypto.randomUUID() });
+        await listPortraits();
+      });
+      row.append(del);
+      q('portrait-library').append(row);
+    }
+    message(`資源庫 ${result.portraits?.length ?? 0} 張。`);
+  }
+  q('portrait-file').onchange = previewPortrait;
+  q('portrait-upload').onclick = () => work(async () => {
+    const game = gameOf();
+    const assetId = (q('portrait-id').value ?? '').trim();
+    if (!/^[A-Za-z]{1,32}$/.test(assetId)) throw new Error('編號須為 1..32 個英文字母。');
+    const blob = await new Promise((resolve) => q('portrait-preview').toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('預覽為空，請先選圖。');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const dataBase64 = base64(bytes);
+    await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits', { assetId, dataBase64 }, { key: crypto.randomUUID() });
+    message(`已上傳 ${assetId}（128×128 PNG）。`);
+    await listPortraits();
+  });
+  q('portrait-list').onclick = () => work(listPortraits);
   q('generals-refresh').onclick = () => work(refresh);
   q('generals-inspect').onclick = () => work(inspect);
   return Object.freeze({ render, setIdentity(value) { identity = value; if (!allowed()) { games = []; selected = null; detail = null; } render(); }, canLeave() { return true; } });

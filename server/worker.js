@@ -21,7 +21,8 @@ import { PrivateWriteJournal } from './privatewrites.js';
 import { PrivateLibraryAssets } from './libraryassets.js';
 import { TrialSessions } from './trials.js';
 import { PublishedGames } from './published.js';
-import { PublishedPacks } from './playpacks.js';
+import { PublishedPacks, RESERVED_ASSET_IDS } from './playpacks.js';
+import { GamePortraits } from './portraits.js';
 import { validateGameSource } from '../web/src/content/authoring/gamesource.js';
 import { compileTrialSource } from '../web/src/content/authoring/trialcompile.js';
 import worldManifest from './pinned/world-manifest.txt';
@@ -120,6 +121,8 @@ export class EditorMetadata extends DurableObject {
     this.deletionFence = new GameDeletionFence({ storage: ctx.storage, principal: hash => this.principal(hash), operationGuard: (actor, key) => this.contentKey(actor, key, 'delete'), requestKey: env.EDITOR_REQUEST_KEY });
     // Published-game registry (node publish.json counterpart); pure SQLite, no blob dependency.
     this.publishedGames = new PublishedGames({ storage: ctx.storage, principal: hash => this.principal(hash) });
+    // §4.3 game portrait library (owner-only, 128×128); pure SQLite, no blob dependency.
+    this.portraits = new GamePortraits({ storage: ctx.storage, principal: hash => this.principal(hash), reservedIds: RESERVED_ASSET_IDS });
     this.trialSessions = null;
     this.blobs = null; this.installedSources = null; this.adminCopies = null; this.privateDrafts = null; this.stageApi = null; this.availableLibrary = null; this.libraryAssets = null;
     if (env.EDITOR_BLOBS) {
@@ -144,7 +147,7 @@ export class EditorMetadata extends DurableObject {
     }
     // Frozen public play snapshots (node build/ counterpart); catalog may be
     // null in blobless dev, in which case publish/pack reads fail 503.
-    this.playPacks = new PublishedPacks({ storage: ctx.storage, principal: hash => this.principal(hash), catalog: this.installedSources });
+    this.playPacks = new PublishedPacks({ storage: ctx.storage, principal: hash => this.principal(hash), catalog: this.installedSources, portraits: this.portraits });
   }
   one(query, ...args) { return this.sql.exec(query, ...args).toArray()[0]; }
   // Read-only public registry role bytes for the trial web route: pinned index roles, chunked R2 reads, sha re-verified.
@@ -543,6 +546,61 @@ export class EditorMetadata extends DurableObject {
     this.touch(tokenHash, policy);
     return response(this.deletionFence.query(tokenHash, deletionPath[3]));
   }
+  // §4.3 game portrait library: owner-only upload/list/delete. Delete
+  // refuses keys bound in the current draft (older revisions fall back to
+  // kao by design); bytes rechecked (mime/dimensions/sha) at every layer.
+  async #portraitUsedKeys(tokenHash, gameId) {
+    if (!this.privateDrafts) { return []; }
+    try {
+      const owned = this.games.listOwn(tokenHash).find(entry => entry.gameId === gameId);
+      if (!owned) { return []; }
+      const receipt = await this.privateDrafts.read(tokenHash, gameId, owned.draftRevision);
+      const keys = [];
+      for (const chapter of receipt.chapters ?? []) {
+        for (const general of chapter.generals ?? []) {
+          if (typeof general?.portraitKey === 'string' && !keys.includes(general.portraitKey)) { keys.push(general.portraitKey); }
+        }
+      }
+      return keys;
+    } catch { return []; }
+  }
+  async #getPortraits(rt) {
+    const { tokenHash, policy, url, portraitPath } = rt;
+    if (!portraitPath) { return null; }
+    if (url.search) { fail(422, 'PORTRAIT_QUERY'); }
+    this.touch(tokenHash, policy);
+    this.games.assertNotDeleting(portraitPath[1]);
+    if (portraitPath[2]) {
+      const row = this.portraits.list(tokenHash, portraitPath[1]).find(entry => entry.assetId === portraitPath[2]);
+      if (!row) { fail(404, 'PORTRAIT_NOT_FOUND'); }
+      return response(row);
+    }
+    const list = this.portraits.list(tokenHash, portraitPath[1]);
+    const used = await this.#portraitUsedKeys(tokenHash, portraitPath[1]);
+    return response({ gameId: portraitPath[1], portraits: list.map(entry => ({ ...entry, inUse: used.includes(entry.assetId) })) });
+  }
+  async #postPortraitUpload(rt) {
+    const { request, tokenHash, user, policy, url, value, portraitPath } = rt;
+    if (url.search) { fail(422, 'PORTRAIT_QUERY'); }
+    fields(value, ['assetId', 'dataBase64']);
+    if (typeof value.dataBase64 !== 'string' || value.dataBase64.length === 0 || value.dataBase64.length > 140000) { fail(422, 'PORTRAIT_BYTES'); }
+    let bytes;
+    try { bytes = Buffer.from(value.dataBase64, 'base64'); } catch { fail(422, 'PORTRAIT_BYTES'); }
+    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'portrait');
+    this.games.assertNotDeleting(portraitPath[1]);
+    this.touch(tokenHash, policy);
+    return response(this.portraits.upload(tokenHash, portraitPath[1], value.assetId, bytes), 201);
+  }
+  async #postPortraitDelete(rt) {
+    const { request, tokenHash, user, policy, url, value, portraitPath } = rt;
+    if (url.search) { fail(422, 'PORTRAIT_QUERY'); }
+    fields(value, []);
+    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'portrait');
+    this.games.assertNotDeleting(portraitPath[1]);
+    this.touch(tokenHash, policy);
+    const used = await this.#portraitUsedKeys(tokenHash, portraitPath[1]);
+    return response(this.portraits.remove(tokenHash, portraitPath[1], portraitPath[2], used));
+  }
   async #postDraftSave(rt) {
     const { request, tokenHash, user, policy, value, draftPath } = rt;
     if (!this.privateDrafts) { fail(503, 'DRAFT_NOT_CONFIGURED'); }
@@ -559,9 +617,11 @@ export class EditorMetadata extends DurableObject {
     return response({ ...(await this.availableLibrary.install(tokenHash, staged.registryId, staged.root, request.headers.get('Idempotency-Key'))), mode: 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE', unresolvedReferences: 20 });
   }
   async #postEntryRoutes(rt) {
-    const { request, tokenHash, user, policy, url, path, value, managementPath, deletionPath, stagePath, copyPath, draftPath } = rt;
+    const { request, tokenHash, user, policy, url, path, value, managementPath, deletionPath, portraitPath, stagePath, copyPath, draftPath } = rt;
     if (managementPath) { return this.#postManagement(rt); }
     if (deletionPath) { return this.#postDeletion(rt); }
+    if (portraitPath && !portraitPath[2]) { return this.#postPortraitUpload(rt); }
+    if (portraitPath?.[2]) { return this.#postPortraitDelete(rt); }
     if (stagePath) {
       if (url.search) { fail(422, 'STAGE_QUERY'); }
       const result = await this.stageApi.write(tokenHash, stagePath, value, request.headers.get('Idempotency-Key'), request.headers.get('If-Match')); this.stageApi.assertCurrent(tokenHash, stagePath, result); return response(result, stagePath.id ? 200 : 202);
@@ -709,6 +769,7 @@ export class EditorMetadata extends DurableObject {
     const managementQuery = /^\/api\/admin\/games\/([a-f0-9-]{36}|wolong-builtin)\/management-operations\/([A-Za-z0-9_-]{16,128})$/.exec(path);
     const managementPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/(listing|restriction\/clear)$/.exec(path);
     const deletionPath = /^\/api\/games\/([a-f0-9-]{36})\/deletion(-operations\/([A-Za-z0-9_-]{16,128}))?$/.exec(path);
+    const portraitPath = /^\/api\/games\/([a-f0-9-]{36})\/portraits(?:\/([A-Za-z]{1,32}))?$/.exec(path);
     const copyPath = /^\/api\/admin\/copies\/([A-Za-z0-9_-]{16,128})(?:\/(run|cancel))?$/.exec(path);
     const stageAssetsPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/stage-assets$/.exec(path);
     const libraryPath = this.libraryAssets?.match(path);
@@ -718,9 +779,9 @@ export class EditorMetadata extends DurableObject {
     const trialAssetPath = /^\/api\/trials\/([a-f0-9-]{36})\/assets\/([A-Za-z]{1,32})$/.exec(path);
     const trialPortraitPath = /^\/api\/trials\/([a-f0-9-]{36})\/portraits$/.exec(path);
     const draftPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/draft(?:\/(save|operations\/([A-Za-z0-9_-]{16,128})))?$/.exec(path);
-    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, copyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath };
+    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, portraitPath, copyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath };
     if (method === 'GET') {
-      const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getDeletion(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
+      const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getDeletion(rt)) ?? (await this.#getPortraits(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
       if (hit) { return hit; }
       fail(404, 'NOT_FOUND');
     }

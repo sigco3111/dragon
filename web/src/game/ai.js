@@ -33,6 +33,22 @@ import {
   restoreRoadMarchContext,
   serializeRoadMarchContext,
 } from "./roadgraph.js";
+/** 出征/编成节点解析：剧本 world 路图优先（见 commands.js dispatchSourceRoadNode）；
+ * 试玩壳自建 world，从不加载默认门面实例，用门面恒得 null。 */
+function scenarioRoadNodeId(sc, x, y) {
+  const context = scenarioNativeRoadContext(sc);
+  const node = context ? context.roads.roadNodeAt(x, y) : roadNodeAt(x, y);
+  return node?.id ?? null;
+}
+function scenarioRoadNodeById(sc, id) {
+  const context = scenarioNativeRoadContext(sc);
+  return context ? context.roads.roadNodeById(id) : roadNodeById(id);
+}
+function scenarioRoadRawAddress(sc, nodeId) {
+  const context = scenarioNativeRoadContext(sc);
+  const raw = context ? context.roads.roadNodeRawAddress(nodeId) : roadNodeRawAddress(nodeId);
+  return raw ?? (Number.isInteger(nodeId) ? nodeId * 8 : null);
+}
 import { clickSfx, doubleClickSfx, warnSfx } from "../core/speaker.js";
 import {
   hasNativeLegionSlots,
@@ -247,7 +263,7 @@ export function buildArmies(sc) {
         L._path = savedMarch.points.slice(savedMarch.pointIndex);
       } else {
         // 道路图仍在异步加载时也能按E717固定node*8布局保住驻点+0x0E。
-        markLegionAtRoadNode(L, savedCurrentNode);
+        markLegionAtRoadNode(sc, L, savedCurrentNode);
       }
     }
     for (const L of sc.legions) {
@@ -274,7 +290,7 @@ export function buildArmies(sc) {
       // An explicit 0E survives reconstruction, including node zero. A
       // coordinate-derived cache must not overwrite a saved edge or node.
       if (L.roadEdgeOrNode == null)
-        markLegionAtRoadNode(L, roadNodeAt(L.x, L.y)?.id);
+        markLegionAtRoadNode(sc, L, scenarioRoadNodeId(sc, L.x, L.y));
       L.prevX = L.x;
       L.prevY = L.y;
       L._markerFrame ??= 4;
@@ -486,7 +502,7 @@ export function settleArrivedLegionCommand(sc, legion, rng = null) {
         if (nextCity && nextCity.idx !== targetCity?.idx) {
           legion.target = nextCity;
           legion.targetCity = nextCity.idx;
-          legion.targetNode = roadNodeAt(nextCity.x, nextCity.y)?.id ?? null;
+          legion.targetNode = scenarioRoadNodeId(sc, nextCity.x, nextCity.y);
           legion.status = (legion.status ?? 0x80) | 2;
         }
         legion.commandState = 0;
@@ -525,7 +541,7 @@ export function settleArrivedLegionCommand(sc, legion, rng = null) {
       if (legionTargetCity(sc, legion)?.idx !== capital.idx) {
         legion.target = capital;
         legion.targetCity = capital.idx;
-        legion.targetNode = roadNodeAt(capital.x, capital.y)?.id ?? null;
+        legion.targetNode = scenarioRoadNodeId(sc, capital.x, capital.y);
         legion.commandState = 10;
         return true;
       }
@@ -542,7 +558,7 @@ export function settleArrivedLegionCommand(sc, legion, rng = null) {
       if (legionTargetCity(sc, legion)?.idx !== capital.idx) {
         legion.target = capital;
         legion.targetCity = capital.idx;
-        legion.targetNode = roadNodeAt(capital.x, capital.y)?.id ?? null;
+        legion.targetNode = scenarioRoadNodeId(sc, capital.x, capital.y);
         return true;
       }
       if (legionAtTargetNode(sc, legion)) {
@@ -645,7 +661,7 @@ function formAiReinforcements(app, faction, city, requested) {
     // 6EC4 returns success: there is no post-6FD2 zero-total rollback.
     legion.target = city;
     legion.targetCity = city.idx;
-    legion.targetNode = roadNodeAt(city.x, city.y)?.id ?? null;
+    legion.targetNode = scenarioRoadNodeId(sc, city.x, city.y);
     formed++;
   }
   return formed;
@@ -895,7 +911,7 @@ export function tickStrategicCity(app, cityIndex, onRequestComplete = null) {
     if (isLegionDelegated(legion) && (legion.commandState ?? 0) < 8) {
       legion.target = target;
       legion.targetCity = target.idx;
-      legion.targetNode = roadNodeAt(target.x, target.y)?.id ?? null;
+      legion.targetNode = scenarioRoadNodeId(sc, target.x, target.y);
       legion._aiOrdered = true;
       legion.commandState = 0;
     }
@@ -931,9 +947,9 @@ function rawRoadNodeId(rawAddress) {
     : null;
 }
 
-function markLegionAtRoadNode(legion, nodeId) {
+function markLegionAtRoadNode(sc, legion, nodeId) {
   if (!Number.isInteger(nodeId) || nodeId < 0 || nodeId >= 192) return;
-  const rawAddress = roadNodeRawAddress(nodeId) ?? nodeId * 8;
+  const rawAddress = scenarioRoadRawAddress(sc, nodeId) ?? nodeId * 8;
   legion._currentNode = nodeId;
   legion.roadEdgeOrNode = rawAddress;
 }
@@ -1394,7 +1410,7 @@ function siegeApproachCity(sc, A, nav, next) {
   if (!nav || !next || (nav.pointIndex ?? 0) <= 0) return null;
   const tile = terrainTile(next.x, next.y);
   if (tile == null || tile < 0xce || tile > 0xdd) return null;
-  const endpoint = roadNodeById(nav.toNode);
+  const endpoint = scenarioRoadNodeById(sc, nav.toNode);
   return endpoint ? hostileCityAt(sc, A, endpoint.x, endpoint.y) : null;
 }
 
@@ -1402,7 +1418,7 @@ function reverseBlockedFinalEdge(sc, A) {
   const nav = A._march;
   if (!nav || nav.pointIndex > nav.points.length) return false;
   // 0x42AB检查当前active edge的行进端，不是整条命令的最终target。
-  const endpoint = roadNodeById(nav.toNode);
+  const endpoint = scenarioRoadNodeById(sc, nav.toNode);
   const destination = endpoint
     ? sc.cities.find((city) => city.x === endpoint.x && city.y === endpoint.y)
     : null;
@@ -1444,7 +1460,7 @@ function currentEngagement(sc, A, countdown) {
   }
   // 兼容旧Web快照中已经错误消费据点边界tile的状态；规范新状态会在
   // 候选边界格写回前由上方0x2708/0x2880分支建立接触。
-  const endpoint = roadNodeById(nav?.toNode);
+  const endpoint = scenarioRoadNodeById(sc, nav?.toNode);
   const city = endpoint ? hostileCityAt(sc, A, endpoint.x, endpoint.y) : null;
   return city
     ? { kind: ENGAGE_KIND_SIEGE, countdown, target: { cityIdx: city.idx } }

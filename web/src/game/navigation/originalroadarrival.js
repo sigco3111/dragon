@@ -1,6 +1,6 @@
 // KI 28F4, 4300, 4325..4501, 4548 and city prefix 3F06..3F50.
 // Exact wrapped aliases/lazy instruction boundaries: march notes §3.13.
-import { writeNativeDiplomacyAt } from "../nativediplomacy.js";
+import { nativeDiplomacyAt, writeNativeDiplomacyAt } from "../nativediplomacy.js";
 const u16 = (value) => value & 0xffff;
 function stop(label) {
   throw new RangeError(`Web engineering Uncovered ${label}`);
@@ -46,11 +46,13 @@ function cacheAt(sc, context, address, at) {
 function aliasedByte(sc, context, address) {
   address = u16(address);
   if (address >= 0x600 && address < 0x840) {
+    // Native rules read the full fixed 24x24 table (nativediplomacy.js: 原文
+    // "The declared diplomacy array is only a prefix view"); sc.diplomacy
+    // only carries the declared rows, so rows past the faction count (e.g.
+    // third-party reads in 16-faction scenarios) must go through
+    // nativeDiplomacyAt, like originalcity.js 3FF4 and scenariofactiontick.
     const offset = address - 0x600;
-    return byte(
-      sc.diplomacy?.[Math.floor(offset / 24)]?.[offset % 24],
-      `diplomacy ${address} at 43D3`,
-    );
+    return nativeDiplomacyAt(sc, Math.floor(offset / 24), offset % 24, "43D3 diplomacy");
   }
   // 43D3 k=0..47: DI=k*0x20 (28F4: DI=BX*4, BX=idx*8), read [DI+0x18].
   // 偶k → 势力[k/2]+0x18（F18 武将数，live nativeGeneralCount）；

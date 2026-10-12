@@ -46,8 +46,9 @@ export class GameDeletionFence {
     // Publish cascade: a fenced (deleted) game must not stay listed or
     // servable. Mirrors the trial cascade above; tables may not exist on DBs
     // created before the publish registry, hence the sqlite_master guard.
-    const tables = new Set(this.#sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('published_games','published_packs','published_pack_assets','published_pack_chapters')").toArray().map(entry => entry.name));
+    const tables = new Set(this.#sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('published_games','published_packs','published_pack_assets','published_pack_chapters','game_portraits')").toArray().map(entry => entry.name));
     if (tables.has('published_games')) { this.#sql.exec('DELETE FROM published_games WHERE game_id=?', gameId); }
+    if (tables.has('game_portraits')) { this.#sql.exec('DELETE FROM game_portraits WHERE game_id=?', gameId); }
     if (tables.has('published_packs')) { this.#sql.exec('DELETE FROM published_packs WHERE game_id=?', gameId); }
     if (tables.has('published_pack_assets')) { this.#sql.exec('DELETE FROM published_pack_assets WHERE game_id=?', gameId); }
     if (tables.has('published_pack_chapters')) { this.#sql.exec('DELETE FROM published_pack_chapters WHERE game_id=?', gameId); }
