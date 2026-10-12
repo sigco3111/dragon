@@ -21,7 +21,7 @@ export function installDraftEditor({ api, authority, work, isBusy, onContextChan
     q('draft-trial-start').disabled = locked || !loaded?.verifiedRead || Boolean(attempt) || chapters.length === 0;
     { const select = q('draft-trial-chapter'), signature = chapters.map(chapter => chapter.chapterId).join('|'); if (select.dataset.signature !== signature) { select.dataset.signature = signature; select.replaceChildren(); for (const chapter of chapters) { const option = document.createElement('option'); option.value = chapter.chapterId; option.textContent = chapter.name; select.append(option); } } select.disabled = locked || chapters.length === 0; }
     q('draft-operation-retry').disabled = locked || !attempt?.body || !['failed', 'not-found'].includes(attempt.state);
-    q('draft-status').textContent = message; q('draft-context').textContent = loaded ? loaded.gameId + '／已保存修訂 ' + loaded.draftRevision + (dirty() ? '／有未保存修改' : '') : '未載入私有草稿'; onContextChanged();
+    renderChapters(); q('draft-status').textContent = message; q('draft-context').textContent = loaded ? loaded.gameId + '／已保存修訂 ' + loaded.draftRevision + (dirty() ? '／有未保存修改' : '') : '未載入私有草稿'; onContextChanged();
   }
   function canLeave() { return !(dirty() || attempt) || confirm('有未保存資料或未確認的保存操作。確定離開？未確認操作仍須查詢原鍵，不會自動重試。'); }
   function setIdentity(next) {
@@ -50,7 +50,7 @@ export function installDraftEditor({ api, authority, work, isBusy, onContextChan
     if (!uuid(gameId) || !revision(requested)) throw new Error('請選遊戲並輸入明確已保存修訂。');
     const valid = ticket(), response = await api('/api/games/' + gameId + '/draft?revision=' + encodeURIComponent(requested)); if (!valid()) return;
     if (response.gameId !== gameId || response.draftRevision !== requested || response.profileRevision !== 'fixed-copy-resources-1' || !Array.isArray(response.chapters)) throw new Error('草稿回應上下文無效。');
-    const fields = metadata(response.metadata); loaded = { gameId, draftRevision: requested, metadata: fields, verifiedRead: true }; attempt = null; persist(); chapters = response.chapters.map(chapter => { if (typeof chapter.chapterId !== 'string' || !chapter.chapterId) throw new Error('章資料回應無效。'); return { chapterId: chapter.chapterId, name: String(chapter.name || chapter.chapterId) }; }); q('draft-name').value = fields.name; q('draft-introduction').value = fields.introduction; q('draft-resources').replaceChildren();
+    const fields = metadata(response.metadata); loaded = { gameId, draftRevision: requested, metadata: fields, verifiedRead: true }; attempt = null; persist(); chapters = response.chapters.map(chapter => { if (typeof chapter.chapterId !== 'string' || !chapter.chapterId) throw new Error('章資料回應無效。'); if (!chapter.gaps || !Number.isSafeInteger(chapter.gaps.saveGaps) || !Number.isSafeInteger(chapter.gaps.activeGaps)) throw new Error('章資料回應無效。'); return { chapterId: chapter.chapterId, name: String(chapter.name || chapter.chapterId), gaps: chapter.gaps }; }); q('draft-name').value = fields.name; q('draft-introduction').value = fields.introduction; q('draft-resources').replaceChildren();
     for (const chapter of response.chapters) { const group = document.createElement('details'), label = document.createElement('summary'); label.textContent = String(chapter.name || chapter.chapterId); group.append(label); if (!Array.isArray(chapter.factions)) throw new Error('章資料回應無效。'); for (const faction of chapter.factions) { const row = document.createElement('p'); row.textContent = '槽 ' + faction.slot + '：資金 ' + faction.money + '／騎兵 ' + faction.reserve_cav + '／弓兵 ' + faction.reserve_arc + '／步兵 ' + faction.reserve_inf; group.append(row); } q('draft-resources').append(group); }
     message = '已載入明確修訂；只有名稱／簡介可編輯，四資源只讀。';
   }
@@ -95,5 +95,41 @@ export function installDraftEditor({ api, authority, work, isBusy, onContextChan
   q('draft-game').onchange = () => { const selected = loaded?.gameId ?? attempt?.gameId; if (isBusy() || attempt || !canLeave()) { if (selected) q('draft-game').value = selected; return; } loaded = null; chapters = []; q('draft-name').value = ''; q('draft-introduction').value = ''; q('draft-resources').replaceChildren(); q('draft-revision').value = games.find(game => game.gameId === q('draft-game').value)?.draftRevision ?? ''; generation++; render(); };
   for (const id of ['draft-name', 'draft-introduction']) q(id).oninput = render;
   window.addEventListener('beforeunload', event => { if (dirty() || attempt) { event.preventDefault(); event.returnValue = ''; } });
-  render(); return { setIdentity, render, canLeave, savedContext() { return loaded?.verifiedRead && !attempt ? { gameId: loaded.gameId, draftRevision: loaded.draftRevision, dirty: dirty() } : null; }, passwordChanged(next) { if (next !== authority() || next?.user.id !== owner || !attempt) return; attempt.state = 'revoked'; message = '服務已確認改密並撤銷舊會話。這不代表原保存成功或失敗；確認放棄後載入明確修訂。'; render(); }, clearForLogout() { generation++; loaded = null; attempt = null; chapters = []; q('draft-name').value = ''; q('draft-introduction').value = ''; q('draft-resources').replaceChildren(); render(); } };
+  async function gotoGame(gameId) { if (!games.some(game => game.gameId === gameId)) await refreshGames(); if (!games.some(game => game.gameId === gameId)) throw new Error('草稿清單沒有此遊戲。'); q('draft-game').value = gameId; q('draft-game').dispatchEvent(new Event('change')); }
+  // §4.5 chapter ops: each op is its own save (same attempt discipline).
+  async function submitChapters(edits) {
+    if (!loaded?.verifiedRead || !permitted()) throw new Error('請先載入自己的精確草稿。');
+    if (attempt) throw new Error('先查詢原保存，不另起鍵。');
+    attempt = { gameId: loaded.gameId, revision: loaded.draftRevision, key: crypto.randomUUID(), body: { metadata: normalized(), resourceEdits: [], chapterEdits: edits }, state: 'unknown' }; persist();
+    const pending = attempt, valid = ticket(); pending.state = 'unknown'; message = '正在保存章节修改；如失去回應，保留原輸入與操作鍵並查詢。'; render();
+    try { const result = await api('/api/games/' + pending.gameId + '/draft/save', pending.body, { key: pending.key, revision: pending.revision }); if (valid() && attempt === pending) accept(result); }
+    catch (error) { if (attempt === pending) { message = '保存未確認：' + error.message + ' 原輸入保留，請查詢原操作；不自動重試。'; } throw error; }
+  }
+  async function chapterAction(edit) { await submitChapters([edit]); await load(); await refreshGames(); }
+  function renderChapters() {
+    q('draft-chapters').replaceChildren();
+    for (const chapter of chapters) {
+      const row = document.createElement('div'), label = document.createElement('p');
+      label.textContent = chapter.name + ' — ' + chapter.chapterId + '／保存缺口 ' + chapter.gaps.saveGaps + '／發布缺口 ' + chapter.gaps.activeGaps;
+      row.append(label);
+      const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '複製本章';
+      copy.disabled = isBusy() || !loaded?.verifiedRead || Boolean(attempt);
+      copy.onclick = () => action(() => chapterAction({ op: 'copy', chapterId: chapter.chapterId }));
+      row.append(copy);
+      const rename = document.createElement('button'); rename.type = 'button'; rename.textContent = '改名';
+      rename.disabled = isBusy() || !loaded?.verifiedRead || Boolean(attempt);
+      rename.onclick = () => action(async () => { const name = prompt('章節新名稱', chapter.name); if (name === null) return; await chapterAction({ op: 'rename', chapterId: chapter.chapterId, name }); });
+      row.append(rename);
+      const del = document.createElement('button'); del.type = 'button'; del.textContent = '刪除本章';
+      del.disabled = isBusy() || !loaded?.verifiedRead || Boolean(attempt);
+      del.onclick = () => action(async () => { if (!confirm('刪除章節「' + chapter.name + '」？僅影響草稿，不改變已發布版本；草稿可暫無章節，但屆時禁止發布。')) return; await chapterAction({ op: 'delete', chapterId: chapter.chapterId }); });
+      row.append(del);
+      q('draft-chapters').append(row);
+    }
+    const add = document.createElement('button'); add.type = 'button'; add.textContent = '新增空白章節';
+    add.disabled = isBusy() || !loaded?.verifiedRead || Boolean(attempt);
+    add.onclick = () => action(() => chapterAction({ op: 'add-blank' }));
+    q('draft-chapters').append(add);
+  }
+  render(); return { setIdentity, render, canLeave, gotoGame, savedContext() { return loaded?.verifiedRead && !attempt ? { gameId: loaded.gameId, draftRevision: loaded.draftRevision, dirty: dirty() } : null; }, passwordChanged(next) { if (next !== authority() || next?.user.id !== owner || !attempt) return; attempt.state = 'revoked'; message = '服務已確認改密並撤銷舊會話。這不代表原保存成功或失敗；確認放棄後載入明確修訂。'; render(); }, clearForLogout() { generation++; loaded = null; attempt = null; chapters = []; q('draft-name').value = ''; q('draft-introduction').value = ''; q('draft-resources').replaceChildren(); render(); } };
 }

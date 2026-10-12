@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { createHash } from 'node:crypto';
 import { GameMetadataStore } from './metadata.js';
+import { GameDeletionFence } from './deletionfence.js';
 import { GameManagement } from './management.js';
 import { ImmutableBlobStore } from './blobs.js';
 import { InstalledSourceCatalog } from './sourcecatalog.js';
@@ -33,6 +34,9 @@ import stageClient from './public/stage.txt';
 import libraryClient from './public/library.txt';
 import catalogClient from './public/catalog.txt';
 import managementClient from './public/management.txt';
+import strongholdClient from './public/stronghold.txt';
+import generalsClient from './public/general.txt';
+import mapviewClient from './public/mapview.txt';
 import stageAssetsClient from './public/stageassets.txt';
 import style from './public/style.css';
 import trialwebBundle from './public/trialweb.txt';
@@ -71,6 +75,9 @@ function staticAsset(pathname) {
   if (pathname === '/library.js') { return { content: libraryClient, type: 'text/javascript' }; }
   if (pathname === '/catalog.js') { return { content: catalogClient, type: 'text/javascript' }; }
   if (pathname === '/management.js') { return { content: managementClient, type: 'text/javascript' }; }
+  if (pathname === '/stronghold.js') { return { content: strongholdClient, type: 'text/javascript' }; }
+  if (pathname === '/general.js') { return { content: generalsClient, type: 'text/javascript' }; }
+  if (pathname === '/mapview.js') { return { content: mapviewClient, type: 'text/javascript' }; }
   if (pathname === '/stage-assets.js') { return { content: stageAssetsClient, type: 'text/javascript' }; }
   if (pathname === '/style.css') { return { content: style, type: 'text/css' }; }
   return { content: page, type: 'text/html' };
@@ -80,7 +87,9 @@ function response(value, status = 200, token) {
   if (token !== undefined) { h.set('Set-Cookie', `${COOKIE}=${token}; Path=/api; Secure; HttpOnly; SameSite=Strict${token ? '' : '; Max-Age=0'}`); }
   return new Response(JSON.stringify(value), { status, headers: h });
 }
-function dto(user) { return { id: user.id, account: user.account, role: user.role, disabled: Boolean(user.disabled), mustChangePassword: Boolean(user.must_change), version: user.version }; }
+function dto(user) { return { id: user.id, account: user.account, role: user.role, disabled: Boolean(user.disabled), mustChangePassword: Boolean(user.must_change), version: user.version, displayName: user.display_name ?? '', email: user.email ?? '', phone: user.phone ?? '', note: user.note ?? '' }; }
+// §4.6 optional profile fields: interface-length bounds only, content untouched.
+function profileField(value) { if (value === undefined) { return undefined; } if (typeof value !== 'string' || value.length > 128) { fail(422, 'PROFILE_FIELD'); } return value; }
 function cookie(request) {
   const values = (request.headers.get('cookie') ?? '').split(';').map(value => value.trim()).filter(value => value.startsWith(`${COOKIE}=`));
   if (values.length !== 1 || !/^[a-f0-9]{64}$/.test(values[0].slice(COOKIE.length + 1))) { fail(401, 'LOGIN_REQUIRED'); }
@@ -92,7 +101,10 @@ export class EditorMetadata extends DurableObject {
     ctx.storage.transactionSync(() => {
       this.sql.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY CHECK(version=1))');
       this.sql.exec('INSERT OR IGNORE INTO schema_version VALUES(1)');
-      this.sql.exec("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','author')), password_hash TEXT NOT NULL, disabled INTEGER NOT NULL, must_change INTEGER NOT NULL, epoch INTEGER NOT NULL, version INTEGER NOT NULL)");
+      this.sql.exec("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','author')), password_hash TEXT NOT NULL, disabled INTEGER NOT NULL, must_change INTEGER NOT NULL, epoch INTEGER NOT NULL, version INTEGER NOT NULL, display_name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '')");
+      // §4.6 profile columns for databases created before B2.
+      const userColumns = new Set(this.sql.exec('PRAGMA table_info(users)').toArray().map(column => column.name));
+      for (const column of ['display_name', 'email', 'phone', 'note']) { if (!userColumns.has(column)) { this.sql.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`); } }
       this.sql.exec('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), epoch INTEGER NOT NULL, absolute_until INTEGER NOT NULL, idle_until INTEGER NOT NULL)');
       this.sql.exec('CREATE TABLE IF NOT EXISTS login_rates (bucket TEXT PRIMARY KEY, start_at INTEGER NOT NULL, attempts INTEGER NOT NULL)');
       this.sql.exec('CREATE TABLE IF NOT EXISTS operations (actor TEXT NOT NULL, op_key TEXT NOT NULL, request_digest TEXT NOT NULL, sealed_result TEXT NOT NULL, epoch INTEGER NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(actor,op_key))');
@@ -104,6 +116,8 @@ export class EditorMetadata extends DurableObject {
       recoverAllocation: (hash, cap) => { if (!copies) { fail(503, 'COPY_NOT_CONFIGURED');  }return copies.resolveAllocation(hash, cap); } });
     // Reuses permanent content reservation slots; historical 'copy' namespace name is not a copy capability.
     this.management = new GameManagement({ storage: ctx.storage, principal: hash => this.principal(hash), operationGuard: (actor, key) => this.contentKey(actor, key, 'copy') });
+    // §4.1 game-list deletion: fence-only backend (no physical-delete API).
+    this.deletionFence = new GameDeletionFence({ storage: ctx.storage, principal: hash => this.principal(hash), operationGuard: (actor, key) => this.contentKey(actor, key, 'delete'), requestKey: env.EDITOR_REQUEST_KEY });
     // Published-game registry (node publish.json counterpart); pure SQLite, no blob dependency.
     this.publishedGames = new PublishedGames({ storage: ctx.storage, principal: hash => this.principal(hash) });
     this.trialSessions = null;
@@ -163,7 +177,7 @@ export class EditorMetadata extends DurableObject {
   seed(policy) {
     if (this.one("SELECT id FROM users WHERE account='tianyi'")) { return; }
     const id = crypto.randomUUID(), encoded = passwordHash(policy.defaultPassword);
-    this.ctx.storage.transactionSync(() => { if (!this.one("SELECT id FROM users WHERE account='tianyi'")) { this.sql.exec("INSERT INTO users VALUES(?,?,'admin',?,0,1,1,1)", id, 'tianyi', encoded);  }});
+    this.ctx.storage.transactionSync(() => { if (!this.one("SELECT id FROM users WHERE account='tianyi'")) { this.sql.exec("INSERT INTO users VALUES(?,?,'admin',?,0,1,1,1,'','','','')", id, 'tianyi', encoded);  }});
   }
   rate(accountName, source, policy) {
     const now = Date.now(); let denied = false;
@@ -179,7 +193,7 @@ export class EditorMetadata extends DurableObject {
     if (denied) { fail(429, 'LOGIN_RATE_LIMIT'); }
   }
   principal(tokenHash) {
-    const row = this.one('SELECT s.*,u.account,u.role,u.disabled,u.must_change,u.version,u.epoch AS user_epoch,u.password_hash FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token_hash=?', tokenHash);
+    const row = this.one('SELECT s.*,u.account,u.role,u.disabled,u.must_change,u.version,u.epoch AS user_epoch,u.password_hash,u.display_name,u.email,u.phone,u.note FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token_hash=?', tokenHash);
     const now = Date.now();
     if (!row || row.disabled || row.epoch !== row.user_epoch || now >= row.absolute_until || now >= row.idle_until) { fail(401, 'SESSION_INVALID'); }
     return { ...row, id: row.user_id, epoch: row.user_epoch };
@@ -290,7 +304,7 @@ export class EditorMetadata extends DurableObject {
     try { compiled = compileTrialSource(captured.game, bytes => createHash('sha256').update(bytes).digest('hex')); }
     catch { fail(422, 'PUBLISH_NOT_COMPILED'); }
     if (compiled?.sourceDigest !== reference.sourceDigest) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
-    if (!Array.isArray(captured.game.chapterOrder)) { fail(422, 'PUBLISH_NOT_COMPILED'); }
+    if (!Array.isArray(captured.game.chapterOrder) || !captured.game.chapterOrder.length) { fail(422, 'PUBLISH_NOT_COMPILED'); }
     // Pack first (orphan rows stay invisible), pin second (visible ⇒ servable).
     await this.playPacks.buildAndStore(tokenHash, { game: captured.game, reference, compiled });
     return this.publishedGames.publish(tokenHash, { gameId, name, revision: reference.draftRevision, sourceDigest: reference.sourceDigest, chapters: captured.game.chapterOrder });
@@ -486,14 +500,48 @@ export class EditorMetadata extends DurableObject {
     return new Response(served.bytes, { headers: { ...headers, 'Content-Type': served.mime, 'X-Content-SHA256': served.sha256 } });
   }
   async #postManagement(rt) {
-    const { request, tokenHash, user, policy, url, value, managementPath } = rt;
-    if (user.role !== 'admin') { fail(403, 'ADMIN_REQUIRED'); }
+    const { tokenHash, user, policy, url, value, managementPath } = rt;
     if (url.search) { fail(422, 'MANAGEMENT_QUERY'); }
-    fields(value, managementPath[2] === 'listing' ? ['action'] : []);
-    if (managementPath[2] === 'listing' && value.action !== 'unlist') { fail(422, 'MANAGEMENT_ACTION'); }
+    // §4.1 creator listing: list/unlist own games (admin: any), no restriction
+    // change. Admin unlist keeps the existing restrict flow below.
+    if (managementPath[2] === 'listing') {
+      if (!value || (value.action !== 'list' && value.action !== 'unlist')) { fail(422, 'MANAGEMENT_ACTION'); }
+      if (user.role === 'admin' && value.action === 'unlist') { return this.#postAdminUnlist(rt); }
+      fields(value, ['action', 'expectedRowRevision']);
+      this.touch(tokenHash, policy);
+      return response(this.games.setListed(tokenHash, managementPath[1], value.action === 'list', value.expectedRowRevision));
+    }
+    if (user.role !== 'admin') { fail(403, 'ADMIN_REQUIRED'); }
+    fields(value, []);
+    return this.#postAdminUnlist({ ...rt, adminAction: managementPath[2] === 'listing' ? 'unlist' : 'clear-restriction' });
+  }
+  // §4.1/Q20 admin unlist (down + restrict) and clear-restriction (stays down).
+  async #postAdminUnlist(rt) {
+    const { request, tokenHash, user, policy, url, value, managementPath, adminAction } = rt;
+    const action = adminAction ?? 'unlist';
+    if (url.search) { fail(422, 'MANAGEMENT_QUERY'); }
+    fields(value, ['action']);
+    if (value.action !== 'unlist') { fail(422, 'MANAGEMENT_ACTION'); }
     const expected = /^"([1-9][0-9]*)"$/.exec(request.headers.get('If-Match') ?? ''); if (!expected || expected[1].length > 8192) { fail(428, 'IF_MATCH_REQUIRED'); }
     const op = await this.operation(request, [value, expected[1]], user.id, user.epoch, policy);
-    return response(this.management.apply(tokenHash, op, { gameId: managementPath[1], action: managementPath[2] === 'listing' ? 'unlist' : 'clear-restriction', expectedRowRevision: expected[1] }));
+    return response(this.management.apply(tokenHash, op, { gameId: managementPath[1], action, expectedRowRevision: expected[1] }));
+  }
+  // §4.1/Q43 game deletion (fence-only): begin needs name confirmation;
+  // listed games refuse (GAME_LISTED); builtin and others' games refused.
+  async #postDeletion(rt) {
+    const { request, tokenHash, user, policy, url, value, deletionPath } = rt;
+    if (url.search) { fail(422, 'DELETE_QUERY'); }
+    this.touch(tokenHash, policy);
+    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'delete');
+    return response(this.deletionFence.begin(tokenHash, request.headers.get('Idempotency-Key'), { gameId: deletionPath[1], expectedRowRevision: value?.expectedRowRevision, confirmationName: value?.confirmationName }));
+  }
+  // §4.1/Q43 deletion query (GET fence receipt).
+  async #getDeletion(rt) {
+    const { tokenHash, policy, url, deletionPath } = rt;
+    if (!deletionPath?.[2]) { return null; }
+    if (url.search) { fail(422, 'DELETE_QUERY'); }
+    this.touch(tokenHash, policy);
+    return response(this.deletionFence.query(tokenHash, deletionPath[3]));
   }
   async #postDraftSave(rt) {
     const { request, tokenHash, user, policy, value, draftPath } = rt;
@@ -511,8 +559,9 @@ export class EditorMetadata extends DurableObject {
     return response({ ...(await this.availableLibrary.install(tokenHash, staged.registryId, staged.root, request.headers.get('Idempotency-Key'))), mode: 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE', unresolvedReferences: 20 });
   }
   async #postEntryRoutes(rt) {
-    const { request, tokenHash, user, policy, url, path, value, managementPath, stagePath, copyPath, draftPath } = rt;
+    const { request, tokenHash, user, policy, url, path, value, managementPath, deletionPath, stagePath, copyPath, draftPath } = rt;
     if (managementPath) { return this.#postManagement(rt); }
+    if (deletionPath) { return this.#postDeletion(rt); }
     if (stagePath) {
       if (url.search) { fail(422, 'STAGE_QUERY'); }
       const result = await this.stageApi.write(tokenHash, stagePath, value, request.headers.get('Idempotency-Key'), request.headers.get('If-Match')); this.stageApi.assertCurrent(tokenHash, stagePath, result); return response(result, stagePath.id ? 200 : 202);
@@ -589,12 +638,27 @@ export class EditorMetadata extends DurableObject {
     const mutation = () => { this.sql.exec('UPDATE users SET password_hash=?,must_change=0,epoch=epoch+1,version=version+1 WHERE id=?', encoded, user.id); this.sql.exec('DELETE FROM sessions WHERE user_id=?', user.id); this.insertSession(s, changed); };
     return { mutation, result: { body: { user: dto(changed), csrf: s.csrf }, token: s.token }, operationEpoch: changed.epoch };
   }
+  // §4.6 self profile: optional fields only; version bumps, sessions survive.
+  #buildProfileMutation(user, value) {
+    if (!value || Array.isArray(value) || typeof value !== 'object' || !Object.keys(value).every(key => ['displayName', 'email', 'phone', 'note'].includes(key))) { fail(422, 'REQUEST_FIELDS'); }
+    const patch = {};
+    for (const [key, column] of [['displayName', 'display_name'], ['email', 'email'], ['phone', 'phone'], ['note', 'note']]) {
+      if (!(key in value)) { continue; }
+      patch[column] = profileField(value[key]);
+    }
+    if (Object.keys(patch).length === 0) { fail(422, 'PROFILE_EMPTY'); }
+    const changed = { ...user, ...patch, version: user.version + 1 };
+    const mutation = () => { const current = this.one('SELECT version FROM users WHERE id=?', user.id); if (current.version !== user.version) { fail(409, 'ACCOUNT_CHANGED'); } this.sql.exec(`UPDATE users SET ${Object.keys(patch).map(column => `${column}=?`).join(',')},version=version+1 WHERE id=?`, ...Object.values(patch), user.id); };
+    return { mutation, result: { body: { user: dto(changed) } } };
+  }
   #buildAccountMutation(user, match, value, policy) {
     fields(value, match[2] === 'disable' ? ['expectedVersion', 'disabled'] : ['expectedVersion']);
     if (!Number.isSafeInteger(value.expectedVersion) || value.expectedVersion < 1) { fail(422, 'ACCOUNT_VERSION'); }
     if (match[2] === 'disable' && typeof value.disabled !== 'boolean') { fail(422, 'DISABLED_BOOLEAN'); }
     const target = this.one('SELECT * FROM users WHERE id=?', match[1]); if (!target) { fail(404, 'ACCOUNT_NOT_FOUND'); }
     if (target.account === 'tianyi') { fail(403, 'ADMIN_PROTECTED'); } if (target.version !== value.expectedVersion) { fail(409, 'ACCOUNT_CHANGED'); }
+    // §4.6: the last enabled admin cannot be disabled.
+    if (match[2] === 'disable' && value.disabled && target.role === 'admin' && !target.disabled && this.one("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND disabled=0").n < 2) { fail(403, 'ADMIN_LAST'); }
     const encoded = match[2] === 'reset' ? passwordHash(policy.defaultPassword) : target.password_hash;
     const changed = { ...target, disabled: match[2] === 'disable' ? Number(value.disabled) : target.disabled, must_change: match[2] === 'reset' ? 1 : target.must_change, epoch: target.epoch + 1, version: target.version + 1 };
     const mutation = () => { const current = this.one('SELECT version FROM users WHERE id=?', target.id); if (current.version !== value.expectedVersion) { fail(409, 'ACCOUNT_CHANGED'); } this.sql.exec('UPDATE users SET password_hash=?,disabled=?,must_change=?,epoch=?,version=? WHERE id=?', encoded, changed.disabled, changed.must_change, changed.epoch, changed.version, changed.id); this.sql.exec('DELETE FROM sessions WHERE user_id=?', target.id); };
@@ -611,10 +675,13 @@ export class EditorMetadata extends DurableObject {
     } else if (path === '/api/auth/password') {
       const built = await this.#buildPasswordMutation(user, value, policy);
       mutation = built.mutation; result = built.result; operationEpoch = built.operationEpoch;
+    } else if (path === '/api/auth/profile') {
+      const built = this.#buildProfileMutation(user, value);
+      mutation = built.mutation; result = built.result;
     } else if (path === '/api/admin/accounts') {
       if (user.role !== 'admin') { fail(403, 'ADMIN_REQUIRED'); } fields(value, ['account']); const name = account(value.account);
       const created = { id: crypto.randomUUID(), account: name, role: 'author', disabled: 0, must_change: 1, epoch: 1, version: 1 }, encoded = passwordHash(policy.defaultPassword);
-      mutation = () => { if (this.one('SELECT id FROM users WHERE account=?', name)) { fail(409, 'ACCOUNT_EXISTS'); } this.sql.exec("INSERT INTO users VALUES(?,?,'author',?,0,1,1,1)", created.id, name, encoded); };
+      mutation = () => { if (this.one('SELECT id FROM users WHERE account=?', name)) { fail(409, 'ACCOUNT_EXISTS'); } this.sql.exec("INSERT INTO users VALUES(?,?,'author',?,0,1,1,1,'','','','')", created.id, name, encoded); };
       result = { body: { account: dto(created) } };
     } else {
       const match = /^\/api\/admin\/accounts\/([a-f0-9-]{36})\/(disable|reset)$/.exec(path);
@@ -641,6 +708,7 @@ export class EditorMetadata extends DurableObject {
     this.#assertPasswordCurrent(user, path);
     const managementQuery = /^\/api\/admin\/games\/([a-f0-9-]{36}|wolong-builtin)\/management-operations\/([A-Za-z0-9_-]{16,128})$/.exec(path);
     const managementPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/(listing|restriction\/clear)$/.exec(path);
+    const deletionPath = /^\/api\/games\/([a-f0-9-]{36})\/deletion(-operations\/([A-Za-z0-9_-]{16,128}))?$/.exec(path);
     const copyPath = /^\/api\/admin\/copies\/([A-Za-z0-9_-]{16,128})(?:\/(run|cancel))?$/.exec(path);
     const stageAssetsPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/stage-assets$/.exec(path);
     const libraryPath = this.libraryAssets?.match(path);
@@ -650,9 +718,9 @@ export class EditorMetadata extends DurableObject {
     const trialAssetPath = /^\/api\/trials\/([a-f0-9-]{36})\/assets\/([A-Za-z]{1,32})$/.exec(path);
     const trialPortraitPath = /^\/api\/trials\/([a-f0-9-]{36})\/portraits$/.exec(path);
     const draftPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/draft(?:\/(save|operations\/([A-Za-z0-9_-]{16,128})))?$/.exec(path);
-    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, copyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath };
+    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, copyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath };
     if (method === 'GET') {
-      const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
+      const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getDeletion(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
       if (hit) { return hit; }
       fail(404, 'NOT_FOUND');
     }
@@ -736,7 +804,7 @@ export default {
       // Anonymous play shell (?game= preselect read by the shell itself).
       return new Response(playAppPage, { headers: { ...trialHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
     }
-    if (request.method === 'GET' && ['/', '/client.js', '/draft.js', '/stage.js', '/library.js', '/catalog.js', '/management.js', '/stage-assets.js', '/style.css'].includes(url.pathname)) {
+    if (request.method === 'GET' && ['/', '/client.js', '/draft.js', '/stage.js', '/library.js', '/catalog.js', '/management.js', '/stronghold.js', '/general.js', '/mapview.js', '/stage-assets.js', '/style.css'].includes(url.pathname)) {
       const asset = staticAsset(url.pathname);
       return new Response(asset.content, { headers: { ...headers, 'Content-Type': `${asset.type}; charset=utf-8` } });
     }

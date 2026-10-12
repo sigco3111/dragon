@@ -3,6 +3,9 @@ import { installStageJobs } from '/stage.js';
 import { installLibraryBrowser } from '/library.js';
 import { installLibraryRegistration } from '/catalog.js';
 import { installGameManagement } from '/management.js';
+import { installStronghold } from '/stronghold.js';
+import { installGenerals } from '/general.js';
+import { installMapViewer } from '/mapview.js';
 import { installStageAssetBrowser } from '/stage-assets.js';
 let current = null, busy = false, source = null, copyOperation = null, copySummary = null;
 const q = id => document.querySelector('#' + id), status = text => { q('status').textContent = text; };
@@ -31,33 +34,43 @@ async function api(path, value, options = {}) {
   if (!response.ok) { if (response.status === 401) { current = null; render(); } const error = new Error(errors[data.error] ?? '操作被拒絕：' + data.error); error.status = response.status; error.code = data.error; throw error; }
   return data;
 }
-function render() { q('login').hidden = Boolean(current); q('session').hidden = !current; q('admin').hidden = !current || current.user.role !== 'admin' || current.user.mustChangePassword; q('identity').textContent = current ? current.user.account + (current.user.mustChangePassword ? ' — 請先變更密碼' : '') : ''; draftUI.setIdentity(current); stageUI?.setIdentity(current); libraryUI?.setIdentity(current); catalogUI?.setIdentity(current); managementUI?.setIdentity(current); stageAssetUI?.setIdentity(current); }
+const views = [['draft-editor', '我的草稿', false], ['stronghold-editor', '據點', false], ['generals-editor', '武將', false], ['mapview-editor', '地圖', false], ['stage-editor', '階段任務', false], ['stage-assets-editor', '階段結構', false], ['library-editor', '素材庫', false], ['copy', '獨立測試遊戲', false], ['admin', '帳戶與管理', true]];
+let view = null;
+function show(next) { view = next; for (const [id] of views) { const el = q(id); if (el) el.hidden = id !== next; } if (!current || current.user.role !== 'admin' || current.user.mustChangePassword) q('admin').hidden = true; for (const button of document.querySelectorAll('#menu button')) button.classList.toggle('on', button.dataset.view === next); }
+function buildMenu() { const nav = q('menu'); nav.replaceChildren(); for (const [id, label, needAdmin] of views) { if (needAdmin && (current.user.role !== 'admin' || current.user.mustChangePassword)) continue; const button = document.createElement('button'); button.type = 'button'; button.dataset.view = id; button.textContent = label; button.onclick = () => show(id); nav.append(button); } show(views[0][0]); }
+function render() { q('login').hidden = Boolean(current); q('menu').hidden = !current; q('session').hidden = !current; if (current) { buildMenu(); fillProfile(); } else view = null; q('identity').textContent = current ? current.user.account + (current.user.mustChangePassword ? ' — 請先變更密碼' : '') : ''; draftUI.setIdentity(current); stageUI?.setIdentity(current); libraryUI?.setIdentity(current); catalogUI?.setIdentity(current); managementUI?.setIdentity(current); stageAssetUI?.setIdentity(current); strongholdUI?.setIdentity(current); generalsUI?.setIdentity(current); mapviewUI?.setIdentity(current); }
 async function run(action) {
   if (busy) return; busy = true; const controls = [...document.querySelectorAll('button,input,select,textarea')]; controls.forEach(node => { node.disabled = true; });
-  try { await action(); status('操作完成。'); } catch (error) { status(error.message); } finally { busy = false; controls.forEach(node => { node.disabled = false; }); draftUI.render(); catalogUI?.render(); managementUI?.render(); stageAssetUI?.render(); }
+  try { await action(); status('操作完成。'); } catch (error) { status(error.message); } finally { busy = false; controls.forEach(node => { node.disabled = false; }); draftUI.render(); catalogUI?.render(); managementUI?.render(); stageAssetUI?.render(); strongholdUI?.render(); generalsUI?.render(); mapviewUI?.render(); }
 }
 async function list() {
   const data = await api('/api/admin/accounts'); q('accounts').replaceChildren();
   for (const user of data.accounts) {
-    const row = document.createElement('div'), label = document.createElement('span'); label.textContent = user.account + ' — ' + (user.disabled ? '停用' : '啟用') + (user.mustChangePassword ? '／須改密碼' : ''); row.append(label);
+    const row = document.createElement('div'), label = document.createElement('span'); label.textContent = user.account + ' — ' + (user.disabled ? '停用' : '啟用') + (user.mustChangePassword ? '／須改密碼' : '') + [user.displayName, user.email, user.phone, user.note].filter(part => part).map(part => '／' + part).join(''); row.append(label);
     if (user.role !== 'admin') for (const kind of ['disable', 'reset']) {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = kind === 'reset' ? '重設密碼' : user.disabled ? '恢復' : '停用';
       button.onclick = () => run(async () => { if (!confirm(button.textContent + '帳戶 ' + user.account + '？此操作會撤銷它的既有會話。')) return; const value = { expectedVersion: user.version }; if (kind === 'disable') value.disabled = !user.disabled; await api('/api/admin/accounts/' + encodeURIComponent(user.id) + '/' + kind, value); await list(); }); row.append(button);
     } q('accounts').append(row);
   }
 }
-let stageUI, libraryUI, catalogUI, managementUI, stageAssetUI;
+let stageUI, libraryUI, catalogUI, managementUI, stageAssetUI, strongholdUI, generalsUI, mapviewUI;
 const draftUI = installDraftEditor({ api, authority: () => current, work: run, isBusy: () => busy, onContextChanged: () => { stageUI?.render(); libraryUI?.render(); stageAssetUI?.render(); } });
 stageUI = installStageJobs({ api, authority: () => current, work: run, isBusy: () => busy, savedContext: () => draftUI.savedContext() });
 libraryUI = installLibraryBrowser({ api, authority: () => current, work: run, isBusy: () => busy, savedContext: () => draftUI.savedContext() });
 catalogUI = installLibraryRegistration({ api, authority: () => current, work: run, isBusy: () => busy });
 managementUI = installGameManagement({ api, authority: () => current, work: run, isBusy: () => busy });
+strongholdUI = installStronghold({ api, authority: () => current, work: run, isBusy: () => busy });
+generalsUI = installGenerals({ api, authority: () => current, work: run, isBusy: () => busy });
+mapviewUI = installMapViewer({ api, authority: () => current, work: run, isBusy: () => busy });
 stageAssetUI = installStageAssetBrowser({ api, authority: () => current, work: run, isBusy: () => busy, requestContext: () => stageUI.assetContext() });
 const canLeave = () => draftUI.canLeave() && stageUI.canLeave() && catalogUI.canLeave() && managementUI.canLeave();
+window.addEventListener('beforeunload', event => { if (current && !canLeave()) event.preventDefault(); });
 q('login').onsubmit = event => { event.preventDefault(); const data = new FormData(event.currentTarget); run(async () => { if (!canLeave()) return; current = await api('/api/auth/login', { account: String(data.get('account')), password: String(data.get('password')) }); q('login').reset(); render(); if (!current.user.mustChangePassword && current.user.role === 'admin') await list(); }); };
 q('password').onsubmit = event => { event.preventDefault(); const data = new FormData(event.currentTarget); run(async () => { if (!canLeave()) return; if (data.get('newPassword') !== data.get('confirmPassword')) throw new Error('兩次新密碼不相同。'); current = await api('/api/auth/password', { oldPassword: String(data.get('oldPassword')), newPassword: String(data.get('newPassword')) }); draftUI.passwordChanged(current); stageUI.passwordChanged(current); q('password').reset(); render(); if (current.user.role === 'admin') await list(); }); };
 q('create').onsubmit = event => { event.preventDefault(); const data = new FormData(event.currentTarget); run(async () => { await api('/api/admin/accounts', { account: String(data.get('account')) }); q('create').reset(); await list(); }); };
 q('logout').onclick = () => run(async () => { if (!canLeave()) return; await api('/api/auth/logout', {}); draftUI.clearForLogout(); current = null; render(); }); q('refresh').onclick = () => run(list);
+function fillProfile() { const form = q('profile'); if (!current) return; for (const key of ['displayName', 'email', 'phone', 'note']) { const input = form.elements.namedItem(key); if (input && document.activeElement !== input) input.value = current.user[key] ?? ''; } }
+q('profile').onsubmit = event => { event.preventDefault(); const data = new FormData(event.currentTarget); run(async () => { const value = {}; for (const key of ['displayName', 'email', 'phone', 'note']) value[key] = String(data.get(key) ?? ''); const result = await api('/api/auth/profile', value); current.user = result.user; fillProfile(); q('profile-status').textContent = '已保存。'; }); };
 try { current = await api('/api/session'); render(); if (current.user.role === 'admin' && !current.user.mustChangePassword) await list(); } catch (error) { render(); status(error.message); }
 
 function savedOperation() {
@@ -72,9 +85,39 @@ function showCopy(data) {
   copySummary = data;
   q('copy-state').textContent = data ? '目標 ' + data.gameId + ' — ' + (data.state ?? 'committed') + (data.draftRevision ? '／已保存修訂 ' + data.draftRevision : '／狀態修訂 ' + data.rowRevision) : '尚未預約完整副本。';
 }
+// §4.1 game list: name/intro/creator/dates/status + list/unlist + trial jump + delete.
 async function ownGames() {
   const data = await api('/api/games'); q('own-games').replaceChildren();
-  for (const game of data.games) { const row = document.createElement('p'); row.textContent = game.metadata.name + ' — ' + game.gameId + '／草稿 ' + game.draftRevision; q('own-games').append(row); }
+  for (const game of data.games) {
+    const row = document.createElement('div'), label = document.createElement('p');
+    const state = game.listed ? '已上架' : '下架' + (game.restricted ? '（管理限制，須管理員解除）' : '');
+    label.textContent = game.metadata.name + ' — ' + (game.metadata.introduction || '無簡介') + '／創建 ' + game.createdAt + '／修改 ' + game.modifiedAt + '／草稿 ' + game.draftRevision + '／' + state;
+    row.append(label);
+    const listing = document.createElement('button'); listing.type = 'button';
+    listing.textContent = game.listed ? '下架' : '上架';
+    listing.disabled = isBusy() || (!game.listed && game.restricted);
+    listing.title = !game.listed && game.restricted ? '管理限制中，須管理員解除後才能上架' : '';
+    listing.onclick = () => run(async () => {
+      await api('/api/games/' + encodeURIComponent(game.gameId) + '/listing', { action: game.listed ? 'unlist' : 'list', expectedRowRevision: game.rowRevision });
+      await ownGames();
+    });
+    row.append(listing);
+    const trial = document.createElement('button'); trial.type = 'button'; trial.textContent = '測試運行';
+    trial.onclick = () => run(async () => { show('draft-editor'); await draftUI.gotoGame(game.gameId); });
+    row.append(trial);
+    const del = document.createElement('button'); del.type = 'button'; del.textContent = '刪除';
+    del.disabled = isBusy() || game.listed;
+    del.title = game.listed ? '已上架遊戲須先下架再刪除' : '刪除為圍欄（不可逆的操作關聯），專屬草稿與發布一併清理，他人存檔不受影響';
+    del.onclick = () => run(async () => {
+      const name = prompt('刪除確認：請輸入遊戲名稱「' + game.metadata.name + '」以確認刪除此未上架遊戲。');
+      if (name === null) return;
+      const key = crypto.randomUUID();
+      await api('/api/games/' + encodeURIComponent(game.gameId) + '/deletion', { gameId: game.gameId, expectedRowRevision: game.rowRevision, confirmationName: name }, { key });
+      await ownGames();
+    });
+    row.append(del);
+    q('own-games').append(row);
+  }
 }
 async function queryCopy() {
   copyOperation = savedOperation();

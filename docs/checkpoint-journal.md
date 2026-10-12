@@ -93,3 +93,86 @@
 ## 本轮会话记录（2026-10-11，workerd 对等任务 6 封存）
 
 - 独立链 `.dragon-analysis/editor-phase/workerd-parity-r1/`（derive→guards→run→audit→postdoc）已封存：derive 冻结 7 authored＋2 generated 文件哈希＋机制/顺序断言；guards（node 版本/批次完整/SAVE.DAT 未碰/仅批次脏）过；run 三收据（自检 OK、矩阵 20、浏览器 7）；audit（收据＋批次不可变）过；post-document sealed。LSP 七文件 clean，diff --check 过。改动未提交（commit/push 待授权）。
+
+## 本轮会话记录（2026-10-12，编辑器单系统壳 B1）
+
+- 排期 `docs/editor-shell-plan.md`（B1 壳→B2 用户管理→B3 游戏列表→B4 模块补齐；node 多页面定位本地工具保留）。
+- B1 落码：`server/public/index.html` 加 `#shell>#menu+#main` 左菜单右主窗（登录后显）；`client.txt` 菜单构建/视图切换（6 视图，帳戶與管理仅 admin 且须已改密）＋render 接线＋`beforeunload` 脏离开提示（§4.7）；`style.css` 菜单布局。
+- 验证：`tools/verify_editor_shell.mjs` 34 项绿（含 q() 跨文件 id 闭合）；miniflare 浏览器 live 8 项绿（匿名只见登录、改密后 6 菜单、默认草稿、切换阶段）；node 自检绿。独立链 `editor-shell-b1` sealed。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器单系统壳 B2 用户管理 §4.6）
+
+- 落码：users 表加 display_name/email/phone/note（含老库 ALTER 迁移）；seed/create INSERT 补空值；dto＋principal 透出资料；`POST /api/auth/profile`（自助，仅可选字段，version 递增、会话不死；must_change 期间照常被 403）；disable 加 ADMIN_LAST（最后启用 admin 不可禁）；client/index 加個人資料表单＋列表展示。
+- 验证：`verify_editor_shell.mjs` 40 项绿；miniflare live 10 项绿（改资料→会话存活→持久→空体 422→禁 tianyi 403→建/禁作者）；node 自检绿。独立链 `editor-shell-b2` sealed。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B3 游戏列表§4.1）
+
+- 后端：`metadata.js` 加 `setListed`（owner-or-admin；restricted 挡住全体上架，admin 走 unlist 原 restrict 流；builtin 403；条件 UPDATE 防并发）；worker 接 `GameDeletionFence`（`POST /api/games/:id/deletion` begin＋`GET deletion-operations/:key` query，fence-only）；`#postManagement` 拆 creator list/unlist 分支＋`#postAdminUnlist`（unlist/clear-restriction）。
+- 前端：own-games 行升级（名/简介/创建/修改/状态＋上架/下架/测试运行/删除＋规则提示）；draft 加 `gotoGame`（测试运行跳转载入）；management 行补简介/日期；copy 节规则提示。
+- 验证：静态 47（＋7 B3）＋miniflare live 7（login→rotate→listing 缺省 404→坏 action 422→deletion 缺省 404→坏体 422→query 缺省 404）＋自检绿；LSP clean（txt 无 server 既往如此；修 worker 未用 request hint）。
+- 缺口（另 lane）：有游戏状态流转全链需 installed-source bootstrap。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B3 封存）
+
+- 独立链 `.dragon-analysis/editor-phase/editor-shell-b3/`（derive→guards→run→audit→postdoc）已封存：run 双收据（矩阵 47、自检 OK），audit（收据＋批次不可变）过。附带修：`#postEntryRoutes` 漏解构 `deletionPath` 致全 POST 500（live 发现，已补）；worker 未用 request hint 已删。B1/B2 仍未提交（style.css 等为其遗留，guards 放行注明）。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B4a 章节§4.5）
+
+- 后端：gamesource 加章节 CRUD（addBlank/copy/delete/rename＋gap 计数；改名只拒空与控制字符）；draft save 接 `chapterEdits`（≤16，严格字段，DRAFT_CHAPTER_EDITS/EDIT 422）；read 回执带 gaps；publish 无章节 422（PUBLISH_NOT_COMPILED，原链可发布空章可玩性断层）。
+- 前端：draft 节章节管理区（缺口显示＋新增/复制/改名/删除＋删章确认文案）；save 后重载新修订。
+- 验证：静态 51（＋4 B4a）＋函数单测 10（空章 0 保存缺口/2 发布缺口，符合设计）＋miniflare live 8＋自检绿；LSP 唯一告警为既有 `#profile` 布尔参。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B4a 封存）
+
+- 独立链 `.dragon-analysis/editor-phase/editor-shell-b4a/` sealed：run 双收据（矩阵 51、自检 OK），audit（收据＋批次不可变）过。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B4b 据点§4.2）
+
+- gamesource 加 `cityReferences`（放置／道路／章节引用派生）＋`checkCityDeletable`（检查单，无 mutation；192 锁定实锤，CITY_COUNT_LOCKED 常驻 blocker）。
+- 新據點节 `stronghold.txt`（游戏选择＋据点表＋刪除檢查＋规则提示）＋client/index/worker 接线（`/stronghold.js`）。
+- 验证：静态 53（＋2 B4b）＋函数单测 6＋live 1（/stronghold.js 200 且含 installStronghold）＋自检绿；LSP clean。缺口：改图／图片清单＋有游戏全链（bootstrap lane）。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B4c1 武将人物基础§4.3）
+
+- gamesource 加 `renameGeneral`（章内名／字；名非空＋控制字符拒，不发明长度规则）＋`checkGeneralDeletable`（128 锁定检查单）；draft save 新 op `rename-general`／`portrait`（后者复用既有 setGeneralPortrait 纯函数，kao 回退不动）。
+- 新武將节 `general.txt`（章武将表＋改名／字＋頭像綁定／清除＋刪除檢查；单键保存＋修订核对，未确认不重試）＋client/index/worker 接线（`/general.js`）。
+- 验证：静态 55（＋2 B4c1）＋函数单测 10（rename 6＋portrait 4）＋live 1（/general.js）＋自检绿；LSP 仅预存 drafts.js flag-argument 警告（非本批）。缺口：头像上传管线＋势力配置 B4c2＋有游戏全链。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B4c2 势力§4.3）
+
+- gamesource 加君主／军师／解散四函数（章内势力实体 Q13：换君主留势力；新君主须自由＋无任职；一势力一名军师，替换回 replaced；免君主须继任或解散；解散成员转自由＋据点转中立＋删记录仅本章，join_faction 历史不动）。
+- drafts.js 加 `set-monarch`／`set-strategist`／`remove-monarch`／`disband-faction` 四 op（严格字段）；武將节加势力面板（立君主／设军师／免君主／解散＋替换／解散双确认）。
+- 验证：静态 57（＋2 B4c2）＋函数单测 8＋自检绿；LSP 仅预存 drafts.js flag-argument 警告（非本批）。缺口：头像上传管线＋有游戏全链。改动未提交。
+
+## 本轮会话记录（2026-10-12，编辑器壳 B4d1 地图示意§4.4）
+
+- 新地圖节 `mapview.txt`（唯讀：游戏选择＋canvas 放置点／道路折线＋道路表；无编辑，放置 192 锁定＋拓扑钉死＋图块语义未审计）＋client/index/worker 接线（`/mapview.js`）。
+- 验证：静态 58（＋1 B4d1）＋live 1（/mapview.js）＋自检绿；LSP clean。缺口：全部结构编辑另行排期。改动未提交。
+
+## 本轮会话记录（2026-10-12，BOOT-1 lane：真机全链＋收据扩展）
+
+- 真机发现 publish 500：`SQLITE_TOOBIG`——2.36MB 整包 chaptersJson 超 workerd SQLite 单值上限（真机实锤，非逻辑错）。修：`published_pack_chapters` 逐章分行（~122KB/行）＋重组校验（缺章／多章→PLAY_PACK_CORRUPT）；fence 级联＋retire 同删。
+- 真机发现 draft read 只回摘要：general/stronghold/mapview 三 UI 读 `state` 扑空。修：收据扩展（章 generals 名册＋factions 君主／军师／首都＋cities 名册＋strongholds 权威引用＋map 道路几何），三 UI 改用收据形状。
+- 链：install→reserve→copy-run→game→read→save→publish→pack→asset 全通；transitions（list/unlist/rename/disband）验证中。miniflare 程序化要点：r2Persist/durableObjectsPersist（无顶层 persist）、幂等键每轮随机、限流 10 分钟窗。
+
+## 本轮会话记录（2026-10-12，BOOT-1 lane 真机 bug 收获）
+
+- 真 bug 其一：`fields(edit, ['op'])` 预检与分支检查矛盾，所有带参 chapterEdits（B4a 的 copy/delete/rename 亦从未走通过 save）永拒 422。修：预检改为对象检查，分支各自 fields＋末 else。
+- 真 bug 其二（B3 遗留）：admin unlist If-Match 正则 `$` 写进引号内，永假；且共享 fields 门先于 admin 分支（REQUEST_FIELDS）。修：正移到引号外＋门顺序（先 action→admin→creator fields，null 加守）。
+- 收获：save 无变更幂等不推进修订（正确行为，脚本已重排先改后发）。
+
+## 本轮会话记录（2026-10-12，BOOT-1 lane 封存：真机全链打通）
+
+- 真机全链（miniflare＋persist＋staging）：install→reserve→copy→read→rename→read→disband→read→publish→listed→pack→asset→list→unlist→unpublish→pack-gone 全绿（e2e part1 13 项＋part2 10 项，同一 lane DB）。
+- 修 profile 章节编辑死锁：`revertAppliedChapterEdits`（op 精确 revert＋compare 兜底；篡改／越权／错序 fail closed，node 单测覆盖 rename/disband/monarch+portrait/delete+add+copy＋三拒收）＋`#editHistory`（revision 链回放，save/read/compile 三处）。
+- 修 draft read 收据扩展（章名册＋strongholds＋map 道路几何），三 UI 改用收据形状（此前读 state 扑空）。
+- 修 per-chapter pack rows（2.36MB 整包 SQLITE_TOOBIG）＋fence/retire 级联。
+- 修 listing 门顺序＋admin unlist If-Match 正则 `$` 错位（B3 遗留，永假）＋chapterEdits `fields(edit,['op'])` 预检杀死全部带参 op（B4a 遗留）。
+- 验证：静态 63（＋4 BOOT-1）＋自检绿＋LSP（仅预存警告）。独立链 editor-shell-boot1 待封存。改动未提交。
+
+## 本轮会话记录（2026-10-12，BOOT-1 追查：二次 disband 错位＋全链 20 绿重封存）
+
+- 真 bug（live 实锤，node 单次复现漏网）：`revertDisband` 按 baseline 下标 splice；历史已有删除压缩数组后错位（`factions.1.advisor_idx: 60 vs null`）。修：按 baseline 相对顺序插入（找首个现存后继，不存在则 append）。
+- 顺带修同类潜 bug：copy 匹配用 `JSON.stringify` 对顺序敏感（快照往返 parser 排序键，baseline 保持 loader 插入序），改走结构 compare＋WeakMap。
+- e2e 本轮全绿 20 项（rename→disband→publish→pack→asset→list→unlist→unpublish→pack-gone，同一 lane DB rev1-4；另补 disband#1 落库复核）。其间 e2e 探针小修：listing expectedRowRevision 改读现值（GAME_CHANGED 守卫行为正确）。
+- 验证：静态 65（＋2 本轮）＋自检绿＋LSP clean（仅预存警告）；独立链 editor-shell-boot1 已重封存。改动未提交。

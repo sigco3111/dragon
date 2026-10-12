@@ -1,0 +1,77 @@
+// Map viewer (§4.4 B4d1, read-only schematic): placements + road geometry
+// from draft read. No editing: placements are 192-locked with frozen cells,
+// road topology is chapter-pinned, tile semantics unaudited. This view is the
+// visual foundation for future editing, not an editor.
+export function installMapViewer({ api, authority, work, isBusy }) {
+  const q = (id) => document.querySelector('#' + id);
+  let identity = null, games = [], selected = null, detail = null;
+  const allowed = () => Boolean(identity?.user) && !identity.user.mustChangePassword;
+  const message = (text) => { q('mapview-message').textContent = text; };
+  function render() {
+    q('mapview-editor').hidden = !allowed();
+    q('mapview-games').replaceChildren();
+    for (const game of games) {
+      const option = document.createElement('option');
+      option.value = game.gameId; option.textContent = game.metadata.name + '／草稿 ' + game.draftRevision;
+      q('mapview-games').append(option);
+    }
+    if (games.some((game) => game.gameId === selected)) q('mapview-games').value = selected;
+    const canvas = q('mapview-canvas');
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    q('mapview-roads').replaceChildren();
+    if (!detail?.map) return;
+    const placedCount = detail.map.placements ?? 0, roads = detail.map.roads ?? [];
+    // Receipt carries road geometry; dots use authoritative base coords.
+    const dots = detail.strongholds ?? [];
+    const bounds = { minX: 0, minY: 0, width: 384, height: 256 };
+    const sx = canvas.width / bounds.width, sy = canvas.height / bounds.height;
+    context.fillStyle = '#222';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = '#4a6b3a';
+    context.lineWidth = 1;
+    for (const road of roads) {
+      const pts = road.geometry ?? [];
+      if (pts.length < 2) continue;
+      context.beginPath();
+      context.moveTo((pts[0].x - bounds.minX) * sx, (pts[0].y - bounds.minY) * sy);
+      for (const pt of pts.slice(1)) context.lineTo((pt.x - bounds.minX) * sx, (pt.y - bounds.minY) * sy);
+      context.stroke();
+    }
+    context.fillStyle = '#e8d9b0';
+    for (const dot of dots) {
+      context.fillRect((dot.x - bounds.minX) * sx - 1, (dot.y - bounds.minY) * sy - 1, 3, 3);
+    }
+    const summary = document.createElement('p');
+    summary.textContent = `放置 ${placedCount}／道路 ${roads.length}／邊界 ${bounds.width}×${bounds.height}`;
+    q('mapview-roads').append(summary);
+    for (const road of roads.slice(0, 200)) {
+      const row = document.createElement('p');
+      row.textContent = `${road.id ?? '?'}：${road.fromCityId} → ${road.toCityId}（${(road.geometry ?? []).length} 點，${road.travelKind ?? '?'}）`;
+      q('mapview-roads').append(row);
+    }
+    if (roads.length > 200) {
+      const more = document.createElement('p');
+      more.textContent = `…另 ${roads.length - 200} 條未列出`;
+      q('mapview-roads').append(more);
+    }
+  }
+  async function refresh() {
+    if (!allowed()) throw new Error('請先登入。');
+    const result = await api('/api/games');
+    if (!Array.isArray(result.games)) throw new Error('遊戲清單回應無效。');
+    games = result.games; selected = games[0]?.gameId ?? null; detail = null; render();
+    if (selected) await inspect();
+  }
+  async function inspect() {
+    const game = games.find((entry) => entry.gameId === q('mapview-games').value);
+    if (!game) throw new Error('請先選擇遊戲。');
+    selected = game.gameId;
+    detail = await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft?revision=' + encodeURIComponent(game.draftRevision));
+    render();
+    message('示意圖唯讀：放置／道路／圖塊編輯尚未開放（模型鎖定，見 §4.4 缺口）。');
+  }
+  q('mapview-refresh').onclick = () => work(refresh);
+  q('mapview-inspect').onclick = () => work(inspect);
+  return Object.freeze({ render, setIdentity(value) { identity = value; if (!allowed()) { games = []; selected = null; detail = null; } render(); }, canLeave() { return true; } });
+}

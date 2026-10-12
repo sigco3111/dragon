@@ -32,7 +32,11 @@ export class PublishedPacks {
     this.#policy = installedSourcePolicy(new TextEncoder().encode(worldManifest), new TextEncoder().encode(entityManifest));
     if (!isInstalledSourcePolicy(this.#policy)) { throw new TypeError('installed source policy required'); }
     storage.transactionSync(() => {
-      this.#sql.exec('CREATE TABLE IF NOT EXISTS published_packs (game_id TEXT PRIMARY KEY, revision TEXT NOT NULL, source_digest TEXT NOT NULL, manifest_json TEXT NOT NULL, chapters_json TEXT NOT NULL, updated_at TEXT NOT NULL)');
+      this.#sql.exec('CREATE TABLE IF NOT EXISTS published_packs (game_id TEXT PRIMARY KEY, revision TEXT NOT NULL, source_digest TEXT NOT NULL, manifest_json TEXT NOT NULL, updated_at TEXT NOT NULL)');
+      // Chapter states live one row per chapter: the whole-game JSON exceeds
+      // the workerd SQLite single-value limit (SQLITE_TOOBIG, real-machine
+      // evidence). Per-chapter JSON stays ~100KB, reassembly is verified.
+      this.#sql.exec('CREATE TABLE IF NOT EXISTS published_pack_chapters (game_id TEXT NOT NULL, chapter_id TEXT NOT NULL, state_json TEXT NOT NULL, PRIMARY KEY(game_id,chapter_id))');
       this.#sql.exec('CREATE TABLE IF NOT EXISTS published_pack_assets (game_id TEXT NOT NULL, asset_id TEXT NOT NULL, sha256 TEXT NOT NULL, byte_length INTEGER NOT NULL, bytes BLOB NOT NULL, PRIMARY KEY(game_id,asset_id))');
     });
   }
@@ -100,9 +104,13 @@ export class PublishedPacks {
       minimapAssets: Object.freeze(entries.filter(entry => entry.assetId.startsWith('minimap'))),
       assets: Object.freeze(entries.filter(entry => !entry.assetId.startsWith('minimap'))),
     });
-    const manifestJson = JSON.stringify(manifest), chaptersJson = JSON.stringify(states), now = new Date().toISOString();
+    const manifestJson = JSON.stringify(manifest), now = new Date().toISOString();
     this.#storage.transactionSync(() => {
-      this.#sql.exec('INSERT OR REPLACE INTO published_packs VALUES(?,?,?,?,?,?)', reference.gameId, reference.draftRevision, reference.sourceDigest, manifestJson, chaptersJson, now);
+      this.#sql.exec('INSERT OR REPLACE INTO published_packs VALUES(?,?,?,?,?)', reference.gameId, reference.draftRevision, reference.sourceDigest, manifestJson, now);
+      this.#sql.exec('DELETE FROM published_pack_chapters WHERE game_id=?', reference.gameId);
+      for (const [chapterId, state] of Object.entries(states)) {
+        this.#sql.exec('INSERT INTO published_pack_chapters VALUES(?,?,?)', reference.gameId, chapterId, JSON.stringify(state));
+      }
       this.#sql.exec('DELETE FROM published_pack_assets WHERE game_id=?', reference.gameId);
       for (const entry of entries) {
         const data = payloads[entry.assetId];
@@ -113,6 +121,7 @@ export class PublishedPacks {
   }
   retire(gameId) {
     this.#sql.exec('DELETE FROM published_packs WHERE game_id=?', gameId);
+    this.#sql.exec('DELETE FROM published_pack_chapters WHERE game_id=?', gameId);
     this.#sql.exec('DELETE FROM published_pack_assets WHERE game_id=?', gameId);
   }
   // Read-path pin check (same shape rules as the registry; corrupt → 500).
@@ -128,10 +137,18 @@ export class PublishedPacks {
   #storedPack(pin) {
     const row = this.#one('SELECT * FROM published_packs WHERE game_id=?', pin.gameId);
     if (!row || row.revision !== pin.revision || row.source_digest !== pin.sourceDigest) { fail(500, 'PLAY_PACK_CORRUPT'); }
-    let manifest, states;
-    try { manifest = JSON.parse(row.manifest_json); states = JSON.parse(row.chapters_json); }
+    let manifest;
+    try { manifest = JSON.parse(row.manifest_json); }
     catch { fail(500, 'PLAY_PACK_CORRUPT'); }
-    if (!manifest || manifest.identity?.gameId !== pin.gameId || manifest.identity?.draftRevision !== pin.revision || manifest.identity?.sourceDigest !== pin.sourceDigest || !states || typeof states !== 'object') { fail(500, 'PLAY_PACK_CORRUPT'); }
+    if (!manifest || manifest.identity?.gameId !== pin.gameId || manifest.identity?.draftRevision !== pin.revision || manifest.identity?.sourceDigest !== pin.sourceDigest) { fail(500, 'PLAY_PACK_CORRUPT'); }
+    // Reassemble per-chapter rows; any missing/extra chapter is corruption.
+    const rows = this.#sql.exec('SELECT chapter_id, state_json FROM published_pack_chapters WHERE game_id=?', pin.gameId).toArray();
+    const states = {};
+    try {
+      for (const entry of rows) { states[entry.chapter_id] = JSON.parse(entry.state_json); }
+    } catch { fail(500, 'PLAY_PACK_CORRUPT'); }
+    const pinned = [...(pin.chapters ?? [])].sort(), stored = Object.keys(states).sort();
+    if (pinned.length !== stored.length || pinned.some((id, i) => id !== stored[i])) { fail(500, 'PLAY_PACK_CORRUPT'); }
     return { manifest, states };
   }
   #serveAsset(pin, manifest, assetId) {

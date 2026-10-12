@@ -1,0 +1,145 @@
+// Generals (§4.3 B4c1): chapter general name/hao edit + portrait bind/clear +
+// delete-blocker report. Person add/delete is 128-locked; the blocker list
+// is the deliverable. Portrait upload pipeline stays trial-scoped (gap).
+export function installGenerals({ api, authority, work, isBusy }) {
+  const q = (id) => document.querySelector('#' + id);
+  let identity = null, games = [], selected = null, detail = null;
+  const allowed = () => Boolean(identity?.user) && !identity.user.mustChangePassword;
+  const message = (text) => { q('generals-message').textContent = text; };
+  function render() {
+    q('generals-editor').hidden = !allowed();
+    q('generals-games').replaceChildren();
+    for (const game of games) {
+      const option = document.createElement('option');
+      option.value = game.gameId; option.textContent = game.metadata.name + '／草稿 ' + game.draftRevision;
+      q('generals-games').append(option);
+    }
+    if (games.some((game) => game.gameId === selected)) q('generals-games').value = selected;
+    q('generals-chapters').replaceChildren();
+    if (!detail) return;
+    for (const entry of detail.chapters ?? []) {
+      const chapterId = entry.chapterId;
+      const header = document.createElement('h4');
+      header.textContent = `章節 ${entry.name || chapterId}`;
+      q('generals-chapters').append(header);
+      q('generals-chapters').append(factionPanel(entry));
+      for (const general of entry.generals ?? []) {
+        const row = document.createElement('div'), label = document.createElement('p');
+        label.textContent = `#${general.idx} ${general.name}（字${general.hao || '無'}）／頭像 ${general.portraitKey ?? '原圖'}`;
+        row.append(label);
+        const edit = document.createElement('button');
+        edit.type = 'button'; edit.textContent = '改名／字';
+        edit.disabled = isBusy();
+        edit.onclick = () => work(async () => {
+          const name = prompt('名（留空取消）：', general.name);
+          if (name === null) return;
+          const hao = prompt('字（可空）：', general.hao ?? '');
+          if (hao === null) return;
+          await saveEdits(gameOf(), [{ op: 'rename-general', chapterId, generalIdx: general.idx, values: { name, hao } }]);
+        });
+        row.append(edit);
+        const portrait = document.createElement('button');
+        portrait.type = 'button'; portrait.textContent = general.portraitKey ? '清除頭像綁定' : '綁定頭像';
+        portrait.disabled = isBusy();
+        portrait.onclick = () => work(async () => {
+          const key = general.portraitKey ? null : prompt('頭像編號（1..32 英文字母，取消請按 Esc）：');
+          if (!key) return;
+          await saveEdits(gameOf(), [{ op: 'portrait', chapterId, generalIdx: general.idx, portraitKey: key }]);
+        });
+        row.append(portrait);
+        const del = document.createElement('button');
+        del.type = 'button'; del.textContent = '刪除檢查';
+        del.disabled = isBusy();
+        del.onclick = () => work(async () => {
+          message(`#${general.idx} 不可刪除：武將鎖定 128 密排，不開放增刪。`);
+        });
+        row.append(del);
+        q('generals-chapters').append(row);
+      }
+    }
+  }
+  function gameOf() {
+    const game = games.find((entry) => entry.gameId === selected);
+    if (!game) throw new Error('請先選擇遊戲。');
+    return game;
+  }
+  async function saveEdits(game, chapterEdits) {
+    const before = game.draftRevision;
+    const draft = await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft?revision=' + encodeURIComponent(before));
+    // Fresh key per save (no retry of unknown state): verify by revision.
+    await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft/save', { metadata: draft.metadata, resourceEdits: [], chapterEdits }, { key: crypto.randomUUID(), revision: String(before) });
+    const after = await api('/api/games');
+    const entry = after.games.find((item) => item.gameId === game.gameId);
+    if (entry && BigInt(entry.draftRevision) === BigInt(before) + 1n) { game.draftRevision = entry.draftRevision; message('已保存，重新讀取中…'); await inspect(); return; }
+    throw new Error('保存未確認：修訂未推進，不重試；請重讀清單後再試。');
+  }
+  async function refresh() {
+    if (!allowed()) throw new Error('請先登入。');
+    const result = await api('/api/games');
+    if (!Array.isArray(result.games)) throw new Error('遊戲清單回應無效。');
+    games = result.games; selected = games[0]?.gameId ?? null; detail = null; render();
+    if (selected) await inspect();
+  }
+  async function inspect() {
+    const game = gameOf();
+    selected = game.gameId;
+    detail = await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft?revision=' + encodeURIComponent(game.draftRevision));
+    render();
+    message('武將增刪鎖定 128 密排；改名／字與頭像綁定經草稿保存寫入。頭像上傳管線仍為試運行域（缺口）。');
+  }
+  function factionPanel(entry) {
+    const chapterId = entry.chapterId;
+    const box = document.createElement('div');
+    const title = document.createElement('h5');
+    title.textContent = `勢力（章節 ${entry.name || chapterId}）`;
+    box.append(title);
+    for (const faction of entry.factions ?? []) {
+      const row = document.createElement('div'), label = document.createElement('p');
+      label.textContent = `勢力 ${faction.idx}／君主 #${faction.monarch_idx}／軍師 ${faction.advisor_idx ?? '無'}／首都槽 ${faction.capital}`;
+      row.append(label);
+      const lord = document.createElement('button');
+      lord.type = 'button'; lord.textContent = '立君主（須自由武將）';
+      lord.disabled = isBusy();
+      lord.onclick = () => work(async () => {
+        const raw = prompt('新君主武將編號（0..127，須自由武將）：');
+        if (raw === null || raw === '') return;
+        await saveEdits(gameOf(), [{ op: 'set-monarch', chapterId, factionIdx: faction.idx, generalIdx: Number(raw) }]);
+      });
+      row.append(lord);
+      const advisor = document.createElement('button');
+      advisor.type = 'button'; advisor.textContent = '設軍師／辭退';
+      advisor.disabled = isBusy();
+      advisor.onclick = () => work(async () => {
+        const raw = prompt(`新軍師武將編號（0..127；清空請輸 q）。${faction.advisor_idx !== null && faction.advisor_idx !== undefined ? `現任 #${faction.advisor_idx} 將被替换。` : ''}`);
+        if (raw === null || raw === '') return;
+        if (raw !== 'q' && faction.advisor_idx !== null && faction.advisor_idx !== undefined && Number(raw) !== faction.advisor_idx && !confirm(`替换現任軍師 #${faction.advisor_idx}？`)) return;
+        await saveEdits(gameOf(), [{ op: 'set-strategist', chapterId, factionIdx: faction.idx, generalIdx: raw === 'q' ? null : Number(raw) }]);
+      });
+      row.append(advisor);
+      const remove = document.createElement('button');
+      remove.type = 'button'; remove.textContent = '免君主（須繼任或解散）';
+      remove.disabled = isBusy();
+      remove.onclick = () => work(async () => {
+        const raw = prompt('繼任君主編號（0..127）；解散請輸 q：');
+        if (raw === null || raw === '') return;
+        const resolution = raw === 'q' ? { disband: true } : { successor: Number(raw) };
+        if (raw === 'q' && !confirm(`解散勢力 ${faction.idx}？成員轉自由、據點轉中立，只作用於本章。`)) return;
+        await saveEdits(gameOf(), [{ op: 'remove-monarch', chapterId, factionIdx: faction.idx, resolution }]);
+      });
+      row.append(remove);
+      const disband = document.createElement('button');
+      disband.type = 'button'; disband.textContent = '解散勢力';
+      disband.disabled = isBusy();
+      disband.onclick = () => work(async () => {
+        if (!confirm(`解散勢力 ${faction.idx}？成員轉自由、據點轉中立，只作用於本章。`)) return;
+        await saveEdits(gameOf(), [{ op: 'disband-faction', chapterId, factionIdx: faction.idx, confirm: true }]);
+      });
+      row.append(disband);
+      box.append(row);
+    }
+    return box;
+  }
+  q('generals-refresh').onclick = () => work(refresh);
+  q('generals-inspect').onclick = () => work(inspect);
+  return Object.freeze({ render, setIdentity(value) { identity = value; if (!allowed()) { games = []; selected = null; detail = null; } render(); }, canLeave() { return true; } });
+}

@@ -2,6 +2,8 @@
 import { createHash } from 'node:crypto';
 import { canonicalSourceTokens, encodeSourceChunks, decodeSourceChunks, CanonicalSourceParser } from '../web/src/content/authoring/sourcejson.js';
 import { normalizeGameMetadata } from '../web/src/editor/gamemetadata.js';
+import { addBlankChapter, copyChapterInGame, deleteChapter, renameChapter, renameGeneral, setMonarch, setStrategist, removeMonarch, disbandFaction, chapterGapCounts, cityReferences } from '../web/src/content/authoring/gamesource.js';
+import { setGeneralPortrait } from '../web/src/editor/generalportrait.js';
 import { editChapterResources } from '../web/src/editor/chapterresources.js';
 import { FixedCopyProfile, FIXED_COPY_PROFILE } from './copyprofile.js';
 import { GameSnapshotVerifier } from './snapshots.js';
@@ -13,10 +15,28 @@ const hash = b => createHash('sha256').update(b).digest('hex');
 function parsed(text) { try { return JSON.parse(text); } catch { fail(503, 'DRAFT_RECORD_CORRUPT'); } }
 function capture(input) {
   let text = ''; try { for (const token of canonicalSourceTokens(input)) { text += token; if (Buffer.byteLength(text) > 16384) fail(413, 'DRAFT_REQUEST_TOO_LARGE'); } } catch (error) { if (error instanceof HttpError) throw error; fail(422, 'DRAFT_REQUEST'); }
-  const value = parsed(text); fields(value, ['metadata', 'resourceEdits']); fields(value.metadata, ['name', 'introduction']);
+  const value = parsed(text);
+  if (!value || Array.isArray(value) || typeof value !== 'object' || !Object.hasOwn(value, 'metadata') || !Object.hasOwn(value, 'resourceEdits') || Object.keys(value).some(key => key !== 'metadata' && key !== 'resourceEdits' && key !== 'chapterEdits')) fail(422, 'REQUEST_FIELDS');
+  fields(value.metadata, ['name', 'introduction']);
   for (const t of [value.metadata.name, value.metadata.introduction]) if (typeof t !== 'string' || [...t].some(c => { const n = c.codePointAt(0); return n < 32 || n >= 127 && n <= 159; })) fail(422, 'GAME_METADATA');
   try { value.metadata = normalizeGameMetadata(value.metadata); } catch { fail(422, 'GAME_METADATA'); }
   if (!Array.isArray(value.resourceEdits) || value.resourceEdits.length > 32) fail(422, 'DRAFT_RESOURCE_EDITS');
+  // §4.5 chapter edits: bounded op list, applied in order before verification.
+  if (value.chapterEdits === undefined) value.chapterEdits = [];
+  if (!Array.isArray(value.chapterEdits) || value.chapterEdits.length > 16) fail(422, 'DRAFT_CHAPTER_EDITS');
+  for (const edit of value.chapterEdits) {
+    if (!edit || typeof edit !== 'object' || Array.isArray(edit)) fail(422, 'DRAFT_CHAPTER_EDITS');
+    if (edit.op === 'add-blank') fields(edit, ['op']);
+    else if (edit.op === 'copy' || edit.op === 'delete') { fields(edit, ['op', 'chapterId']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'rename') { fields(edit, ['op', 'chapterId', 'name']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || typeof edit.name !== 'string') fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'rename-general') { fields(edit, ['op', 'chapterId', 'generalIdx', 'values']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.generalIdx) || edit.generalIdx < 0 || edit.generalIdx > 127 || !edit.values || typeof edit.values !== 'object' || Array.isArray(edit.values)) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'portrait') { fields(edit, ['op', 'chapterId', 'generalIdx', 'portraitKey']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.generalIdx) || edit.generalIdx < 0 || edit.generalIdx > 127 || (edit.portraitKey !== null && typeof edit.portraitKey !== 'string')) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'set-monarch') { fields(edit, ['op', 'chapterId', 'factionIdx', 'generalIdx']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.factionIdx) || !Number.isInteger(edit.generalIdx) || edit.generalIdx < 0 || edit.generalIdx > 127) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'set-strategist') { fields(edit, ['op', 'chapterId', 'factionIdx', 'generalIdx']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.factionIdx) || (edit.generalIdx !== null && (!Number.isInteger(edit.generalIdx) || edit.generalIdx < 0 || edit.generalIdx > 127))) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'remove-monarch') { fields(edit, ['op', 'chapterId', 'factionIdx', 'resolution']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.factionIdx) || !edit.resolution || typeof edit.resolution !== 'object' || Array.isArray(edit.resolution)) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'disband-faction') { fields(edit, ['op', 'chapterId', 'factionIdx', 'confirm']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.factionIdx) || edit.confirm !== true) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else fail(422, 'DRAFT_CHAPTER_EDITS');
+  }
   const seen = new Set();
   for (const edit of value.resourceEdits) {
     fields(edit, ['chapterId', 'slot', 'values']);
@@ -117,10 +137,31 @@ export class PrivateDrafts {
     catch (error) { if (error instanceof HttpError && ['SOURCE_JSON','SOURCE_STORED_METADATA'].includes(error.code)) fail(503,'DRAFT_REFERENCE_CORRUPT'); throw error; }
   }
   // Trusted in-process compiler port only; never returned by an HTTP route.
+  // Revision-chain allowlist: every committed save verified its own edits at
+  // commit time; read/compile replay the cumulative list so the profile can
+  // tell authorized chapter edits apart from corruption. Rows are ordered by
+  // result revision; compare-and-swap guarantees one applied save per step.
+  #editHistory(gameId, requested) {
+    let wanted;
+    try { wanted = BigInt(requested); } catch { fail(422, 'DRAFT_REVISION'); }
+    const rows = this.#sql.exec("SELECT request_json, result_revision FROM draft_requests WHERE game_id=? AND state='committed'", gameId).toArray();
+    const steps = [];
+    for (const row of rows) {
+      let rev;
+      try { rev = BigInt(row.result_revision); } catch { fail(503, 'DRAFT_HISTORY_CORRUPT'); }
+      if (rev > wanted) continue;
+      let body;
+      try { body = JSON.parse(row.request_json); } catch { fail(503, 'DRAFT_HISTORY_CORRUPT'); }
+      if (!body || typeof body !== 'object' || !Array.isArray(body.chapterEdits)) fail(503, 'DRAFT_HISTORY_CORRUPT');
+      steps.push({ rev, list: body.chapterEdits });
+    }
+    steps.sort((a, b) => (a.rev < b.rev ? -1 : a.rev > b.rev ? 1 : 0));
+    return steps.flatMap(entry => entry.list);
+  }
   async captureForCompile(tokenHash, gameId, requested) {
     const { actor } = this.#owned(tokenHash, gameId); this.#origin(tokenHash, gameId, actor);
     const loaded = await this.#load(tokenHash, gameId, requested, actor, true), { profile, captured } = await this.#profile(tokenHash, gameId, actor, true);
-    const content = profile.verify(captured.capability, loaded.proof.game);
+    const content = profile.verify(captured.capability, loaded.proof.game, this.#editHistory(gameId, requested));
     this.#origin(tokenHash, gameId, actor);
     const reference = this.#games.snapshotReference(tokenHash, gameId, requested);
     if (reference.rootKey !== loaded.reference.rootKey || reference.sourceDigest !== loaded.reference.sourceDigest || reference.dependencyDigest !== loaded.reference.dependencyDigest || content.sourceDigest !== reference.sourceDigest) fail(503, 'DRAFT_REFERENCE_CORRUPT');
@@ -129,9 +170,11 @@ export class PrivateDrafts {
   async read(tokenHash, gameId, requested) {
     const { actor } = this.#owned(tokenHash, gameId); this.#origin(tokenHash, gameId, actor);
     const loaded = await this.#load(tokenHash, gameId, requested, actor), { profile, captured } = await this.#profile(tokenHash, gameId, actor);
-    profile.verify(captured.capability, loaded.proof.game); this.#origin(tokenHash, gameId, actor);
+    profile.verify(captured.capability, loaded.proof.game, this.#editHistory(gameId, requested)); this.#origin(tokenHash, gameId, actor);
     return { gameId, draftRevision: requested, sourceDigest: loaded.reference.sourceDigest, profileRevision: FIXED_COPY_PROFILE, metadata: loaded.proof.game.metadata,
-      chapters: loaded.proof.game.chapterOrder.map(id => ({ chapterId: id, name: loaded.proof.game.chapters[id].name ?? '', factions: loaded.proof.game.chapters[id].state.factions.map((f, slot) => ({ slot, money: f.money, reserve_cav: f.reserve_cav, reserve_arc: f.reserve_arc, reserve_inf: f.reserve_inf })) })),
+      chapters: loaded.proof.game.chapterOrder.map(id => { const st = loaded.proof.game.chapters[id].state; return { chapterId: id, name: loaded.proof.game.chapters[id].name ?? '', factions: st.factions.map((f, slot) => ({ slot, idx: f.idx, monarch_idx: f.monarch_idx, advisor_idx: f.advisor_idx ?? null, capital: f.capital, money: f.money, reserve_cav: f.reserve_cav, reserve_arc: f.reserve_arc, reserve_inf: f.reserve_inf })), generals: st.generals.map(g => ({ idx: g.idx, name: g.name, hao: g.hao, portraitKey: g.portraitKey ?? null, faction: g.faction ?? null })), cities: st.cities.map(c => ({ idx: c.idx, name: c.name, faction: c.faction ?? null })), gaps: chapterGapCounts(st, id) }; }),
+      strongholds: Object.keys(loaded.proof.game.cities ?? {}).map(cityId => cityReferences(loaded.proof.game, cityId)),
+      map: { placements: (loaded.proof.game.map?.placements ?? []).length, roads: (loaded.proof.game.map?.roads ?? []).map(road => ({ id: road.id, fromCityId: road.fromCityId, toCityId: road.toCityId, travelKind: road.travelKind ?? null, geometry: road.geometry ?? [] })) },
       limits: 'Fixed-copy draft metadata/four-resource representation only; not playable range or runtime/Trial/Release admission.' };
   }
   #request(tokenHash, gameId, operationKey, actor) {
@@ -182,10 +225,25 @@ export class PrivateDrafts {
     try {
       if (gameRow.draft_revision !== expected) fail(412, 'DRAFT_CHANGED');
       const loaded = await this.#load(tokenHash, gameId, expected, actor), { profile, captured } = await this.#profile(tokenHash, gameId, actor);
-      profile.verify(captured.capability, loaded.proof.game);
+      profile.verify(captured.capability, loaded.proof.game, this.#editHistory(gameId, expected));
       let candidate = { ...loaded.proof.game, metadata: value.metadata };
       for (const edit of value.resourceEdits) { try { candidate = editChapterResources(candidate, edit.chapterId, edit.slot, edit.values); } catch { fail(422, 'DRAFT_RESOURCE_DELTA'); } }
-      const proof = profile.verify(captured.capability, candidate); this.#origin(tokenHash, gameId, actor);
+      // §4.5 chapter edits apply before verification (save-gate gaps refuse).
+      for (const edit of value.chapterEdits) {
+        try {
+          if (edit.op === 'add-blank') addBlankChapter(candidate);
+          else if (edit.op === 'copy') copyChapterInGame(candidate, edit.chapterId);
+          else if (edit.op === 'delete') deleteChapter(candidate, edit.chapterId);
+          else if (edit.op === 'rename') renameChapter(candidate, edit.chapterId, edit.name);
+          else if (edit.op === 'rename-general') renameGeneral(candidate, edit.chapterId, edit.generalIdx, edit.values);
+          else if (edit.op === 'portrait') candidate = setGeneralPortrait(candidate, edit.chapterId, edit.generalIdx, edit.portraitKey);
+          else if (edit.op === 'set-monarch') setMonarch(candidate, edit.chapterId, edit.factionIdx, edit.generalIdx);
+          else if (edit.op === 'set-strategist') setStrategist(candidate, edit.chapterId, edit.factionIdx, edit.generalIdx);
+          else if (edit.op === 'remove-monarch') removeMonarch(candidate, edit.chapterId, edit.factionIdx, edit.resolution);
+          else disbandFaction(candidate, edit.chapterId, edit.factionIdx);
+        } catch { fail(422, 'DRAFT_CHAPTER_EDIT'); }
+      }
+      const proof = profile.verify(captured.capability, candidate, [...this.#editHistory(gameId, expected), ...value.chapterEdits]); this.#origin(tokenHash, gameId, actor);
       const source = proof.sourceDigest === loaded.reference.sourceDigest ? loaded.root : await this.#write(tokenHash, actor, row, candidate);
       const next = String(BigInt(expected) + 1n), prepared = await this.#games.prepareSnapshot(tokenHash, { gameId, draftRevision: next, metadata: value.metadata, source });
       const result = this.#storage.transactionSync(() => {

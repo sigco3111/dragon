@@ -1,0 +1,64 @@
+// Stronghold list (§4.2, read-only display + delete-blocker report).
+// Reference derivation mirrors cityReferences/checkCityDeletable in
+// web/src/content/authoring/gamesource.js (authoritative, unit-tested);
+// this file only displays. Base cities are 192-locked: no add/edit/delete
+// mutation exists; the blocker list is the deliverable.
+export function installStronghold({ api, authority, work, isBusy }) {
+  const q = (id) => document.querySelector('#' + id);
+  let identity = null, games = [], selected = null, detail = null;
+  const allowed = () => Boolean(identity?.user) && !identity.user.mustChangePassword;
+  const message = (text) => { q('stronghold-message').textContent = text; };
+  // Receipt carries authoritative refs (cityReferences in gamesource.js).
+  function blockers(r) {
+    const list = [];
+    if (r.placed) list.push('已放入地圖，須先從地圖移除');
+    for (const road of r.roads ?? []) list.push(`道路引用：${road}`);
+    for (const chapterId of r.chapters ?? []) list.push(`章節引用：${chapterId}`);
+    list.push('基礎據點鎖定 192 座，不開放增刪');
+    return list;
+  }
+  function render() {
+    q('stronghold-editor').hidden = !allowed();
+    q('stronghold-games').replaceChildren();
+    for (const game of games) {
+      const option = document.createElement('option');
+      option.value = game.gameId; option.textContent = game.metadata.name + '／草稿 ' + game.draftRevision;
+      q('stronghold-games').append(option);
+    }
+    if (games.some((game) => game.gameId === selected)) q('stronghold-games').value = selected;
+    q('stronghold-cities').replaceChildren();
+    if (!detail) return;
+    for (const r of detail.strongholds ?? []) {
+      const row = document.createElement('div'), label = document.createElement('p');
+      label.textContent = `${r.cityId}／槽 ${r.runtimeSlot}／(${r.x},${r.y})／${r.placed ? '已放入地圖' : '未放置'}／道路 ${(r.roads ?? []).length}／章節 ${(r.chapters ?? []).length}`;
+      row.append(label);
+      const del = document.createElement('button');
+      del.type = 'button'; del.textContent = '刪除檢查';
+      del.disabled = isBusy();
+      del.onclick = () => work(async () => {
+        message(`「${r.cityId}」不可刪除：${blockers(r).join('；')}。`);
+      });
+      row.append(del);
+      q('stronghold-cities').append(row);
+    }
+  }
+  async function refresh() {
+    if (!allowed()) throw new Error('請先登入。');
+    const result = await api('/api/games');
+    if (!Array.isArray(result.games)) throw new Error('遊戲清單回應無效。');
+    games = result.games; selected = games[0]?.gameId ?? null; detail = null; render();
+    if (selected) await inspect();
+  }
+  async function inspect() {
+    const gameId = q('stronghold-games').value;
+    const summary = games.find((game) => game.gameId === gameId);
+    if (!summary) throw new Error('請先選擇遊戲。');
+    selected = gameId;
+    detail = await api('/api/games/' + encodeURIComponent(gameId) + '/draft?revision=' + encodeURIComponent(summary.draftRevision));
+    render();
+    message('基礎據點唯讀：改圖／增刪尚未開放，刪除檢查列出全部阻止項。');
+  }
+  q('stronghold-refresh').onclick = () => work(refresh);
+  q('stronghold-inspect').onclick = () => work(inspect);
+  return Object.freeze({ render, setIdentity(value) { identity = value; if (!allowed()) { games = []; selected = null; detail = null; } render(); }, canLeave() { return true; } });
+}

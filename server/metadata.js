@@ -101,6 +101,25 @@ export class GameMetadataStore {
     const actor = this.#actor(tokenHash);
     return this.#sql.exec('SELECT * FROM content_games WHERE owner_id=? ORDER BY created_at,game_id', actor.id).toArray().map(summary);
   }
+  // §4.1 creator/admin listing: 上架/下架 own games (admin: any). Restricted
+  // blocks everyone (admin clears via management first); builtin excluded.
+  // Single conditional UPDATE: naturally idempotent per expectedRowRevision.
+  setListed(tokenHash, gameId, listed, expectedRowRevision) {
+    const actor = this.#actor(tokenHash);
+    if (gameId === 'wolong-builtin') { fail(403, 'BUILTIN_PROTECTED'); }
+    if (!uuid(gameId)) { fail(422, 'GAME_ID'); }
+    if (typeof listed !== 'boolean' || !revision(expectedRowRevision)) { fail(422, 'LISTING_INPUT'); }
+    const row = this.#one('SELECT * FROM content_games WHERE game_id=?', gameId);
+    if (!row || (row.owner_id !== actor.id && actor.role !== 'admin')) { fail(404, 'GAME_NOT_FOUND'); }
+    this.assertNotDeleting(gameId);
+    if (row.restricted !== 0) { fail(409, 'LISTING_RESTRICTED'); }
+    if (row.row_revision !== expectedRowRevision) { fail(409, 'GAME_CHANGED'); }
+    if (Number(row.listed) === Number(listed)) { return summary(row); }
+    const time = new Date().toISOString(), next = String(BigInt(row.row_revision) + 1n);
+    const updated = this.#one('UPDATE content_games SET listed=?,row_revision=?,modified_at=? WHERE game_id=? AND row_revision=? RETURNING *', Number(listed), next, time, gameId, row.row_revision);
+    if (!updated) { fail(409, 'GAME_CHANGED'); }
+    return summary(updated);
+  }
   managementSummaries(tokenHash) {
     const actor = this.#actor(tokenHash); if (actor.role !== 'admin') fail(403, 'ADMIN_REQUIRED');
     return this.#sql.exec('SELECT g.*,u.account FROM content_games g JOIN users u ON u.id=g.owner_id ORDER BY g.created_at,g.game_id').toArray().map(row => ({ gameId: row.game_id, creatorAccount: row.account, name: row.formal_name, introduction: row.formal_introduction, currentReleaseId: row.current_release_id, listed: Boolean(row.listed), restricted: Boolean(row.restricted), rowRevision: row.row_revision, createdAt: row.created_at, modifiedAt: row.modified_at }));
