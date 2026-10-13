@@ -328,3 +328,9 @@
 - 用户授权 F：原 stager 新 owned round `trial-asset-restage-f1` 重捕（398 项／387 blob／20 引用全同），manifest `4031b32d→c89cb0c9`（93632 字节不变，仅 servertrialapp.js 指纹 `462dacc2→0386710c`），安装 `server/available-library.txt`＋`sourcecatalogpolicy.js` manifestHash 继任，registryId 保持（先例登记决定）。policy 验证就地通过（400 roles／10 负控／旧 r4 被拒）；旧 png 工具 76cdf28 钉属封存现场不更新。
 - E 工具迭代：attempt2（harness 名 `E2ECrop` 含数字被产品正则拒）→ attempt3（诊断落盘确认）→ attempt4（代理回调 `const out = []` 遮蔽 scope 目录 `out` 的真 bug，改名 pieces）→ attempt5（走通全部浏览器检查＋Node exact，倒在 C oracle 拒异 scope——脚本行为正确）→ 新独立 oracle `tools/fixtures/trial_e2e_check.py` → attempt6 通过：23检查／1 Pillow 图 exact。attempt1–5 失败现场保留。
 - E 实质 subsumes C（自举＋上传＋serve＋manifest＋oracle 全含），C 不重跑。文档回流：库存（D 后重签节）、本地验证（E-1／F 节＋PUBLIC-1 尾）。改动未提交。
+
+## 本轮会话记录（2026-10-13，G lane：Trial 会话撤销与并发 fail-closed）
+
+- 用户「同意改动，继续」后提交 `3641ad5`（F＋E，未 push）。G 切片：先读 `trials.js` #bound／authorize／#close 与 `worker.js` 登录／改密／上传事务／重放钉死码位，再写新工具 `tools/verify_trial_session.mjs`（零生产改动，Node 直驱真实 workerd）。
+- 迭代：attempt1（管理先于轮转被 must_change 403）→ 编排改先轮转；attempt2（转后创建会话已死致 status 不可见，符合重登不复活）→ G2 改 T2b 完整复现；attempt3（G3／G4 沿用死会话签发）→ issue 传会话；attempt4（结束 serve 为 401 非 404——authorize 先于存储，wipe 纵深不可观察）→ 改断言并如实登记。attempt5 通过：65检查（G1 第二会话撤销／G2 改密死亡＋转后复现／G3 结束全关闭＋二次结束重放／G4 四并行＋重放＋重名 guards）。
+- 文档回流：本地验证 TRIAL-SESSION-1、矩阵 Q70 Trial 侧句。改动未提交。

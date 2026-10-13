@@ -1,5 +1,10 @@
 # 本地编辑器验证清单
 
+## TRIAL-SESSION-1：Trial 会话撤销与并发上传 fail-closed（G切片）
+
+- 新入口 `node tools/verify_trial_session.mjs <轮号>`（Node 直驱，无浏览器；零生产改动）。真实回环 HTTPS workerd＋R2 安装＋真实登录／轮转＋完整复制＋草稿读；四 trial 分测：G1 第二活会话读包 401 `TRIAL_INVALID`＋创建会话见 ended／session-revoked，创建会话包／上传同 401；G2 改密杀死签发会话（死 cookie 打活 trial 仍 worker 级 401 `SESSION_INVALID`，转后会话读转前 trial 401＋关闭），转后新开 trial 完整复现 G1；G3 结束 trial 全路由关闭（包／上传 401，serve 先过 active 门同 401——资产 wipe 为纵深不可经 API 观察，如实登记），status 见 ended／explicit，二次结束重放同一终态；G4 四路并行上传全 200＋包 4 行＋逐字节 exact（Node decodePNG，codec 已在 A／C／E 经 Pillow 证），同键重放同体不增行，同名新键 409 `TRIAL_PORTRAIT_EXISTS` 不增行。
+- 写新 `.dragon-analysis/editor-phase/trial-session-r1/attemptN/`，attempt1（管理动作先于轮转被 must_change 403）、attempt2（转后创建会话已死，status 不可见——符合重登不复活）、attempt3（G3／G4 用死会话签发）、attempt4（结束 serve 为 401 非 404——authorize 先于存储）失败现场保留，attempt5 通过：65检查。status 的创建会话可见性与 401 码位均先读源码钉死（`trials.js` #bound／authorize／#close，`worker.js` 登录不踢旧会话／改密清全会话／上传 preview＋commit 事务＋重放），不是先射箭。不冒浏览器、游戏侧并发／发布 UI、绝对期限计时、Q70／Q71 整体闭包。
+
 ## TRIAL-PORTRAIT-E2E-1：浏览器驱动真实 Trial 裁剪往返（E切片）
 
 - 新入口 `node tools/verify_trial_browser_crop_e2e.mjs <轮号>`＋独立 Pillow 核 `tools/fixtures/trial_e2e_check.py`（C 的 oracle 只认 C scope，不动 C 封存件）。阶段1（Node）为 C 自举原文：回环 HTTPS workerd＋R2 落盘安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局；阶段2为同源代理＋harness 页（真实 `servertrialapp.js` 模块、真实 trialId、API 种子 pack，`/api/*` 逐字节转发并由服务端注入 C 已证 admin 会话，零生产改动）；阶段3真 Chromium＋fresh profile 选图／确认／命名上传；阶段4（Node）读包＋serve＋Node exact＋Pillow＋结束。
