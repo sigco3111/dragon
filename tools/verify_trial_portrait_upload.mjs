@@ -1,6 +1,6 @@
 // 事项④人物头像上传验证：真 installedSourcePolicy（pinned 文件）＋stub 端口，直连真实
-// TrialSessions。覆盖 PNG/JPG 正例、魔数/尺寸/形状/保留名/幂等/权限负例、manifest 登记、
-// serve mime、级联兼容（8h 不动）。Web 产品决定（用户裁决 2026-10-09，非原版机制）。
+// TrialSessions。真实PNG规范化、拒绝前无资源写入、ID/大小/幂等/权限及manifest。
+// JPEG假头仅旧行为缺口对照，不算解码安全；裁剪与JPEG后继另验。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
@@ -8,6 +8,7 @@ import { format } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { TrialSessions, sniffPortraitMime } from '../server/trials.js';
 import { installedSourcePolicy } from '../server/sourcecatalogpolicy.js';
+import { encodePNG, decodePNG } from '../server/pngio.js';
 
 /** Harness progress goes through tlog (repo convention), not console.log. */
 const tlog = (...args) => process.stdout.write(`${format(...args)}\n`);
@@ -25,7 +26,10 @@ function makeStorage() {
   };
   return { sql, transactionSync };
 }
-const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(120)]);
+const sourcePixels = new Uint8Array(256 * 128 * 3).fill(96);
+const PNG = encodePNG(sourcePixels, 256, 128, 3);
+const FAKE_PNG = PNG.subarray(0, 24);
+const canonicalPNG = encodePNG(decodePNG(PNG).pixels, 256, 128);
 const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(120)]);
 const GIF = Buffer.concat([Buffer.from('GIF89a', 'ascii'), Buffer.alloc(120)]);
 
@@ -72,10 +76,13 @@ tlog('场景1通过：PNG/JPG 魔数识别，GIF/空/非字节拒绝');
   assert.equal(manifest.portraits[0].mime, 'image/png');
   const served = sessions.asset('tok', trialId, 'upPortraitA');
   assert.equal(served.mime, 'image/png');
-  assert.ok(Buffer.from(served.bytes).equals(PNG));
-  tlog('场景2通过：PNG 上传全链＋manifest 登记＋原字节 serve');
+  assert.ok(Buffer.from(served.bytes).equals(canonicalPNG));
+  assert.equal(portrait.sha256, sha(canonicalPNG));
+  assert.equal(portrait.byteLength, canonicalPNG.length);
+  assert.notEqual(sha(PNG), portrait.sha256);
+  tlog('场景2通过：真实矩形PNG规范RGBA输出＋manifest／SHA／长度一致');
 }
-// 场景3：JPG 上传 → image/jpeg
+// 场景3：明确未修的JPEG legacy对照，不是安全正例
 {
   const { storage, sessions } = newSessions();
   const trialId = addTrial(storage);
@@ -83,12 +90,13 @@ tlog('场景1通过：PNG/JPG 魔数识别，GIF/空/非字节拒绝');
   assert.equal(preview.mime, 'image/jpeg');
   sessions.uploadCommit('tok', trialId, 'upPortraitB', JPG, preview);
   assert.equal(sessions.asset('tok', trialId, 'upPortraitB').mime, 'image/jpeg');
-  tlog('场景3通过：JPG 上传 serve 为 image/jpeg（原字节存储，不转码）');
+  tlog('场景3登记：JPEG假头仍legacy原字节，安全缺口未关闭');
 }
 // 场景4：负例矩阵
 {
   const { storage, sessions: s2 } = newSessions();
   const t = addTrial(storage);
+  assert.equal(codeOf(() => s2.uploadPreview('tok', t, 'upFake', FAKE_PNG)), 'TRIAL_PORTRAIT_PNG_INVALID');
   assert.equal(codeOf(() => s2.uploadPreview('tok', t, 'upGif', GIF)), 'TRIAL_PORTRAIT_TYPE');
   assert.equal(codeOf(() => s2.uploadPreview('tok', t, 'upEmpty', Buffer.alloc(0))), 'TRIAL_PORTRAIT_BYTES');
   assert.equal(codeOf(() => s2.uploadPreview('tok', t, 'upBig', Buffer.alloc(100 * 1024 + 1))), 'TRIAL_PORTRAIT_BYTES');
@@ -99,7 +107,10 @@ tlog('场景1通过：PNG/JPG 魔数识别，GIF/空/非字节拒绝');
   const p = s2.uploadPreview('tok', t, 'upDup', PNG);
   s2.uploadCommit('tok', t, 'upDup', PNG, p);
   assert.equal(codeOf(() => s2.uploadCommit('tok', t, 'upDup', PNG, p)), 'TRIAL_PORTRAIT_EXISTS');
+  const snapshot = () => JSON.stringify(storage.sql.exec('SELECT asset_id,sha256,byte_length,hex(bytes) AS bytes FROM trial_assets WHERE trial_id=? ORDER BY asset_id', t).toArray());
+  const before = snapshot();
   assert.equal(codeOf(() => s2.uploadCommit('tok', t, 'upChanged', JPG, p)), 'TRIAL_CHANGED');
+  assert.equal(snapshot(), before);
   assert.equal(codeOf(() => s2.asset('tok', t, 'noSuchAsset')), 'TRIAL_ASSET_NOT_FOUND');
   assert.equal(codeOf(() => s2.asset('tok', t, 'manifest')), 'TRIAL_ASSET_NOT_FOUND');
   tlog('场景4通过：类型/尺寸/形状/保留名/幂等/404 负例全对');
@@ -116,4 +127,4 @@ tlog('场景1通过：PNG/JPG 魔数识别，GIF/空/非字节拒绝');
   assert.equal(codeOf(() => sessions.asset('tok2', t, 'manifest')), 'TRIAL_INVALID');
   tlog('场景5通过：他人／已结束 trial 401，派生 manifest 不可经资产路由取');
 }
-tlog('人物头像上传六场景全部通过');
+tlog('人物头像上传五组通过；JPEG legacy缺口另登记，不算JPEG安全');

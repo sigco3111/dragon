@@ -46,7 +46,8 @@ import playappShell from './public/playapp.txt';
 import { decodeSourceChunks } from '../web/src/content/authoring/sourcejson.js';
 const COOKIE = '__Secure-dragon-editor';
 function requestURL(request) { try { return new URL(request.url); } catch { fail(400, 'INVALID_URL'); } }
-const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" };
+// Management previews use local object URLs; scripts remain self-only, no remote/data image sources.
+const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" };
 // Trial-window shell/bundle routes: same policy plus the image/media/font sources the App actually needs.
 // style-src allows inline: the App applies element.style inline (faction panel cssText, in-document styles);
 // script-src stays strict 'self' (no inline script, no eval).
@@ -54,6 +55,8 @@ const trialHeaders = { ...headers, 'Content-Security-Policy': "default-src 'none
 const trialWebFiles = new Map(parseTrialJson(trialwebBundle, 'trial web bundle').files.map(file => [file.path, file]));
 const trialAppPage = parseTrialJson(trialappShell, 'trial app shell').html;
 const playAppPage = parseTrialJson(playappShell, 'play app shell').html;
+// Only the pinned shared client resource paths are public; never expose source/draft registry roles.
+const playLibraryPaths = new Set(Object.keys(parseTrialJson(availableLibraryManifest, 'available library').resources));
 // Entry-level play-origin read (never throws: unset/invalid means no play
 // domain; hard misconfiguration still surfaces as 503 on /api/* via config).
 function playOriginOf(env) {
@@ -263,15 +266,21 @@ export class EditorMetadata extends DurableObject {
     const bytes = await this.trialRegistryBytes(this.installedSources, rel);
     return new Response(bytes, { headers: { ...trialHeaders, 'Content-Type': trialWebType(rel), 'X-Content-SHA256': createHash('sha256').update(bytes).digest('hex') } });
   }
-  #getPlayWebFile(url, path) {
-    // Anonymous read-only engine bundle (public client code only; per-game
-    // derived assets stay behind sessions). Same single-bust allowance as trial.
+  async #getPlayWebFile(url, path) {
+    // Anonymous read-only engine bundle and pinned shared library. Per-game
+    // published assets use the frozen pack routes; draft assets remain private.
     if (url.search && !([...url.searchParams.keys()].join(',') === 'v' && url.searchParams.get('v') === 'original-sprites-1')) { fail(422, 'PLAY_QUERY'); }
     const rel = path.slice('/api/play/web/'.length);
     if (!/^[A-Za-z0-9_][A-Za-z0-9_/.-]{0,255}$/.test(rel) || rel.includes('..') || rel.includes('\\') || rel.endsWith('/')) { fail(404, 'PLAY_WEB_PATH'); }
     const bundled = trialWebFiles.get(rel);
-    if (!bundled) { fail(404, 'PLAY_WEB_PATH'); }
-    return new Response(bundled.text, { headers: { ...trialHeaders, 'Content-Type': `${trialWebType(rel)}; charset=utf-8`, 'X-Content-SHA256': bundled.sha256 } });
+    if (bundled) { return new Response(bundled.text, { headers: { ...trialHeaders, 'Content-Type': `${trialWebType(rel)}; charset=utf-8`, 'X-Content-SHA256': bundled.sha256 } }); }
+    // The generated document base also prefixes registry-relative seasonal art.
+    // Reuse the existing exact eight-role public visual gate, not arbitrary source roles.
+    if (rel.startsWith('content/builtin/compiled/')) { return this.#getPlayRegistryFile(url, '/' + rel); }
+    if (!playLibraryPaths.has(rel)) { fail(404, 'PLAY_WEB_PATH'); }
+    if (!this.availableLibrary) { fail(503, 'PLAY_NOT_CONFIGURED'); }
+    const bytes = await this.trialRegistryBytes(this.availableLibrary, rel);
+    return new Response(bytes, { headers: { ...trialHeaders, 'Content-Type': trialWebType(rel), 'X-Content-SHA256': createHash('sha256').update(bytes).digest('hex') } });
   }
   async #postPublishRoutes(rt) {
     const { request, tokenHash, user, policy, url, path, value } = rt;
@@ -862,8 +871,9 @@ export default {
     // Play domain serves the shell only; /api/* play routes are gated in the DO.
     if (playOriginOf(env) !== null && url.origin === playOriginOf(env) && request.method === 'GET' && !url.pathname.startsWith('/api/') && url.pathname !== '/play' && !url.pathname.startsWith('/content/builtin/compiled/')) { return response({ error: 'NOT_FOUND' }, 404); }
     if (request.method === 'GET' && url.pathname === '/play') {
-      // Anonymous play shell (?game= preselect read by the shell itself).
-      return new Response(playAppPage, { headers: { ...trialHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
+      // Anonymous play shell: fixed same-origin base for document-relative engine resources.
+      // Only this shell allows its generated base; Trial/management retain base-uri 'none'.
+      return new Response(playAppPage, { headers: { ...trialHeaders, 'Content-Security-Policy': trialHeaders['Content-Security-Policy'].replace("base-uri 'none'", "base-uri 'self'"), 'Content-Type': 'text/html; charset=utf-8' } });
     }
     if (request.method === 'GET' && ['/', '/client.js', '/draft.js', '/stage.js', '/library.js', '/catalog.js', '/management.js', '/stronghold.js', '/general.js', '/mapview.js', '/stage-assets.js', '/style.css'].includes(url.pathname)) {
       const asset = staticAsset(url.pathname);

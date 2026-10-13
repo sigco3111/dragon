@@ -10,3 +10,7 @@ web/src/editor/builtinentitysource.generated.js -text
 docs/data/*.json -text
 # Worker Text imports retain pinned manifest bytes across Git checkouts.
 server/pinned/*.txt -text
+# Server vendor bytes/licenses are SHA-pinned; retain upstream trailing spaces.
+# Keep normal textual diffs, exempt only imported blank-at-eol (not our code).
+server/vendor/jpeg-js/decoder.js -text whitespace=-blank-at-eol
+server/vendor/jpeg-js/LICENSE-*.txt -text whitespace=-blank-at-eol

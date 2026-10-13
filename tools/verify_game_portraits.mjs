@@ -1,9 +1,12 @@
 // B4e game portrait library unit: mime/dimensions parse + upload/list/remove
 // validation (id/mime/size/128×128/reserved/dup/in-use/missing/ownership).
+// Both formats need actual pixels; fake JPEG headers are only parser fixtures
+// and must fail upload. Full JPEG cases live in verify_portrait_jpeg_safety.mjs.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { GamePortraits, sniffPortraitMime, portraitDimensions, PORTRAIT_MAX_BYTES } from '../server/portraits.js';
+import { encodePNG } from '../server/pngio.js';
 
 function makeStorage() {
   const db = new DatabaseSync(':memory:');
@@ -11,8 +14,9 @@ function makeStorage() {
   const transactionSync = fn => { db.exec('BEGIN'); try { const out = fn(); db.exec('COMMIT'); return out; } catch (error) { db.exec('ROLLBACK'); throw error; } };
   return { sql, transactionSync, db };
 }
-// Minimal PNG: sig + IHDR(len 13, w, h) — no IDAT needed for header parse.
-const png = (w, h) => {
+const png = (w, h) => encodePNG(new Uint8Array(w * h * 4), w, h);
+// Header parsing is not validation; this fake is now a rejected upload.
+const pngHeader = (w, h) => {
   const head = Buffer.alloc(24);
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(head, 0);
   head.writeUInt32BE(13, 8);
@@ -61,8 +65,10 @@ const up = portraits.upload('tok', gameId, 'Zhaoyun', png(128, 128));
 assert.equal(up.mime, 'image/png');
 assert.equal(up.width, 128);
 checks.push('upload-png');
-portraits.upload('tok', gameId, 'Zhaojun', jpeg(128, 128));
-checks.push('upload-jpeg');
+check('png-header-without-pixels', () => portraits.upload('tok', gameId, 'Header', pngHeader(128, 128)), 'PORTRAIT_PNG_INVALID');
+check('jpeg-header-without-pixels', () => portraits.upload('tok', gameId, 'HeaderJPEG', jpeg(128, 128)), 'PORTRAIT_JPEG_INVALID');
+portraits.upload('tok', gameId, 'Zhaojun', png(128, 128));
+checks.push('second-valid-png');
 check('bad-id', () => portraits.upload('tok', gameId, 'has space', png(128, 128)), 'PORTRAIT_ID');
 check('reserved', () => portraits.upload('tok', gameId, 'terrain', png(128, 128)), 'PORTRAIT_RESERVED');
 check('bad-type', () => portraits.upload('tok', gameId, 'Gif', gif()), 'PORTRAIT_TYPE');
@@ -85,4 +91,5 @@ const rows = portraits.forPublish(gameId);
 assert.equal(rows.length, 1);
 assert.ok(rows[0].bytes instanceof Uint8Array);
 checks.push('for-publish');
+storage.db.close();
 process.stdout.write(`portrait unit PASS ${checks.length} checks\n`);

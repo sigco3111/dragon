@@ -38,10 +38,10 @@ const views = [['draft-editor', '我的草稿', false], ['stronghold-editor', '�
 let view = null;
 function show(next) { view = next; for (const [id] of views) { const el = q(id); if (el) el.hidden = id !== next; } if (!current || current.user.role !== 'admin' || current.user.mustChangePassword) q('admin').hidden = true; for (const button of document.querySelectorAll('#menu button')) button.classList.toggle('on', button.dataset.view === next); }
 function buildMenu() { const nav = q('menu'); nav.replaceChildren(); for (const [id, label, needAdmin] of views) { if (needAdmin && (current.user.role !== 'admin' || current.user.mustChangePassword)) continue; const button = document.createElement('button'); button.type = 'button'; button.dataset.view = id; button.textContent = label; button.onclick = () => show(id); nav.append(button); } show(views[0][0]); }
-function render() { q('login').hidden = Boolean(current); q('menu').hidden = !current; q('session').hidden = !current; if (current) { buildMenu(); fillProfile(); } else view = null; q('identity').textContent = current ? current.user.account + (current.user.mustChangePassword ? ' — 請先變更密碼' : '') : ''; draftUI.setIdentity(current); stageUI?.setIdentity(current); libraryUI?.setIdentity(current); catalogUI?.setIdentity(current); managementUI?.setIdentity(current); stageAssetUI?.setIdentity(current); strongholdUI?.setIdentity(current); generalsUI?.setIdentity(current); mapviewUI?.setIdentity(current); }
+function render() { q('login').hidden = Boolean(current); q('menu').hidden = !current; q('session').hidden = !current; if (current) { buildMenu(); fillProfile(); } else view = null; q('identity').textContent = current ? current.user.account + (current.user.mustChangePassword ? ' — 請先變更密碼' : '') : ''; draftUI.setIdentity(current); stageUI?.setIdentity(current); libraryUI?.setIdentity(current); catalogUI?.setIdentity(current); managementUI?.setIdentity(current); stageAssetUI?.setIdentity(current); strongholdUI?.setIdentity(current); generalsUI?.setIdentity(current); mapviewUI?.setIdentity(current); show(view); }
 async function run(action) {
   if (busy) return; busy = true; const controls = [...document.querySelectorAll('button,input,select,textarea')]; controls.forEach(node => { node.disabled = true; });
-  try { await action(); status('操作完成。'); } catch (error) { status(error.message); } finally { busy = false; controls.forEach(node => { node.disabled = false; }); draftUI.render(); catalogUI?.render(); managementUI?.render(); stageAssetUI?.render(); strongholdUI?.render(); generalsUI?.render(); mapviewUI?.render(); }
+  try { await action(); status('操作完成。'); } catch (error) { status(error.message); } finally { busy = false; controls.forEach(node => { node.disabled = false; }); draftUI.render(); catalogUI?.render(); managementUI?.render(); stageAssetUI?.render(); strongholdUI?.render(); generalsUI?.render(); mapviewUI?.render(); show(view); }
 }
 async function list() {
   const data = await api('/api/admin/accounts'); q('accounts').replaceChildren();
@@ -95,7 +95,8 @@ async function ownGames() {
     row.append(label);
     const listing = document.createElement('button'); listing.type = 'button';
     listing.textContent = game.listed ? '下架' : '上架';
-    listing.disabled = isBusy() || (!game.listed && game.restricted);
+    // run() gates concurrent actions; these newly created buttons are not in its initial control snapshot.
+    listing.disabled = !game.listed && game.restricted;
     listing.title = !game.listed && game.restricted ? '管理限制中，須管理員解除後才能上架' : '';
     listing.onclick = () => run(async () => {
       await api('/api/games/' + encodeURIComponent(game.gameId) + '/listing', { action: game.listed ? 'unlist' : 'list', expectedRowRevision: game.rowRevision });
@@ -106,7 +107,7 @@ async function ownGames() {
     trial.onclick = () => run(async () => { show('draft-editor'); await draftUI.gotoGame(game.gameId); });
     row.append(trial);
     const del = document.createElement('button'); del.type = 'button'; del.textContent = '刪除';
-    del.disabled = isBusy() || game.listed;
+    del.disabled = game.listed;
     del.title = game.listed ? '已上架遊戲須先下架再刪除' : '刪除為圍欄（不可逆的操作關聯），專屬草稿與發布一併清理，他人存檔不受影響';
     del.onclick = () => run(async () => {
       const name = prompt('刪除確認：請輸入遊戲名稱「' + game.metadata.name + '」以確認刪除此未上架遊戲。');

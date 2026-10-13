@@ -8,7 +8,7 @@ import { createNewGameScenario } from "../../game/world.js";
 import { prepareScenario } from "../../game/scenarioassembly.js";
 import { bindNativePlayerFactionPointer } from "../../game/nativefactions.js";
 import { TRIAL_COMPILER_REVISION } from "./trialcompile.js";
-import { setPortraitOverrides, buildPortraitOverrides } from "../../core/assets.js";
+import { bindPortraitOverrides, buildPortraitOverrides } from "../../core/assets.js";
 
 function assertTrialBinding(pack, identity, binding) {
   if (binding === undefined) { return; }
@@ -89,7 +89,7 @@ export function createTrialEnvironment(pack, { fullApp = false, playerFaction = 
   }
   const world = createWorldResources({ ...DEFAULT_WORLD, ...manifest.world,
     assets: { ...visualAssets, ...assets } });
-  setPortraitOverrides(buildPortraitOverrides(pack.chapter?.generals, manifest.portraits));
+  bindPortraitOverrides(world, buildPortraitOverrides(pack.chapter?.generals, manifest.portraits));
   const raw = createNewGameScenario(pack.chapter);
   const player = playerFaction ?? raw.factions?.[0]?.idx;
   if (!Number.isInteger(player) || !raw.factions?.some((f) => f.idx === player)) { throw new TypeError("trial chapter has no selected player faction"); }

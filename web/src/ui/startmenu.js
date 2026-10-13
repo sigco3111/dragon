@@ -193,13 +193,9 @@ export class StartMenu {
     });
   }
 
-  // ── 軍師頭像快取 (kao/{portrait}.png, 128×128) ──
-  _kao(i) {
-    this._kaos ??= {};
-    if (!this._kaos[i]) {
-      this._kaos[i] = portrait(i).catch(() => null);
-    }
-    return this._kaos[i];
+  // Resolved URL cache is owned by assets; a byte-only menu cache merges entities.
+  _kao(generalOrByte) {
+    return portrait(generalOrByte, this.app.world).catch(() => null);
   }
 
   // 自創軍師命名文字庫 (END_S15.DAT → nametable.json, KI.EXE 0x8FC8)
@@ -221,8 +217,8 @@ export class StartMenu {
       h = 176; // 金框外圍 240×192 (15×12 tiles)，居中 (208, 112)
     const px = (640 - w) >> 1,
       py = (400 - h) >> 1;
-    const monImg = await this._kao(mon.portrait);
-    const advImg = adv ? await this._kao(adv.portrait) : null;
+    const monImg = await this._kao(mon);
+    const advImg = adv ? await this._kao(adv) : null;
     const btns = [
       { label: "自定", act: "custom", x: px + 159, y: py + 126, w: 50, h: 18 },
       { label: "確定", act: "ok", x: px + 159, y: py + 150, w: 50, h: 18 },

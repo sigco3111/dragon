@@ -1,6 +1,6 @@
 # E-05-SERVER-AUTH-1：服务端 Trial 记录与真实会话认证（考证与设计登记）
 
-本页是考证与设计登记，**不含实施**；实施批次另行登记 I/O 与验证收据，不据本页宣称 Q70/Q71/E-05 任何部分完成。用户已授权本线程方向（"你判定选择，默认同意授权"）；部署平台不自动选择，实施只接本地真实后端栈，不部署、不用假认证。
+本页保留初次考证／设计及下方实施批次，不再代表“尚未实施”。服务端1–7e／8a–8h与后继限定lane、App双规则边界及真实浏览器链已接；最新状态／源码漂移与真实剩余见[小范围审计](editor-closeout-audit.md)，不据本页关闭完整Q69/Q70/Q71/E-05。下方“尚未完成／未接线”只指其历史批次。用户已授权本线程方向（"你判定选择，默认同意授权"）；部署平台不自动选择，实施只接本地真实后端栈，不部署、不用假认证。
 
 ## 真实认证协议考证（实锤，行级来源）
 
@@ -245,7 +245,7 @@ manifest compilerRevision/buildFormat/identity/scope 精确绑定；四 `assets`
 
 实际本地后端（真 Worker/SQLite/认证链，非浏览器）32 检查／48 实际 HTTP 通过：启动负例（无 cookie 401／坏 CSRF 403／query 422／fields 422／修订格式 422／未知修订 404／坏章格式 422／他人游戏 404／未知游戏 404）；有效启动＋密封幂等重放同 trialId＋异 body 同键 409；status（无 cookie 401／他人 401 TRIAL_INVALID／query 422／active 200）；end（他人 401／显式 200 ended-explicit／异键重结束 200 同态）；Q70（改密后旧会话 401 SESSION_INVALID、重登录 status 401 TRIAL_INVALID 不复活、行记 session-revoked）；lazy 绝对期限（status 200 ended/session-absolute-expiry）；删除栅栏（status 401 TRIAL_INVALID、行记 game-deleting、清栅栏后 200 ended 不变）；四终态行原因精确＋栅栏行恢复＋除五张预期写表（trial_sessions/operations/sessions/login_rates/users）外逐表 digest 不变。guards 继任 545/254→546/255（worker.js 改＋trials.js 增，priorProtected545/254 谱系）；独立 audit 9274 hash-read／11 新 WX／组合 pair 链（derb→note→noteB→noteC→noteD）双向证明通过；gate 四次 attempt 缺陷均探针/期待缺陷登记、现场改名保留。不称 Q70/Q71 完成（客户端 adapter/真实 App 未接）；投影编译/manifest/资源服务/删除级联仍未接线。
 
-## 批次8h（E-05-TRIAL-DELETE-CASCADE-8H）：fence begin 同事务 trial 级联（事项③，已修改待验证）
+## 批次8h（E-05-TRIAL-DELETE-CASCADE-8H）：fence begin 同事务 trial 级联（后继deletecascade-r1已封存，非物理删除）
 
 - **缺口（实锤）**：`trials.js #bound` 只有 lazy 路径（下次观测到 `GAME_DELETING` 才 `#close` 记 `game-deleting` 并清资产）；`deletionfence.js begin()` 同一事务内无任何 trial 级联。生产 `worker.js` 尚未实例化 fence（仅各 deletion fixture 使用），故改动点落在 fence 类自身事务内，未来任何接线方自动继承。
 - **实施**：`server/deletionfence.js`——fence INSERT 后同事务 `UPDATE trial_sessions SET state='ended', end_reason='game-deleting' WHERE game_id=? AND state='active'`＋`DELETE FROM trial_assets WHERE trial_id IN (SELECT trial_id FROM trial_sessions WHERE game_id=?)`，`sqlite_master` 存在性守卫（旧库无 trial 表时跳过）；reason/表列契约镜像 `TrialSessions.#close`（lazy 路径保留作后备）。`server/trials.js`——`LIMITS`＋文件头注释更新（fence-begin 级联已接线；Q69 完整依赖闭包／runtime 准入仍关闭）。`server/worker.js`——13 处历史字符串拼接机械模板化（行为等价）＋注释更新。无构造签名、无新增导入，既有 fixture 构造不受影响。

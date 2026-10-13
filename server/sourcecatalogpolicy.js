@@ -48,7 +48,7 @@ export function installedAvailableLibraryPolicy(input) {
   } catch { fail(503, 'LIBRARY_MANIFEST_NOT_PINNED'); }
   if (length !== 93632) fail(503, 'LIBRARY_MANIFEST_NOT_PINNED');
   const bytes = new Uint8Array(length); bytes.set(new Uint8Array(buffer, offset, length));
-  const manifestHash = 'fa0ec91f3a5ec5f8a1e99e6c55d6900fe2046fadbc437da05512023b06e2b520';
+  const manifestHash = '4031b32dcf5d04f966bfc174bd8dea62051e67653e7f71193ef88275a71ad4db';
   const library = manifest(bytes, manifestHash, 93632);
   if (library.schemaVersion !== 1 || library.profile !== TRIAL_ASSET_PROFILE || library.mode !== 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE' || library.baseRevision !== revision || library.runtimeDataSha256 !== 'f819a1a5bb81d8b915a19e8efbaf6a212d8e4516843513869dc1b939ca1ac3af' || Object.keys(library.resources).sort().join('\n') !== FIXED_TRIAL_ASSET_PATHS.join('\n') || Object.keys(library.supportingFiles).join(',') !== 'font/OFL-Oswald.txt' || Object.keys(library.programHashes).length !== 20 || library.unresolvedReferences.length !== 20) fail(503, 'LIBRARY_MANIFEST_IDENTITY');
   const roles = [{ path: 'available-library-manifest.json', sha256: manifestHash, byteLength: 93632 }];

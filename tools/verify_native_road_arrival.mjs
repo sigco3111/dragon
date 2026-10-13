@@ -27,6 +27,7 @@ import {
 } from "../web/src/game/ai.js";
 import { OriginalBattleRng } from "../web/src/game/battle/originalrng.js";
 import { arriveOriginalRoad } from "../web/src/game/navigation/originalroadarrival.js";
+import { nativeDiplomacyAt, writeNativeDiplomacyAt } from "../web/src/game/nativediplomacy.js";
 import {
   initializeNativeLegionSlotsFromZeroChapter,
   rebindNativeLegionViews,
@@ -545,10 +546,12 @@ test("4300 ordered short circuits and interception BX/DI aliases never balance o
         // （§3.13保留语义）；旧实现误传变异BX致DI回绕0读势力F18。DI+18h
         // =2072落外交窗（row22/col8），夹具按该真地址给值：
         // diplomacy[22][8]≤2跳过RNG（handler5直返，命令字节保持1）。
-        f.sc.diplomacy = Array.from({ length: 24 }, () =>
-          Array(24).fill(0x80),
-        );
-        f.sc.diplomacy[22][8] = 2;
+        // Synthetic input only: set the actual fixed-table cell. Replacing
+        // the declared prefix array no longer changes native rule inputs.
+        const prefixLength = f.sc.diplomacy.length;
+        writeNativeDiplomacyAt(f.sc, 22, 8, 2, "fixture 43D3 low alias");
+        assert.equal(nativeDiplomacyAt(f.sc, 22, 8, "fixture readback"), 2);
+        assert.equal(f.sc.diplomacy.length, prefixLength);
         slot(f);
         assert.equal(f.A.commandState, 1);
         assert.equal(f.app._strategicBattleFailure, undefined);
@@ -563,10 +566,10 @@ test("4300 ordered short circuits and interception BX/DI aliases never balance o
             sc.legions[0].targetCity = 191;
           },
         });
-        forced.sc.diplomacy = Array.from({ length: 24 }, () =>
-          Array(24).fill(0x80),
-        );
-        forced.sc.diplomacy[22][8] = 0x80;
+        const forcedPrefixLength = forced.sc.diplomacy.length;
+        writeNativeDiplomacyAt(forced.sc, 22, 8, 0x80, "fixture 43D3 high alias");
+        assert.equal(nativeDiplomacyAt(forced.sc, 22, 8, "fixture readback"), 0x80);
+        assert.equal(forced.sc.diplomacy.length, forcedPrefixLength);
         const before64 = forced.context.movement.snapshot();
         slot(forced);
         assert.equal(forced.A.commandState, 2);

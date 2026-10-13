@@ -2,9 +2,12 @@
 // game's resource library, reusable by many generals of that game, never
 // shared across games. Draft save binds portraitKey; bytes live here (outside
 // the fixed-copy source, like trial uploads). Publish freezes them into the
-// pack; serve-time sha+mime rechecked. 128×128 enforced by header parse
-// (PNG IHDR / JPEG SOF), never by client claim.
+// pack; serve-time sha+mime rechecked. PNG: bounded full decode and canonical
+// RGBA re-encode at the existing 128×128 boundary. Supported JPEG inputs also
+// decode/re-encode to PNG; this does NOT supply process isolation or Trial safety.
 import { createHash } from 'node:crypto';
+import { decodePNG, encodePNG, PNGError } from './pngio.js';
+import { decodePortraitJPEG, PortraitJPEGError } from './portraitjpeg.js';
 import { fail } from './security.js';
 const uuid = v => typeof v === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v);
 const sha = b => createHash('sha256').update(b).digest('hex');
@@ -80,9 +83,33 @@ export class GamePortraits {
     if (!dims) { fail(422, 'PORTRAIT_TYPE'); }
     if (dims.width !== PORTRAIT_SIZE || dims.height !== PORTRAIT_SIZE) { fail(422, 'PORTRAIT_DIMENSIONS'); }
     if (this.#one('SELECT asset_id FROM game_portraits WHERE game_id=? AND asset_id=?', gameId, assetId)) { fail(409, 'PORTRAIT_EXISTS'); }
-    const digest = sha(bytes);
-    this.#sql.exec('INSERT INTO game_portraits VALUES(?,?,?,?,?,?,?,?)', gameId, assetId, digest, bytes.length, dims.mime, dims.width, dims.height, Buffer.from(bytes));
-    return Object.freeze({ gameId, assetId, sha256: digest, byteLength: bytes.length, mime: dims.mime, width: dims.width, height: dims.height });
+    let stored = Buffer.from(bytes), mime = dims.mime;
+    if (dims.mime === 'image/png') {
+      try {
+        // Dimensions were checked before inflation; at most 128×128 RGBA samples.
+        // The shared adapter checks CRC/order, exact zlib consumption and output
+        // length, and rejects animation/unsupported profiles. Only pixels leave
+        // this boundary: no uploaded ancillary chunks or trailing bytes persist.
+        const decoded = decodePNG(stored);
+        stored = encodePNG(decoded.pixels, decoded.width, decoded.height);
+      } catch (error) {
+        if (!(error instanceof PNGError)) { throw error; }
+        fail(422, 'PORTRAIT_PNG_INVALID');
+      }
+    } else {
+      try {
+        const decoded = decodePortraitJPEG(stored);
+        stored = encodePNG(decoded.pixels, decoded.width, decoded.height);
+        mime = 'image/png';
+      } catch (error) {
+        if (!(error instanceof PortraitJPEGError)) { throw error; }
+        fail(422, 'PORTRAIT_JPEG_INVALID');
+      }
+    }
+    if (stored.length > PORTRAIT_MAX_BYTES) { fail(422, 'PORTRAIT_BYTES'); }
+    const digest = sha(stored);
+    this.#sql.exec('INSERT INTO game_portraits VALUES(?,?,?,?,?,?,?,?)', gameId, assetId, digest, stored.length, mime, dims.width, dims.height, stored);
+    return Object.freeze({ gameId, assetId, sha256: digest, byteLength: stored.length, mime, width: dims.width, height: dims.height });
   }
   list(tokenHash, gameId) {
     this.#owned(tokenHash, gameId);

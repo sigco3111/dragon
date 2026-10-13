@@ -6,6 +6,12 @@
 
 项目用于学习、技术研究与非商业怀旧交流，但这不是在 MIT 中增加非商业限制：MIT 代码可按其条款使用，包括商业使用；第三方资源另行判断。
 
+## 服务端第三方代码
+
+- `server/vendor/jpeg-js/decoder.js` 固定取自 jpeg-js v0.4.4、commit `9ccd35fb5f55a6c4f1902ac5b0f270f675750c27` 的 `lib/decoder.js`。原件 SHA256 `a3f175fd6f62d142aad94d3bd90f3a30be4e076baf9b6a6fa31c8e84d9d4aa9f`；保留 Copyright 2011 notmasteryet 及 Apache-2.0 文件头。
+- 附完整 [Apache-2.0](server/vendor/jpeg-js/LICENSE-Apache-2.0.txt) 与上游包 [BSD-3-Clause](server/vendor/jpeg-js/LICENSE-BSD-3-Clause.txt) 文本；固定上游根目录无 NOTICE 文件。该第三方代码不改许可为项目 MIT，不代表完整安全认证。
+- 本地 ESM／严格码流与边界修改见 [vendor说明](server/vendor/jpeg-js/README.md)。仅服务端包装器使用，不安装 npm 运行时依赖、不进入玩家 Web 束，也不引入云图片服务。
+
 ## 资源来源与授权状态
 
 | 内容 | 来源标注 | 许可边界 |

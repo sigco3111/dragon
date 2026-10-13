@@ -59,24 +59,43 @@ export function loadSeasonTile(season, definition = DEFAULT_WORLD) {
   );
 }
 
-/** 武将头像 (懒加载+缓存；试运行上传覆盖优先，无覆盖回落 kao) */
-let portraitOverrides = null;
-export function setPortraitOverrides(map) { portraitOverrides = map instanceof Map && map.size ? map : null; }
-// Q69-(iii) Web 产品决定（用户裁决 2026-10-10，非原版机制）：8EA0 语境调用点跳过 FF 前须保留事项④上传覆盖。
-export function hasPortraitOverride(i) { return portraitOverrides?.has(i) ?? false; }
+/** Q37 Web presentation: uploaded portraits belong to a captured chapter/world,
+ * not a process-global DOS portrait byte. No rule fields or 255 semantics change. */
+const worldPortraits = new WeakMap();
+export function bindPortraitOverrides(world, map) {
+  if (!world || typeof world !== "object" || !(map instanceof Map) || worldPortraits.has(world)) {
+    throw new TypeError("portrait bindings require a fresh owning world");
+  }
+  worldPortraits.set(world, new Map([...map].map(([idx, entry]) => [idx, Object.freeze({ ...entry })])));
+}
+function portraitOverride(general, world) {
+  if (!general || typeof general !== "object") return null;
+  const entry = worldPortraits.get(world)?.get(general.idx);
+  // Captured tactical speakers have slot/portrait, without live portraitKey.
+  return entry && entry.portrait === general.portrait &&
+    (!Object.hasOwn(general, "portraitKey") || general.portraitKey === entry.portraitKey) ? entry.url : null;
+}
+// Q69-(iii): retain the existing narrow FF presentation exception for uploads.
+export function hasPortraitOverride(general, world) { return portraitOverride(general, world) !== null; }
+export function portraitURL(generalOrByte, world) {
+  const byte = generalOrByte && typeof generalOrByte === "object" ? generalOrByte.portrait : generalOrByte;
+  return portraitOverride(generalOrByte, world) ?? `kao/${byte}.png`;
+}
 // 事项④ Web 产品决定（用户裁决 2026-10-09，非原版机制）：章武将 portraitKey ×
-// manifest.portraits 命中即按 portrait byte 覆盖 kao 引用；未命中/非法一律回落，不发明图。
+// manifest.portraits 命中即按章实体 idx 绑定；同 byte 不合并，未命中回落，不发明图。
 export function buildPortraitOverrides(generals, portraits) {
   const map = new Map();
   if (!Array.isArray(generals) || !Array.isArray(portraits)) { return map; }
   const byId = new Map(portraits.filter((entry) => entry && typeof entry.assetId === "string").map((entry) => [entry.assetId, entry]));
   for (const general of generals) {
-    if (!general || typeof general.portraitKey !== "string" || !Number.isInteger(general.portrait)) { continue; }
+    if (!general || !Number.isInteger(general.idx) || typeof general.portraitKey !== "string" || !Number.isInteger(general.portrait)) { continue; }
     const hit = byId.get(general.portraitKey);
-    if (typeof hit?.url === "string" && hit.url) { map.set(general.portrait, hit.url); }
+    if (typeof hit?.url === "string" && hit.url) {
+      map.set(general.idx, Object.freeze({ portrait: general.portrait, portraitKey: general.portraitKey, url: hit.url }));
+    }
   }
   return map;
 }
-export function portrait(i) {
-  return loadImage(portraitOverrides?.get(i) ?? `kao/${i}.png`);
+export function portrait(generalOrByte, world) {
+  return loadImage(portraitURL(generalOrByte, world));
 }

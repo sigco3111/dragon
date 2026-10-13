@@ -10,7 +10,7 @@
 //     (minimap.png 160×107 由 map_full.png 1920×1280 NEAREST 缩出), 城点按势力着色,
 //     点击导航大地图, 遇袭城点闪烁+警示音
 //   - 时钟联动: 仅模态弹窗(進言/列表/存读档)打开时冻结计时, 菜单条/悬停不影响
-import { loadImage, portrait, hasPortraitOverride } from "../core/assets.js";
+import { loadImage, portrait, portraitURL, hasPortraitOverride } from "../core/assets.js";
 import { mapPanelLayout, insidePanel } from "./mappanellayout.js";
 // M1 自动小地图：统一正逆变换（实际地图矩形，留边不导航），不再各处手写 208/6144 常量。
 const MINIMAP_WORLD = Object.freeze({ width: 384, height: 256, tileSize: 16 });
@@ -1577,17 +1577,21 @@ export class GameBar {
       legion.faction == null
         ? cmd.playerFaction(sc)
         : sc.factions.find((f) => f.idx === legion.faction);
-    const gen = sc.generals?.find((g) => g.name === legion.leader);
+    const gen = Number.isInteger(legion.generalIdx)
+      ? sc.generals?.find((g) => g.idx === legion.generalIdx)
+      : sc.generals?.find((g) => g.name === legion.leader);
     const monarch = legionFaction ? sc.monarchOf(legionFaction) : null;
     const isMonarch = legion.is_monarch || gen?.name === monarch?.name;
 
     // 1. 头像 64x64
-    const portraitKey = gen?.portrait ?? monarch?.portrait;
+    const world = this.app.world;
+    const portraitKey = portraitURL(gen ?? monarch, world);
     if (this._legionPortraitKey !== portraitKey) {
       this._legionPortraitKey = portraitKey;
       this._legionPortraitImg = null;
-      portrait(portraitKey)
+      loadImage(portraitKey)
         .then((img) => {
+          if (this.app.scenario !== sc || this.app.world !== world || this._legionPortraitKey !== portraitKey) return;
           this._legionPortraitImg = img;
           this.app.view.draw();
         })
@@ -2032,11 +2036,11 @@ export class GameBar {
     const monarch = sc.monarchOf(me);
     const advGen = adv.getAdvisor(sc, me);
     const monarchImg = monarch
-      ? await portrait(monarch.portrait).catch(() => null)
+      ? await portrait(monarch, this.app.world).catch(() => null)
       : null;
     // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
-    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen.portrait))
-      ? await portrait(advGen.portrait).catch(() => null)
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
       : null;
 
     const targetName = (targetFaction.monarch ?? "").trim();
@@ -2154,11 +2158,11 @@ export class GameBar {
     const monarch = sc.monarchOf(me);
     const advGen = adv.getAdvisor(sc, me);
     const monarchImg = monarch
-      ? await portrait(monarch.portrait).catch(() => null)
+      ? await portrait(monarch, this.app.world).catch(() => null)
       : null;
     // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
-    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen.portrait))
-      ? await portrait(advGen.portrait).catch(() => null)
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
       : null;
 
     const targetName = (targetFaction.monarch ?? "").trim();
@@ -2281,11 +2285,11 @@ export class GameBar {
     const monarch = sc.monarchOf(me);
     const advGen = adv.getAdvisor(sc, me);
     const monarchImg = monarch
-      ? await portrait(monarch.portrait).catch(() => null)
+      ? await portrait(monarch, this.app.world).catch(() => null)
       : null;
     // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
-    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen.portrait))
-      ? await portrait(advGen.portrait).catch(() => null)
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
       : null;
 
     const allyName = (allyFaction.monarch ?? "").trim();
@@ -2398,11 +2402,11 @@ export class GameBar {
     const monarch = sc.monarchOf(me);
     const advGen = adv.getAdvisor(sc, me);
     const monarchImg = monarch
-      ? await portrait(monarch.portrait).catch(() => null)
+      ? await portrait(monarch, this.app.world).catch(() => null)
       : null;
     // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
-    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen.portrait))
-      ? await portrait(advGen.portrait).catch(() => null)
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
       : null;
 
     const cityName = (targetCity.name ?? "").trim();
@@ -2506,11 +2510,11 @@ export class GameBar {
 
     const advGen = adv.getAdvisor(sc, me);
     const monarchImg = monarch
-      ? await portrait(monarch.portrait).catch(() => null)
+      ? await portrait(monarch, this.app.world).catch(() => null)
       : null;
     // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
-    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen.portrait))
-      ? await portrait(advGen.portrait).catch(() => null)
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
       : null;
 
     const advName = (advGen?.name ?? "軍師").trim();
@@ -3585,7 +3589,7 @@ export class GameBar {
     if (!me || !monarch || !requesterFaction || !result) return false;
     const requesterName = (requesterFaction.monarch ?? "").trim();
     const targetName = (targetFaction?.monarch ?? "").trim();
-    const monarchImg = await portrait(monarch.portrait).catch(() => null);
+    const monarchImg = await portrait(monarch, this.app.world).catch(() => null);
     // 38C7/38E6：提问行 = TALK 基 + 君主个性变体（3C99：v>=3 减 3）；
     // 原版选项前无军师行，native 分支不显示 v1 的第二行。
     const base = type === "incoming-truce" ? 360 : 373;
@@ -4351,7 +4355,7 @@ export class GameBar {
   async showGeneralCard(gen) {
     if (!gen) return;
     const { lines } = await quoteFor(gen);
-    const img = await portrait(gen.portrait).catch(() => null);
+    const img = await portrait(gen, this.app.world).catch(() => null);
     const w = 256;
     const h = 80;
     let px, py;
@@ -4436,7 +4440,7 @@ export class GameBar {
     } = {},
   ) {
     if (!gen) return;
-    const img = await portrait(gen.portrait).catch(() => null);
+    const img = await portrait(gen, this.app.world).catch(() => null);
     if (generation !== this._scenarioUiGeneration) return;
     if (px == null || py == null) {
       if (this.listDialog) {
@@ -4572,9 +4576,9 @@ export class GameBar {
     const advisor = sc.generals?.[me?.advisor_idx] ?? monarch;
     if (!gen || !monarch || !advisor) return false;
     const [governorImg, advisorImg, monarchImg] = await Promise.all([
-      portrait(gen.portrait).catch(() => null),
-      portrait(advisor.portrait).catch(() => null),
-      portrait(monarch.portrait).catch(() => null),
+      portrait(gen, this.app.world).catch(() => null),
+      portrait(advisor, this.app.world).catch(() => null),
+      portrait(monarch, this.app.world).catch(() => null),
     ]);
     const rawRequested = Math.max(0, message.requested | 0);
     // 0x39F1..0x39FA：只把入口建议额的1..499钳为500；键盘自定义值不钳。
@@ -4651,9 +4655,9 @@ export class GameBar {
     if (!target || !gen || !monarch || !advisor) return false;
     if (!message.nativeBudget && !envoy) return false;
     const [envoyImg, advisorImg, monarchImg] = await Promise.all([
-      portrait(gen.portrait).catch(() => null),
-      portrait(advisor.portrait).catch(() => null),
-      portrait(monarch.portrait).catch(() => null),
+      portrait(gen, this.app.world).catch(() => null),
+      portrait(advisor, this.app.world).catch(() => null),
+      portrait(monarch, this.app.world).catch(() => null),
     ]);
     const targetName = (target.monarch ?? "該勢力").trim();
     const rawRequested = Math.max(0, message.requested | 0);
@@ -5176,7 +5180,7 @@ export class GameBar {
     const f = cmd.playerFaction(sc);
     if (!f) return;
 
-    const img = await portrait(gen.portrait).catch(() => null);
+    const img = await portrait(gen, this.app.world).catch(() => null);
 
     // 势力总可用预备兵池 (实际人数: reserve_* * 10)
     const totalRes = [
@@ -5351,7 +5355,7 @@ export class GameBar {
       warnSfx();
       const advGen = adv.getAdvisor(sc, fac) || sc.monarchOf(fac);
       const pImg = advGen
-        ? await portrait(advGen.portrait).catch(() => null)
+        ? await portrait(advGen, this.app.world).catch(() => null)
         : null;
       const { lines } = await quoteForIndex(62);
       this.formationQuote = {
@@ -5698,7 +5702,7 @@ export class GameBar {
         (fac ? adv.getAdvisor(sc, fac) : null) ||
         (fac ? sc.monarchOf(fac) : null);
       if (advGen && advGen.portrait != null) {
-        portrait(advGen.portrait)
+        portrait(advGen, this.app.world)
           .then((img) => {
             if (this.financeDialog) {
               this.financeDialog.advisorImg = img;
@@ -8601,12 +8605,14 @@ export class GameBar {
     }
     // 君主头像 64×64 (懒加载缓存)
     const mon = sc.monarchOf(me);
-    const key = mon?.portrait;
+    const world = this.app.world;
+    const key = portraitURL(mon, world);
     if (this.portraitKey !== key) {
       this.portraitKey = key;
       this.portraitImg = null;
-      portrait(key)
+      loadImage(key)
         .then((img) => {
+          if (this.app.scenario !== sc || this.app.world !== world || this.portraitKey !== key) return;
           this.portraitImg = img;
           this.app.view.draw();
         })

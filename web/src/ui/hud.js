@@ -1,7 +1,7 @@
 // HUD — 顶部面板(剧本/季节切换)、势力图例、悬停提示、君主卡
 import { factionColorEx, SEASONS } from "../game/world.js";
 import { hasPendingStrategicEvent } from "../game/ai.js";
-import { portrait } from "../core/assets.js";
+import { portrait, portraitURL } from "../core/assets.js";
 import { createPortraitCanvas } from "./portraitcanvas.js";
 import * as cmd from "../game/commands.js";
 import { clickSfx, warnSfx, toggleMute, unlockSfx } from "../core/speaker.js";
@@ -1735,7 +1735,7 @@ export class HUD {
         "div",
         { style: "display:flex; align-items:center; gap:12px; width:100%" },
         h("img", {
-          src: portrait(gen.portrait),
+          src: portraitURL(gen, this.app.world),
           width: 64,
           height: 64,
           style: "image-rendering:pixelated; border:1px solid #6b5335;",
@@ -1824,7 +1824,7 @@ export class HUD {
     if (advGen) {
       dlg.append(
         h("img", {
-          src: portrait(advGen.portrait),
+          src: portraitURL(advGen, this.app.world),
           width: 72,
           height: 72,
           style: "image-rendering:pixelated; border:1px solid #6b5335;",
@@ -2063,7 +2063,7 @@ export class HUD {
     // pi-lens-ignore: opengrep
     const sc = this.app.scenario;
     const mon = sc.monarchOf(f);
-    const img = await portrait(mon.portrait).catch(() => null);
+    const img = await portrait(mon, this.app.world).catch(() => null);
     const cap = sc.city(f.capital);
     // ★隐藏属性提示: 君主自陈特长 (TALK.DAT 558-581, 复刻原版能力确认流)
     const quote = await quoteFor(mon);

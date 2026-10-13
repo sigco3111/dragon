@@ -657,9 +657,10 @@ export class BattleView {
     // original TALK hard breaks. The captured text/lines and rule events stay raw.
     if (text) text.textContent = capture.text.replace(/[\r\n]+/g, "");
     if (face) face.removeAttribute("src");
-    // Only the retained slot portrait, never commander/generalIdx or NPC fallback.
+    // Retained slot + portrait resolve the world's captured chapter binding,
+    // never commander/generalIdx or a live name lookup. Rule captures stay untouched.
     // Slow asset loads may fill this capture, but cannot revive/replace a window.
-    portrait(capture.speaker.portrait)
+    portrait({ idx: capture.speaker.slot, portrait: capture.speaker.portrait }, this.app.world)
       .then((image) => {
         this.dialoguePresentation.expire();
         if (face && this.dialoguePresentation.owns(capture.side, entry))

@@ -179,7 +179,7 @@ GameSource
 | 据点名称、图片 | `CityDefinition{name,cityVisualRef}`；全游戏共用 | 名称不是身份；图片枚举绑定已提取资源及配套城型，不凭图片大小推城损规则 |
 | 据点基础数值 | `maxProduction/production`→`max_prod/prod` u16；`growth/disasterProtection/troopCapacity/troops`→`growth/defence/troops_cap/troops` u8 | 城记录+0C/+0E/+10..13；`defence`显示“防災”，不是城壁；兵力内部十人单位，UI可显示人数且只接受精确×10 |
 | 据点位置／型／外观 | map placement→x/y；受信城型／view绑定→`type/view` | +08/+0A及+16；不能把0..15存储域都开放成合法城型 |
-| 武将身份／头像 | `GeneralDefinition{name,hao,portraitRef}` | 原资源150张PNG，本轮直接读PNG头均128×128；上传按1:1裁剪，正式规范图128×128。普通显示不再假定`kao/${byte}.png`可覆盖所有游戏 |
+| 武将身份／头像 | `GeneralDefinition{name,hao,portraitRef}` | 原资源150张PNG头均128×128；后续产品裁决源尺寸仅建议128，裁active显示64，规范输出与源尺寸分开。全部消费者须按实体／资源身份解析，不能只按原byte覆盖 |
 | 三专长 | `ability.siege/field/naval` | G+0E/+0F/+10高四位0..15，低位保留；字段本身实锤，组合效果不重写 |
 | 武术／统率／政治 | `ability.force/lead/politics` | G+11..13全byte；历史`&0xF`已由[离线专项](editor-ability-import.md)纠正，默认未重导入；不能把旧编辑范围当原版上限。高值进入编辑域前审算术／显示消费者 |
 | 战术脚本组／对白 | `battleScriptRef/dialogueVariantRef`→`battle_formation/talk_idx` | 只选配套枚举；不是UI阵形，也不按序号解释强弱；原来源G+16/+1E |
@@ -554,10 +554,12 @@ actualfresh browser13检查24控制请求9管理POST5operationGET、独立fakeDO
 - **不同端口不隔离cookie，SameSite也不是同Origin。** 精确Origin必须包含scheme/host/port，不能用通配CORS；独立端口不是单独的安全论据。草稿试运行放在编辑器受控源，复用同引擎静态模块及仅编辑端可读的资源路由，不访问玩家正式源的IDB。
 - 会话携带账户`authEpoch`；禁用／重置／改密在事务递增epoch并撤销旧会话，写提交再次查验。启用不复活旧token。管理员撤销与已开始写事务以提交点定义先后，已经提交的合法保存不倒回。
 - idle/absolute期限、登录速率、上传／草稿／编译配额是集中版本化的运维配置，必须有非零有限值并在适配器测试用固定时钟证明；不得无限制或用这些配置增加游戏机制阈值。具体容量按既有环境测量冻结，不在未测时承诺并发量／SLA。
-- 头像只收实际可解码的PNG/JPEG静态图，拒绝SVG、HTML、动画、多态内容及远程URL抓取；先检查字节／尺寸／像素数量上限，再隔离解码、按裁剪参数重编码128×128规范PNG，丢弃EXIF等元信息。客户端预览不替代服务端处理。
+- 头像只收实际可解码的PNG/JPEG静态图，拒绝SVG、HTML、动画、多态内容及远程URL抓取；先检查字节／尺寸／像素数量上限，再隔离解码、按裁剪参数重编码128×128规范PNG，丢弃EXIF等元信息。客户端预览不替代服务端处理。源尺寸不限于128（产品§4.3后续裁决），安全像素预算与规范输出是不同约束；B4e当轮只做header检验；后继[PNG安全切片](editor-portrait-png-safety.md)已补游戏库PNG有界完整解码／规范重编码，后继[JPEG有界实现](editor-portrait-jpeg-safety.md)已补游戏库JPEG子集解码／规范PNG输出（用户明确批准server-only固定vendor，不npm运行时安装或云binding）；后继[当前SHA真实链](editor-portrait-workerd-safety.md)补17项公开API／发布／匿名App，含原JPEG规范PNG；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补有界源矩形规范化及原存储预算、提交前写门；Trial JPEG／服务端裁剪／规范128输出、进程隔离与独立彩色精度／完整格式未提供，不关闭本安全合同。差距见[审计](editor-closeout-audit.md)。
 - 上传先进入当前游戏私有暂存，扫描／解码失败不能引用；用户文件名不作存储路径。资源ID和hash不构成读取权限；草稿及试运行资源每次查授权，`Cache-Control: no-store`，不进公共CDN或Service Worker缓存。
 - 统一文本输出使用textContent／受控Canvas绘字，不拼HTML，CSP不允许作者脚本；文件路径防穿越。发布可分发的正式图像资源只来自已校验manifest。
 - 审计记录操作者、对象ID、操作、前后修订、结果及requestId；不录密码／token／个人资料正文／完整草稿。账户可选姓名邮箱电话备注仅本人和用户管理权限可见，不进入匿名API或公告。
+
+> 下列§6.1–6.26保留各基础批次身份，其“未装Trial／发布／完整壳”不是当前结论；后继workerd壳／BOOT-1／Trial及头像切片已有接线，当前摘要与限制见[小范围审计](editor-closeout-audit.md)，安全合同不因此豁免。
 
 ### 6.1 独立真实账户服务切片（用户m6873/m6911授权）
 
@@ -689,6 +691,10 @@ policy十负控与默认Root五组26请求／真实重启改密，以及原目�
 
 ## 7. 草稿试运行状态机
 
+**当前接线摘要（本地98f0630审计）**：[Trial服务端](editor-trial-server.md)1–7e／8a–8h及后继lane已接真实会话、精确快照、私有资源、工作台新窗、战略和战术边界及终态处置；`trial-tactical-browser-r1`20项证真实交战帧、offline冻结／有效online恢复、改密终止并关闭战斗。不能再称“未装真实App”。仍未完成Q69/Q70/Q71所有出口和当前SHA完整链，窗口／全部输入与async组合、完整资源身份仍须逐项绑定；统一终局免实证事项已关闭。详见[审计详细源](editor-closeout-audit.md)。
+
+**以下三段为基础切片历史**（不覆盖上述后继接线）：
+
 本地Q67[游戏列表入口](editor-list-trial.md)已接选章及用户手势新窗口，捕获已保存修订、检查compile响应game/revision/单章后走原Trial loader；阻挡不compile、冲突不换latest、未保存资料确认/保留、失败只关本次等待窗口。实际五focused含两个App/不同修订与章/旧stateRAMRNG不变及IDB0；73/167为更新库存而非新全量成绩。工作台、服务与引擎原样，真正作者认证/Q69闭包/Q70/71实际App接线仍缺。
 
 后续[连接能力核心/注入monitor](editor-trial-connection.md)已独立实现精确绑定/逻辑单飞/代次/不可逆终态及fake5s/10s、先暂停再abort；随后独立窗口events adapter与fresh DOM原生offline/online、刷新空新Realm已测；visibility/BFCache/非persisted终止仍synthetic，原生关闭回调观测未闭合。随后opt-in继承Clock与真实BattleView/VM/Session计时边界已测82检查/8负控、hold并集/代次无债务/启动50帧续段与异常前缀；旧引擎源不改。没有真实Trial的认证/HTTP/双规则边界/全部输入入口/认证终态触发的App处置安装，不关闭本节或Q70/Q71；未来保存hold必须分开nonTrialHold与网络有效hold。
@@ -713,6 +719,8 @@ policy十负控与默认Root五组26请求／真实重启改密，以及原目�
 ## 8. 玩家目录、正式对局与本地存档
 
 ### 8.1 最新目录与固定对局
+
+> 当前本机workerd匿名目录／玩壳／冻结包及按游戏IDB持久入口已接；以下完整正式release、旧局续取／警告、删档／公告政策仍是验收合同，不以现pin的draftRevision代替releaseOrdinal。后文opt-in各轮未装App属于当时身份，现限定安装也不代表全部政策通过；见[审计](editor-closeout-audit.md)。
 
 registry及状态读取`no-store`，不使用`stale-while-revalidate`把已下架内容当最新；资产不可变但通过游戏状态门读取。刷新页面／回到标题／浏览器返回恢复时重新取得目录；自建目录不可用则禁新局／读档并重试，内置使用随软件提供且验证就绪的manifest，不把内置常驻误变为依赖远端成功。
 
@@ -746,7 +754,7 @@ registry及状态读取`no-store`，不使用`stale-while-revalidate`把已下�
 
 ## 9. 分阶段验收合同
 
-所有项目均为**待执行**。下表是实现出口而非本轮通过记录；使用新profile、mock或纯内存，禁止真实SAVE与实际用户档案。Task2先于编辑器阶段，详细迁移用例只在任务二维护。
+下表是完整验收出口，不是本轮通过记录；设计轮“所有项目待执行”已被后继切片与任务二限定域交付替代，当前逐项状态见[索引](editor-requirements-matrix.md)和[审计](editor-closeout-audit.md)，不能因此认为E-01..11全部完成。使用新profile、mock或纯内存，禁止真实SAVE与实际用户档案。Task2先于编辑器阶段，详细迁移用例只在任务二维护。
 
 | 编号／阶段 | 必须取得的正向与反向证据 |
 | --- | --- |

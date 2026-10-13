@@ -1,5 +1,71 @@
 # 本地编辑器验证清单
 
+## PORTRAIT-COMMIT-1：用户授权提交既有头像链（不推送）
+
+- 用户要求「提交代码，继续」。提交范围为前述本地头像UI／身份／公开链／库PNG-JPEG／Trial PNG代码、测试、许可证与必要状态文档；不提交 `.dragon-analysis` 产物，不push／deploy／fetch，也不改真实存档或profile。
+- 暂存检查首次发现新vendor原始行尾空白与closeout多余末空行。保vendor／完整许可证原字节，在仓库 `.gitattributes` 仅对该decoder和LICENSE设 `-text whitespace=-blank-at-eol`，不设全局例外、不关文本diff；closeout仅移一空行，不改结论。前批密封报告保原doc SHA；本轮独立文档／Git检查与提交收据不覆写它们。
+- 提交前只读当前868项明示输入、前批16source／4075artifact pins、当前文档、显式暂存路径及Git对象；本地 `git diff --cached --check`／`git hash-object`／`git show :<path>`核实际暂存内容，白名单环境，写新 `.dragon-analysis/editor-phase/portrait-commit-r1/` 独占收据。提交以明确路径add，不包含临时图／日志；不把前批17项真实App链重标为新Trial源码全绿。提交后再读HEAD及status确认；继续实施另立范围与收据。
+
+## TRIAL-PORTRAIT-PNG-1：Trial PNG有界规范化与拒绝前无资源写入
+
+- 用户「继续，遇到问题分析原因找到办法解决」授权本地接续。先查明确魔数假正例及预检结果末端核验导致直调部分写入；仅修Trial PNG解码／RGBA重编码及提交检查顺序，保源矩形、JPEG旧原图行为。裁剪参数／128输出、任意源JPEG与进程隔离仍独立缺口，不新增规则／RNG／Web束／库pin改动。
+- 新入口 `node tools/verify_trial_portrait_png_safety.mjs <新轮号>`，新fixture `tools/fixtures/trial_portrait_png_worker.mjs`：实际生产TrialSessions、Node内存SQLite及自有loopback Miniflare SQLite DO，明确stub principal／games／drafts／catalog；不是公开Root认证／R2／App证据。只读864项当前明确输入、新工具／fixture／独立Pillow oracle及既有PNG服务／固定policy文本；新父scope `trial-portrait-png-parent-r1`及新子scope `trial-portrait-png-r1/attemptN`，不覆写旧轮。
+- 正负样本纯合成；Pillow只读新scope白名单源／输出PNG做全RGBA核验，不安装依赖或联网处理图片。原头像上传单测改真实PNG与规范输出，假头改拒绝；JPEG legacy对照保历史缺口，不算JPEG安全。聚焦兼容仅该头像上传、游戏库17／壳69／静态对等20、语法／主动LSP／session-all／文档／diff；变化后须当前SHA新收据，不拼旧17项App全绿。
+- 补登记共享fixture `tools/fixtures/trial_portrait_fixture.mjs`、独立oracle `tools/verify_trial_portrait_png_oracle.py`，以及新父scope自有 `postnorm-budget-probe.mjs`：只读未改PNG适配器，合成512×512 Sub-filter梯度PNG，比较源／规范输出长度，wx保存两PNG及JSON；不读原图／用户文件或启动浏览器。规范化增长需保原100KiB存储预算并用独立错误码拒绝；后继128裁剪仍未做，不能称所有≤100KiB合法源均已可上传。
+- 父预算300秒，单HTTP30秒／Pillow60秒；子进程只必要环境白名单，wx产物／快照／日志，保失败。仅自有进程／监听，不触DOS存档／用户profile，不commit/push/deploy/fetch。Jev原地区451未解除，不重复或绕限制。执行前登记；最终attempt3为66项／106实际workerd HTTP／33张Pillow全RGBA，原头像上传五组（含JPEG legacy缺口登记）、库17／壳69／对等静态20新日志通过。attempt1文本模块类型错误失败及attempt2预算门前通过保留，不拼最终绿；源3789B→规范686274B探针后追加存储预算门，独立输出预算错误不冒源损坏。详细SHA／限界见[唯一维护源](editor-trial-portrait-png-safety.md)。
+- 收口入口为该新父scope自有 `final-audit.py`／后继 `final-audit-r2.py`：只读868项明确输入及before／attempt快照、当前focused收据、新父／子scope原始失败与通过产物、上述11文档；已装Pillow重新逐图核33份RGBA，Git仅本地show／diff --check，输出新父scope report／diff日志使用exclusive create。无网络、浏览器、生产写入或旧scope覆写。首collector因未提交新文档的Git缺失提示文案断言失败保原件，新r2只允许明确新路径＋exit128＋准确文案，不吞其它Git失败，不改生产／专项期待。六变更代码all-server主动LSP 6clean／0诊断；11文档7clean／4findings，仅28个information；session-all为58文件、既有1blocking／10warnings／106hint-info，不称全仓clean。
+
+## PORTRAIT-WORKERD-SAFETY-1：当前服务端SHA真实公开API／发布／App接续
+
+- 用户「继续」授权；入口 `node tools/verify_workerd_portrait_browser.mjs <新scope> safety`。延续串行真实workerd／SQLite／R2／原stager全指纹门、随机秘密和两个全新Chromium context，不使用合成账户／SQL成功夹具或旧封存根。
+- 除原两张PNG经真实UI裁剪／确认／上传／绑定外，以 `tools/fixtures/portrait_api_jpeg.py`／已装Pillow在新scope生成固定128中性JPEG与合成EXIF；真实公开上传API须返回规范PNG，坏JPEG头／尾及坏PNG拒绝、资源查询404。三个实体UI绑定保存，发布仍现有API；匿名包／资产核MIME、长度、SHA及JPEG独立全RGBA，再由实际App解析三实体头像。
+- 只读前批明确859项输入及新增JPEG fixture、当前服务端JPEG／PNG／vendor／许可证；新父scope `portrait-workerd-safety-parent-r1` 保存执行前快照与新子scope收据。不是完整动态I/O图、普通作者交叉权限矩阵、Trial安全、进程沙箱、并发或发布UI验收。不读取DOS存档／用户profile，不commit/push/deploy/fetch。
+- 父预算1800秒／阶段180秒／HTTPS300秒；聚焦兼容只新日志运行头像库17／壳69／对等静态20与两新工具语法。未改生产／Web束／库pin，不重跑旧封存链。实际attempt1串行17项／31 Node HTTP／390浏览器响应，status0／1497.19秒；库17／壳69／静态对等20及两工具语法通过，860执行前输入逐一再核。详细结果见[唯一维护源](editor-portrait-workerd-safety.md)，不是完整图片安全或所有App消费者证书；Jev原地区451未解除不重复或绕限制。
+
+## PORTRAIT-JPEG-CANDIDATE-1：获准的服务端vendor审计／验证
+
+- 用户明确同意：仅server固定 `jpeg-js v0.4.4` 源码vendor，不npm运行时安装、不进玩家Web束、不接Images或远程图片服务。保上游原SHA／Apache-2.0与BSD-3-Clause许可、最小ESM及严格码流修改记录；候选验证前不接游戏库上传。
+- 新入口 `node tools/verify_portrait_jpeg_safety.mjs <新轮号> <candidate|library>`；只读明确列出的server头像／PNG／JPEG／vendor模块、测试fixture、独立Pillow生成器、wrangler配置和owned原件。新 `.dragon-analysis/editor-phase/portrait-jpeg-candidate-r1/attemptN/` 写合成JPEG／PNG／参考RGBA及输入快照、收据；每轮随机loopback Miniflare与内存SQLite，actor／game为合成夹具，不冒真实账户API／R2／publish或App。
+- 固定128规范输入，100KiB／segment／scan／近似内存工程预算；完整marker／tables／progressive序列与entropy／restart终止负例，元数据仅剥离后从RGBA重新编码PNG。JPEG独立参考与未改上游算术对照分别陈述，不临时设像素epsilon追绿。不签进程沙箱、所有JPEG色彩／精度／编码过程或Trial原图规范化。
+- 兼容入口仅新日志下 `verify_game_portraits.mjs`、壳／静态对等、语法与主动LSP／session-all／diff／文档检查；PNG当前新入口需相应撤销旧“JPEG假头可接受”期待，旧封存轮不覆写。禁止DOS存档／用户profile，Jev地区451未解除不重复联网绕限制。
+
+- 当前最终库attempt5：91检查／90 workerd HTTP，28正例／56负例／六既有gate与拒绝无头像写入，Pillow56输入／输出；候选attempt3通过后才接正式库。PNG当前attempt5仍54／53 HTTP／Pillow30，库17／壳69／对等静态20。独立中性／灰度精确与六彩色差异登记分开，不算完整Part-2符合性／进程沙箱／真实账户发布App。详细来源／失败／当前SHA只维护于[JPEG实现](editor-portrait-jpeg-safety.md)。
+
+## PORTRAIT-JPEG-PATH-1：解码路径调查（历史；后继已获准接库）
+
+- 用户「继续」授权JPEG安全接续；先核现兼容日期／flags的原生能力和候选来源。仅自有 `.dragon-analysis/editor-phase/portrait-jpeg-path-r1/` 内新fixture／runner、固定 `server/wrangler.jsonc` 与已安装Miniflare；随机loopback worker不绑定真实账户、SQLite、R2或Images，不传图片／凭据，不触DOS／用户profile。
+- 新probe只观察Node／workerd的 `ImageDecoder/createImageBitmap/OffscreenCanvas` 等指定全局类型，并核配置是否声明Images；不是穷尽所有平台能力，也不是JPEG解码或安全测试通过。外部查询仅官方平台文档／JPEG标准／公开候选源码及许可，不联网处理用户图片，不装npm、不引入生产第三方库或新binding。
+- 图片服务、安全合同和原JPEG支持保持原样；第三方源码vendor或平台资源接入须明确范围确认。详细调查与下一门见[路径调查](editor-portrait-jpeg-path.md)。
+
+## PORTRAIT-PNG-SAFETY-1：游戏库PNG有界解码／规范重编码
+
+- 用户「继续」授权服务端图片安全接续。只改 `GamePortraits` 的PNG分支：既有128×128／100KiB门后复用 `pngio.js` 完整有界解码，再编码纯RGBA8 PNG。JPEG仍header-only、Trial原图入口未改，不能关闭§6／Q37或声称进程沙箱已成立。
+- 新入口 `node tools/verify_portrait_png_safety.mjs <新轮号>`：只读该tool、`tools/fixtures/portrait_png_worker.mjs`、独立Pillow oracle、`server/portraits.js/pngio.js/security.js/wrangler.jsonc`。内存Node SQLite与自有随机loopback Miniflare SQLite DO；游戏行／actor是明确合成夹具，不冒真实账户／公开worker路由／R2／发布或App。真实PNG多类型／滤波／透明像素与规范输出经已装Pillow对拍；恶意PNG拒绝前后全头像表相同。只写新scope `.dragon-analysis/editor-phase/portrait-png-safety-r1/attemptN/` 输入快照、合成PNG和收据，不读取DOS／用户profile／实档；子进程仅必要环境白名单，无npm安装。
+- 兼容入口 `verify_game_portraits.mjs`（改真实PNG正例，JPEG仍旧header夹具）、`verify_editor_shell.mjs`／`verify_workerd_parity.mjs`只读静态矩阵；语法／主动LSP／session-all／diff与文档检查另列。旧已密封PNG适配器／完整浏览器lane不重跑或追认；本批不改共享适配器、Web束或库pin。
+- 最终新attempt3（只消新tool风格提示后同期待再验）：54检查／53 workerd HTTP／Pillow30图，头像库16／壳69／静态对等20通过；初Node启动环境与SQL惰性夹具失败保留。详细结果／SHA／局限只维护于[PNG安全切片](editor-portrait-png-safety.md)，JPEG假头接受明确不是安全通过。
+
+## PORTRAIT-WORKERD-1：隔离真实上传／保存／发布／运行链
+
+- 用户「继续」授权接续；新入口 `node tools/verify_workerd_portrait_browser.mjs <新scope>`。只启动自有loopback HTTPS 18977、全新Chromium context与独立临时SQLite/R2；默认凭据与请求密钥每次随机、不落日志。正式玩家页另建匿名context，其IDB只属于自有profile；编辑页spy应为零。
+- I/O：只读 `server/*.js`、`server/public/*`／pinned文本、`web/src/**/*.js`、固定世界／实体／可用库manifest登记角色、明确bootstrap工具。通过原 `editor_stage_source.mjs`／`editor_stage_library.mjs` 全指纹门装配新R2；真实API强制改密／安装／完整副本作为准备，不写SQL造成功或复用历史lane。新工具和scope写新日志／收据／输入快照，不读DOS或用户profile，不重跑旧密封链。
+- 浏览器核真实菜单可见性、PNG源裁剪确认上传、同byte不同实体绑定与清除保存；发布使用现有真实 `/api/publish` API（当前无发布按钮，不能宣称全程UI）。匿名 `/play` 实际App验证实体资源全像素。图片隔离解码／动画多态拒绝／重编码安全、完整release政策与全部消费者仍单列未完成，功能链不替安全验收。
+- 当前真实lane采用串行生命周期：修订3发布固定→编辑页清除保存修订4并等待该行刷新及busy结束→匿名运行修订3。不签同时游戏／编辑保存传输，旧并发失败原件保留。入口完整父预算1800秒、单阶段180秒／HTTPS300秒；初900秒只是新链临时总预算，超时不追认为通过。
+- 后继聚焦：`verify_editor_shell.mjs`／`verify_workerd_parity.mjs`显式源码静态矩阵，`verify_editor_portrait_ui_browser.mjs`自有loopback＋内存API旧16项、`editor_server.mjs`自有temp自检；`build_trial_web_bundle.mjs`仅生成既有三txt并核重建字节相同；worker／builder／新tool及client/general的ESM语法。以上不重跑旧密封lane、不访问真实档。实际结果和失败边界见[真实链维护源](editor-portrait-workerd.md)。
+
+## PORTRAIT-IDENTITY-1：运行时头像身份隔离（独立聚焦入口）
+
+- 授权：用户「继续下一步」；只接Q37表现资源身份，不改规则／RNG／原头像byte／战术capture／认证权限。世界持有章实体idx→portraitKey资源绑定，不再使用进程全局byte覆盖；普通人物传对象，战术仍取原retained slot。
+- 新入口 `node tools/verify_portrait_identity_browser.mjs`：只读 `web/src/**/*.js`、`web/data.json`、`web/talk.json` 与本地PNG编码器；自有随机loopback白名单HTTP、全新Chromium／内存profile、IDB spy。合成已编译pack，核实际Trial环境与GameBar／HUD／StartMenu／BattleView方法、两世界同byte不同key、真实PNG全像素与迟到结果。不是workerd认证／完整App或战役／上传安全／发布证明。
+- 串行兼容入口：`tools/build_trial_web_bundle.mjs`（只写三份既有generated txt；输入引擎JS、intro样式、web/index.html）、`verify_editor_backend_library_policy.mjs`（400角色／20程序指纹与旧manifest拒绝；源码和已登记Web资产只读）、`verify_battle_dialogue_presentation.mjs`（明确五份battle JSON、fake DOM/Image/fetch、真实VM/Session只读表现）、`verify_editor_portrait_ui_browser.mjs`（原头像UI内存API夹具）、`editor_server.mjs`（既有自有temp自检）。不跑verify通配，不访问DOS存档／用户IDB／真实profile，不重跑旧密封链。
+- scope `.dragon-analysis/editor-phase/portrait-identity-r1/` 保存before与逐次当前输入、退出码／日志／最终hash。五个改动src的既有programHashes与manifest digest升级；首policy实捕既有main pin漂移，核main未改后另纠正其pin，最终六pin，资源／未闭合255引用不改；startmenu原不在20指纹表中，不虚增表基数。当前22项浏览器及兼容结果、失败原件和限制见[详细维护源](editor-portrait-identity.md)。
+
+## PORTRAIT-UI-FIX-1：头像小闭环（当前SHA，独立聚焦入口）
+
+- 授权：用户在状态审计后要求「按建议执行」；只修workerd武将节头像清除、源JPG/PNG≤100KiB、可调方形裁剪／明确确认与异步预览代次。不改规则／固定槽／运行时头像byte身份或认证权限。
+- 新入口 `node tools/verify_editor_portrait_ui_browser.mjs`：实际 `server/public/index.html` 和 `general.txt`，全新Chromium与自有随机loopback HTTP；注入内存API／会话夹具，核DOM清除保存payload、取消／拒绝、真PNG/JPEG解码及128输出像素、空／坏／过大源、预览／编码迟到、游戏／身份切换。该成绩不是workerd认证／发布链或服务端图片安全证明。
+- 串行兼容入口：`verify_editor_shell.mjs`（显式服务端源码只读矩阵）、`verify_game_portraits.mjs`（内存SQLite，header-only语义）、`verify_workerd_parity.mjs`（静态对等矩阵）、`editor_server.mjs`（已有独立temp自检）。另针对98f0630 lint漂移跑 `node --test tools/verify_native_road_movement.mjs`（历史32/0的真实入口）与 `node --test tools/verify_native_road_arrival.mjs`（31项）；四URL严格mock，无forward。arrival原夹具替换声明diplomacy数组未触及固定24×24表导致30/31，后仅改为原生cell writer＋readback，保留原期望与规则。不认证完整战略战役。不读真实SAVE／用户profile或IDB、不改旧密封scope、不运行verify通配。
+- 新scope `.dragon-analysis/editor-phase/portrait-ui-fix-r1/` 留执行前源码快照、逐次日志／退出状态、最终SHA与限制；不覆盖旧收据。语法、支持LSP／session-all、diff与文档链接另核。当轮同byte多key冲突后由[运行时身份切片](editor-portrait-identity.md)修正；服务端隔离解码／去元信息／动画多态拒绝及完整消费者／workerd整体验收仍open。
+
 ## saved源capture接续：同根复用不适用于一般副本
 
 [独立维护源](editor-saved-source-capture-investigation.md)：普通copy请求metadata与原baseline不同，shadow Root r1正确fallback但新期待错误失败保；仅合法同baseline名称的新r2通过730WX/4952B/fullSHA/whole35SQL，GET41.16秒/capture37.15秒/91Blob读无失败、返回对象未冻结。未改产品、未补权限负例/完整native，不推广为当前GameBar优化。后继单次解析pure58例/570WX与普通名称shadow GET729WX通过，42.04秒/capture37.95秒/400库4.08秒/94Blob读无失败，原200/header/fullSHA/35SQL/可变对象保；两双损坏错误顺序差异明记。后继actual SQL shadow trusted capture39例/38途中负例、734WX初通过后只清newproducer诊断再fresh39/736WX通过；paired epoch freshprincipal接受仍被prior拒、七origin/三ref及owner/fence/expiry严格拒、35rows/schema恢复。后继profile完成await19例/745WX（hook/nohook/legacy-read＋16实际SQL负例），capture94/可变返回、legacy182/observer0、末次prior/origin/ref拒码及35rows/schema保。后继actualdependency结构scope29例/749WX（setup漏字段失败保后只补newrequest），91原Blob PUT/settled journal，原/候选proof等值、47/48处26实际SQL严格拒，image503/metadata422/protected422与saved1不变保。STAGED35rows/schema恢复非prePUT不变/drain；后继save-compile fresh756WX/6组32HTTP，原public save1→2 metadata/四资源raw、samekey重放readonly、409冲突/412stale、同actualgame原/候选saved1/2完整等值、原stageHTTP两Job各29actualBlob/sharedcompile逐byte一致。old1/current2绑定及terminal重放35rows-schema不变保；首两newobserver失败保后只新fixture修。后继save-PUT返回13例/767WX（12实际SQL负例）通过：首/末PUT失效prior严格拒并保pending/intent；installed晚409保45verified及failed，不冒无写入/恢复/drain，仅trusted save门。后继compiler PUT fullfresh20例/789WX（18实际负例＋2ready）：1/29停止保running/intent/verified/checkpoint；paired freshactor被Job epoch409拒，ref/lease/pipeline/CAS严格。installed输出后变更按原compiler仍ready29，两checkpoint非新来源准入；current2编译固定1，settled SQL非drain。r1 newref观察期待错误保，只newr2修；仅trusted原compiler另实例同actual端口，非publicrun晚error。read/checkpoint末await/错误差异/fullnative仍缺，生产未改。

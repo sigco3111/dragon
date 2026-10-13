@@ -52,6 +52,9 @@ const SHELL_OUT = fileURLToPath(new URL('../server/public/trialapp.txt', import.
 // shell works on either bound domain without login.
 const PLAY_BANNER = '<div id="play-status" style="position:fixed;left:4px;bottom:4px;z-index:100;color:#fff;background:#141414;pointer-events:none">載入遊戲列表…</div><script type="module" src="/api/play/web/src/editor/playapp.js"></script>';
 let playOut = shellOut;
+// Runtime fetch()/Image URLs are document-relative, not relative to the boot module.
+assert.equal(playOut.split('<head>').length, 2, 'play head anchor unique');
+playOut = playOut.replace('<head>', '<head>\n<base href="/api/play/web/">');
 assert.equal(playOut.split('<title>臥龍傳</title>').length, 2, 'play title anchor unique');
 playOut = playOut.replace('<title>臥龍傳</title>', '<title>選擇遊戲 — 臥龍傳</title>');
 assert.equal(playOut.split(BANNER).length, 2, 'play boot anchor unique');

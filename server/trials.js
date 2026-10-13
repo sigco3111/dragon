@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { HttpError, fail } from './security.js';
 import { FIXED_COPY_PROFILE } from './copyprofile.js';
-import { encodePNG } from './pngio.js';
+import { encodePNG, decodePNG, PNGError } from './pngio.js';
 import { isInstalledSourcePolicy } from './sourcecatalogpolicy.js';
 import { projectTrialChapter } from '../web/src/editor/trialscope.js';
 import { FIXED_TRIAL_ASSET_PATHS } from '../web/src/editor/trialassetpaths.js';
@@ -19,7 +19,9 @@ const shaText = value => createHash('sha256').update(value, 'utf8').digest('hex'
 const DERIVED_ASSETS = Object.freeze(['manifest', 'chapter', 'terrain', 'roadGraph', 'roadCost', 'roadOffset', 'minimapBase', 'minimapLarge']);
 const SERVED_ASSETS = Object.freeze(DERIVED_ASSETS.slice(2));
 const SERVED_MIME = Object.freeze({ terrain: 'application/octet-stream', roadGraph: 'application/json', roadCost: 'application/octet-stream', roadOffset: 'application/json', minimapBase: 'image/png', minimapLarge: 'image/png' });
-// Web 产品决定（用户裁决 2026-10-09，非原版机制）：编辑器人物头像上传只收 PNG/JPEG（服务端验魔数，尺寸不限、单文件 100KiB 上限，显示沿用 128 源矩形裁active）。
+// Web product: PNG/JPEG source ≤100KiB, source geometry not forced to 128.
+// Trial PNG now uses bounded pixel decode/re-encode at the SOURCE dimensions.
+// This slice does not implement crop parameters/128 output or arbitrary-source JPEG safety.
 const PORTRAIT_MAX_BYTES = 100 * 1024;
 export function sniffPortraitMime(bytes) {
   if (bytes instanceof Uint8Array && bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) { return 'image/png'; }
@@ -240,25 +242,43 @@ export class TrialSessions {
     const mime = sniffPortraitMime(bytes);
     if (!mime) { fail(422, 'TRIAL_PORTRAIT_TYPE'); }
     this.authorize(tokenHash, trialId);
-    return { mime, sha256: shaBytes(bytes) };
+    let stored = Buffer.from(bytes);
+    if (mime === 'image/png') {
+      try {
+        // Existing PNG adapter: dimensions/pixel budget before inflation, exact
+        // CRC/chunk/zlib/end checks. Preserve geometry; only RGBA pixels persist.
+        const decoded = decodePNG(stored);
+        stored = encodePNG(decoded.pixels, decoded.width, decoded.height);
+      } catch (error) {
+        if (!(error instanceof PNGError)) { throw error; }
+        fail(422, 'TRIAL_PORTRAIT_PNG_INVALID');
+      }
+    }
+    // Raw uploads previously bounded stored assets to 100KiB as well. Preserve
+    // that storage budget: source-compliant PNG can grow after normalization.
+    // A distinct error does not pretend the source exceeded its input limit.
+    if (stored.length > PORTRAIT_MAX_BYTES) { fail(422, 'TRIAL_PORTRAIT_OUTPUT_BYTES'); }
+    return { mime, sha256: shaBytes(stored), bytes: stored };
   }
   uploadPreview(tokenHash, trialId, assetId, bytes) {
-    const { mime, sha256 } = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes);
-    return Object.freeze({ assetId, mime, sha256, byteLength: bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
+    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes);
+    return Object.freeze({ assetId, mime: checked.mime, sha256: checked.sha256, byteLength: checked.bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
   }
   uploadCommit(tokenHash, trialId, assetId, bytes, expected) {
-    const { mime, sha256 } = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes);
+    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes);
     if (this.#assetRow(trialId, assetId)) { fail(409, 'TRIAL_PORTRAIT_EXISTS'); }
-    this.#sql.exec('INSERT INTO trial_assets VALUES(?,?,?,?,?)', trialId, assetId, sha256, bytes.length, Buffer.from(bytes));
+    const entry = Object.freeze({ assetId, mime: checked.mime, sha256: checked.sha256, byteLength: checked.bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
+    // Fail before INSERT/manifest mutation, even for callers without an outer
+    // transaction. Public Root still owns the SQL transaction for actual writes.
+    if (!expected || expected.assetId !== entry.assetId || expected.mime !== entry.mime || expected.sha256 !== entry.sha256 || expected.byteLength !== entry.byteLength) { fail(409, 'TRIAL_CHANGED'); }
     const manifestRow = this.#assetRow(trialId, 'manifest');
     if (!manifestRow) { fail(503, 'TRIAL_DERIVED_MISSING'); }
     let manifest; try { manifest = JSON.parse(Buffer.from(manifestRow.bytes).toString('utf8')); } catch { fail(503, 'TRIAL_DERIVED_MISSING'); }
     if (!manifest || !Array.isArray(manifest.portraits)) { fail(503, 'TRIAL_DERIVED_MISSING'); }
-    const entry = Object.freeze({ assetId, mime, sha256, byteLength: bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
     manifest.portraits.push(entry);
     const manifestBytes = Buffer.from(JSON.stringify(manifest));
+    this.#sql.exec('INSERT INTO trial_assets VALUES(?,?,?,?,?)', trialId, assetId, checked.sha256, checked.bytes.length, checked.bytes);
     this.#sql.exec('UPDATE trial_assets SET sha256=?, byte_length=?, bytes=? WHERE trial_id=? AND asset_id=?', shaBytes(manifestBytes), manifestBytes.length, manifestBytes, trialId, 'manifest');
-    if (!expected || expected.assetId !== entry.assetId || expected.mime !== entry.mime || expected.sha256 !== entry.sha256 || expected.byteLength !== entry.byteLength) { fail(409, 'TRIAL_CHANGED'); }
     return entry;
   }
   endPreview(tokenHash, trialId) {
