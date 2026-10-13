@@ -44,22 +44,22 @@ function cacheAt(sc, context, address, at) {
   return readOriginalCityCache(context, city.idx, at);
 }
 function aliasedByte(sc, context, address) {
-  address = u16(address);
-  if (address >= 0x600 && address < 0x840) {
+  const normalized = u16(address);
+  if (normalized >= 0x600 && normalized < 0x840) {
     // Native rules read the full fixed 24x24 table (nativediplomacy.js: 原文
     // "The declared diplomacy array is only a prefix view"); sc.diplomacy
     // only carries the declared rows, so rows past the faction count (e.g.
     // third-party reads in 16-faction scenarios) must go through
     // nativeDiplomacyAt, like originalcity.js 3FF4 and scenariofactiontick.
-    const offset = address - 0x600;
+    const offset = normalized - 0x600;
     return nativeDiplomacyAt(sc, Math.floor(offset / 24), offset % 24, "43D3 diplomacy");
   }
   // 43D3 k=0..47: DI=k*0x20 (28F4: DI=BX*4, BX=idx*8), read [DI+0x18].
   // 偶k → 势力[k/2]+0x18（F18 武将数，live nativeGeneralCount）；
   // 奇k → 势力[k/2]+0x38（无直接位移写者，静态初值；别名指针写不可静态排除）。
-  if (address < 0x600) {
-    const faction = factionAt(sc, address >>> 6, "43D3 faction alias");
-    const offset = address & 0x3f;
+  if (normalized < 0x600) {
+    const faction = factionAt(sc, normalized >>> 6, "43D3 faction alias");
+    const offset = normalized & 0x3f;
     if (offset === 0x18)
       return byte(faction.nativeGeneralCount, "faction F18 at 43D3");
     if (offset === 0x38) {
@@ -72,7 +72,7 @@ function aliasedByte(sc, context, address) {
     }
     stop(`faction alias offset ${offset} at 43D3`);
   }
-  return cacheAt(sc, context, address, "43D3");
+  return cacheAt(sc, context, normalized, "43D3");
 }
 
 /** 4300 returns mutated BX even on CLC; only STC re-enters 266A. */
@@ -83,15 +83,15 @@ export function interceptOriginalRoad4300(sc, context, io, bx) {
   // （如0x4041/16449）而冻时钟；0x20=BH的目标协议不受影响
   // （(node*32>>>8)*8恒等于8对齐的node本身）。
   const node = bx;
-  bx = u16(bx * 4);
-  if (cacheAt(sc, context, u16(bx + 0x858), "4304") > 1)
+  let di = u16(bx * 4);
+  if (cacheAt(sc, context, u16(di + 0x858), "4304") > 1)
     return { cf: false, bx: node };
   if (io.readByte(8) === 4) return { cf: false, bx: node };
-  const city = cityAtPointer(sc, u16(bx + 0x840), "4311");
+  const city = cityAtPointer(sc, u16(di + 0x840), "4311");
   if (byte(city.attr, "city attr at 4311") < 0x80)
     return { cf: false, bx: node };
-  bx = u16(bx * 8);
-  io.writeByte(0x20, bx >>> 8);
+  di = u16(di * 8);
+  io.writeByte(0x20, di >>> 8);
   return { cf: true, bx: node };
 }
 

@@ -83,7 +83,9 @@ export class PublishedPacks {
       if (!row || typeof row.assetId !== 'string' || !/^[A-Za-z]{1,32}$/.test(row.assetId) || seen.has(row.assetId) || ASSET_IDS.includes(row.assetId)) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
       seen.add(row.assetId);
       // Workerd SQLite returns BLOB columns as ArrayBuffer; node:sqlite gives Buffer. Accept both.
-      const bytes = row.bytes instanceof Uint8Array ? Buffer.from(row.bytes) : row.bytes instanceof ArrayBuffer ? Buffer.from(row.bytes) : null;
+      let bytes = null;
+      if (row.bytes instanceof Uint8Array) bytes = Buffer.from(row.bytes);
+      else if (row.bytes instanceof ArrayBuffer) bytes = Buffer.from(row.bytes);
       if (!bytes || bytes.length < 1 || bytes.length !== row.byteLength || shaBytes(bytes) !== row.sha256 || !digest(row.sha256) || (row.mime !== 'image/png' && row.mime !== 'image/jpeg')) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
       return Object.freeze({ assetId: row.assetId, mime: row.mime, sha256: row.sha256, byteLength: row.byteLength, bytes });
     });
