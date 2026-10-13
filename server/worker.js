@@ -686,16 +686,19 @@ export class EditorMetadata extends DurableObject {
     if (!trialPortraitPath) { return null; }
     if (!this.trialSessions) { fail(503, 'TRIAL_NOT_CONFIGURED'); }
     if (url.search) { fail(422, 'TRIAL_QUERY'); }
-    fields(value, ['assetId', 'dataBase64']);
+    // Legacy clients send exactly assetId+dataBase64; crop is an opt-in third
+    // key so the strict exact-shape gate keeps rejecting unknown fields.
+    if (Object.hasOwn(value ?? {}, 'crop')) { fields(value, ['assetId', 'dataBase64', 'crop']); }
+    else { fields(value, ['assetId', 'dataBase64']); }
     if (typeof value.dataBase64 !== 'string' || value.dataBase64.length === 0 || value.dataBase64.length > 140000) { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
     let bytes; try { bytes = Buffer.from(value.dataBase64, 'base64'); } catch { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
     if (bytes.length === 0) { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
     this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'auth');
     const op = await this.operation(request, value, user.id, user.epoch, policy), old = await this.replay(op, policy);
     if (old) { return response(old.body, 200); }
-    let result = { body: this.trialSessions.uploadPreview(tokenHash, trialPortraitPath[1], value.assetId, bytes) };
+    let result = { body: this.trialSessions.uploadPreview(tokenHash, trialPortraitPath[1], value.assetId, bytes, value.crop) };
     const sealed = await seal(result, policy.secret, op.aad);
-    const committed = this.ctx.storage.transactionSync(() => { if (!this.canCommit(op)) { return false; } const current = this.principal(tokenHash); if (current.epoch !== user.epoch) { fail(401, 'SESSION_INVALID'); } result = { body: this.trialSessions.uploadCommit(tokenHash, trialPortraitPath[1], value.assetId, bytes, result.body) }; this.touch(tokenHash, policy); this.remember(op, sealed, policy); return true; });
+    const committed = this.ctx.storage.transactionSync(() => { if (!this.canCommit(op)) { return false; } const current = this.principal(tokenHash); if (current.epoch !== user.epoch) { fail(401, 'SESSION_INVALID'); } result = { body: this.trialSessions.uploadCommit(tokenHash, trialPortraitPath[1], value.assetId, bytes, result.body, value.crop) }; this.touch(tokenHash, policy); this.remember(op, sealed, policy); return true; });
     if (!committed) { const replayed = await this.replay(op, policy); result = { body: replayed.body }; }
     return response(result.body, 200);
   }

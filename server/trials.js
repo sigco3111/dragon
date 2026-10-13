@@ -5,6 +5,7 @@ import { HttpError, fail } from './security.js';
 import { FIXED_COPY_PROFILE } from './copyprofile.js';
 import { encodePNG, decodePNG, PNGError } from './pngio.js';
 import { decodeTrialPortraitJPEG, PortraitJPEGError } from './portraitjpeg.js';
+import { checkCropShape, cropSquareTo128, PortraitCropError } from './portraitcrop.js';
 import { isInstalledSourcePolicy } from './sourcecatalogpolicy.js';
 import { projectTrialChapter } from '../web/src/editor/trialscope.js';
 import { FIXED_TRIAL_ASSET_PATHS } from '../web/src/editor/trialassetpaths.js';
@@ -21,8 +22,10 @@ const DERIVED_ASSETS = Object.freeze(['manifest', 'chapter', 'terrain', 'roadGra
 const SERVED_ASSETS = Object.freeze(DERIVED_ASSETS.slice(2));
 const SERVED_MIME = Object.freeze({ terrain: 'application/octet-stream', roadGraph: 'application/json', roadCost: 'application/octet-stream', roadOffset: 'application/json', minimapBase: 'image/png', minimapLarge: 'image/png' });
 // Web product: PNG/JPEG source ≤100KiB, source geometry not forced to 128.
-// PNG and the supported bounded JPEG subset normalize at SOURCE dimensions.
-// Crop parameters/128 output and larger arbitrary JPEG sources remain unsupported.
+// Without an author-confirmed square crop, PNG and the supported bounded JPEG
+// subset normalize at SOURCE dimensions. With a crop, the server applies it
+// after bounded full decode and emits canonical 128x128 RGBA PNG.
+// Larger arbitrary JPEG sources remain unsupported.
 const PORTRAIT_MAX_BYTES = 100 * 1024;
 export function sniffPortraitMime(bytes) {
   if (bytes instanceof Uint8Array && bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) { return 'image/png'; }
@@ -237,19 +240,24 @@ export class TrialSessions {
     if (!mime) { fail(503, 'TRIAL_ASSET_CORRUPT'); }
     return Object.freeze({ ...uploaded, mime });
   }
-  #checkPortraitUpload(tokenHash, trialId, assetId, bytes) {
+  #checkPortraitUpload(tokenHash, trialId, assetId, bytes, crop) {
     if (typeof assetId !== 'string' || !/^[A-Za-z]{1,32}$/.test(assetId) || DERIVED_ASSETS.includes(assetId)) { fail(422, 'TRIAL_PORTRAIT_ID'); }
     if (!(bytes instanceof Uint8Array) || bytes.length === 0 || bytes.length > PORTRAIT_MAX_BYTES) { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
     const mime = sniffPortraitMime(bytes);
     if (!mime) { fail(422, 'TRIAL_PORTRAIT_TYPE'); }
+    if (crop !== undefined && crop !== null) {
+      try { checkCropShape(crop); }
+      catch (error) { if (!(error instanceof PortraitCropError)) { throw error; } fail(422, 'TRIAL_PORTRAIT_CROP'); }
+    }
     this.authorize(tokenHash, trialId);
     let stored = Buffer.from(bytes);
     if (mime === 'image/png') {
       try {
         // Existing PNG adapter: dimensions/pixel budget before inflation, exact
-        // CRC/chunk/zlib/end checks. Preserve geometry; only RGBA pixels persist.
+        // CRC/chunk/zlib/end checks. Without a crop the geometry is preserved;
+        // only RGBA pixels persist either way.
         const decoded = decodePNG(stored);
-        stored = encodePNG(decoded.pixels, decoded.width, decoded.height);
+        stored = this.#finishPortraitPixels(decoded, crop);
       } catch (error) {
         if (!(error instanceof PNGError)) { throw error; }
         fail(422, 'TRIAL_PORTRAIT_PNG_INVALID');
@@ -257,7 +265,7 @@ export class TrialSessions {
     } else {
       try {
         const decoded = decodeTrialPortraitJPEG(stored);
-        stored = encodePNG(decoded.pixels, decoded.width, decoded.height);
+        stored = this.#finishPortraitPixels(decoded, crop);
       } catch (error) {
         if (!(error instanceof PortraitJPEGError)) { throw error; }
         fail(422, 'TRIAL_PORTRAIT_JPEG_INVALID');
@@ -269,12 +277,25 @@ export class TrialSessions {
     if (stored.length > PORTRAIT_MAX_BYTES) { fail(422, 'TRIAL_PORTRAIT_OUTPUT_BYTES'); }
     return { mime: 'image/png', sha256: shaBytes(stored), bytes: stored };
   }
-  uploadPreview(tokenHash, trialId, assetId, bytes) {
-    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes);
+  // Crop applies after decode inside existing pixel budgets, so the rectangle
+  // is rechecked here against decoded geometry; the early structural check
+  // above only rejects malformed rectangles before authorization.
+  #finishPortraitPixels(decoded, crop) {
+    if (crop === undefined || crop === null) { return encodePNG(decoded.pixels, decoded.width, decoded.height); }
+    try {
+      const cut = cropSquareTo128(decoded.pixels, decoded.width, decoded.height, crop);
+      return encodePNG(cut.pixels, cut.width, cut.height);
+    } catch (error) {
+      if (!(error instanceof PortraitCropError)) { throw error; }
+      fail(422, 'TRIAL_PORTRAIT_CROP');
+    }
+  }
+  uploadPreview(tokenHash, trialId, assetId, bytes, crop) {
+    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes, crop);
     return Object.freeze({ assetId, mime: checked.mime, sha256: checked.sha256, byteLength: checked.bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
   }
-  uploadCommit(tokenHash, trialId, assetId, bytes, expected) {
-    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes);
+  uploadCommit(tokenHash, trialId, assetId, bytes, expected, crop) {
+    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes, crop);
     if (this.#assetRow(trialId, assetId)) { fail(409, 'TRIAL_PORTRAIT_EXISTS'); }
     const entry = Object.freeze({ assetId, mime: checked.mime, sha256: checked.sha256, byteLength: checked.bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
     // Fail before INSERT/manifest mutation, even for callers without an outer

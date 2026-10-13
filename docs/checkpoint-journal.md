@@ -121,6 +121,20 @@
 - 新attempt2为58检查／124实际workerd HTTP／84中性图Pillow全RGBA exact，28真JPEG正例／18拒绝；Node／SQLite DO但服务端口stub，非Root账户／R2／App。attempt1末Pillow JPEG缺n_frames属性误判失败保，探针确认后仅oracle修再全fresh。当前PNG66／105／33、库JPEG91／90／56、库PNG54／53／30及Trial5组／库17／壳69／parity20新日志通过。
 - 每入口870 current输入副本／原HTTP／完整assets BLOB前后保存；旧17真实App所用860含旧Trial／wrapper，不能拼新SHA公开整链。更大JPEG源／裁剪128／隔离／彩色精度／完整格式／旧资产和Q37／69／70／71整体仍缺，详见[唯一维护源](editor-trial-portrait-jpeg-safety.md)。
 
+## 后继接续 TRIAL-PORTRAIT-PUBLIC-1（C切片，无生产改动）
+
+- 用户按 A/B/C 顺序授权最后执行 C：当前 SHA 真实公开 Trial 链裁剪接续，无浏览器 App boot。新 `tools/verify_trial_crop_public_chain.mjs`（SHA `f6dde6e7bb34b45d7ed7de68374f562410126ef2740e683002010ba56a96316d`）＋独立 Pillow 核 `tools/fixtures/trial_public_check.py`（`91f0b235011b710065c0c5152a65eb5817a2985904aa203582f2fcd206882b7e`）：真实回环 HTTPS workerd＋R2 落盘 staged 源／库安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局＋裁剪上传（真路由）＋资产 serve（sha 头对 entry）＋pack manifest 条目＋Trial 结束。attempt4 通过（15检查／1 Pillow 图 exact；attempt1 进度文件写旗、attempt2 重调用 120s 超时后给重调用 600s、attempt3 draft 回执形状，现场保留，只修工具）。copies/run 实测 137s、draft 读 57s 已登记。入口已登记[本地验证](editor-local-validation.md)。浏览器 App 运行、并发游玩、发布 UI、游戏库公开侧仍缺；Q69／Q70／Q71 不关闭。未 commit/push/deploy/fetch。
+
+## 后继探针 PORTRAIT-BUDGET-1（B切片，零生产改动）
+
+- 用户按 A/B/C 顺序授权其次执行 B：只验解码资源预算，不放大默认预算，无生产改动。新 `tools/verify_portrait_decode_budget.mjs`（须 `node --expose-gc`）＋合成 `tools/fixtures/portrait_decode_budget.py`：8192×2 JPEG（16384 像素顶）、progressive JPEG、2048×2048 平坦 PNG（4MP 路径），Node 直接解码与生产 TrialSessions preview 双侧计时＋堆＋exact，30 次重复留存界 `growth < churn/2`（探针本地界，非产品 SLA）。attempt3 通过（7检查／33 HTTP；attempt1 留存界紧、attempt2 收据标签过期，现场保留）。唯一详源为 [预算探针](editor-portrait-decode-budget.md)，入口已登记[本地验证](editor-local-validation.md)。OS 进程隔离／硬 RSS／CPU 上限、更大源接受、完整格式／色彩精度仍缺；Q37 不关闭。未 commit/push/deploy/fetch。
+
+## 后继批次 TRIAL-PORTRAIT-CROP-1（A切片，本地未提交）
+
+- 用户按 A/B/C 顺序授权首先执行 A：只做 Trial 服务端方形裁剪＋规范128输出（opt-in），不改游戏库／解码预算／旧路径／规则／RNG／原 byte。新增纯模块 `server/portraitcrop.js`（形状门／边界门／整数最近邻 square→128）；`server/trials.js` 解码后应用裁剪并重编码 128 PNG，畸形矩形 422 `TRIAL_PORTRAIT_CROP`；`server/worker.js` 有 crop 键走三键严格门、无则两键旧门；manifest 条目形状不变，旧资产不迁移。
+- 验证：新 `tools/verify_trial_portrait_crop.mjs` 两阶段。阶段1生产 TrialSessions 在 Node 内存 SQLite 与真实 Miniflare workerd SQLite DO 对等（stub 端口，非 Root／R2／App）：4 PNG＋3平坦灰 JPEG 裁剪独立像素 exact、legacy 无裁剪保源几何、13畸形矩形无写、换裁剪 commit 判 `TRIAL_CHANGED`。阶段2真实 worker.js 回环 HTTPS＋轮转 admin＋随机 trial：旧形状直达授权、合法 crop 同达、畸形先于授权 422、未知键仍 422。attempt6 通过（阶段1为 24检查／45 HTTP／Pillow 11图，阶段2为 5路由门）；attempt1–5 失败现场保留（源超 100KiB 门／JPEG 彩色精度差改平坦灰／大数组 diff 改 Buffer 比对／commit 用错双 assetId，均只修工具，生产未因此改动）。
+- 兼容在新 SHA 重跑：Trial5组／Trial PNG attempt5 66／105／33／Trial JPEG attempt3 58／124／84／库17／壳69／对等20 全绿；六文件主动 LSP clean，`git diff --check` 通过。唯一详源为 [Trial 裁剪切片](editor-trial-portrait-crop.md)，入口已登记[本地验证](editor-local-validation.md)。Trial UI 裁剪控件、更大 JPEG 源预算／隔离（B）、公开整链（C）仍缺；Q37／Q69／Q70／Q71 不关闭。未 commit/push/deploy/fetch。
+
 ## 稳定架构事实（Trial 栈，实锤）
 
 - 链路：工作台选章 → POST `/api/games/:id/trials`（issue/commit 两阶段）→ 壳 `/api/trial/web/?trial=<uuid>`（会话 cookie Path=/api）→ 束内 `servertrialapp.js` boot（gate 十字段）→ 战略时钟 hold 并集＋`createTrialBattleFrames` 战术边界。试玩束当前217文件，改 web/src 后必重卷。

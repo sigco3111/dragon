@@ -51,9 +51,9 @@ export function trialPortraitFixture(storage, policy) {
         data = { ...asset, bytes: Buffer.from(asset.bytes).toString('base64') };
       } else {
         const bytes = Buffer.from(input.dataBase64, 'base64');
-        if (input.op === 'preview' || ['epoch', 'deleting', 'ended'].includes(input.op)) { data = sessions.uploadPreview(token, trialId, input.assetId, bytes); }
-        else if (input.op === 'commit') { data = sessions.uploadCommit(token, trialId, input.assetId, bytes, input.expected); }
-        else if (input.op === 'transaction') { data = storage.transactionSync(() => sessions.uploadCommit(token, trialId, input.assetId, bytes, input.expected)); }
+        if (input.op === 'preview' || ['epoch', 'deleting', 'ended'].includes(input.op)) { data = sessions.uploadPreview(token, trialId, input.assetId, bytes, input.crop); }
+        else if (input.op === 'commit') { data = sessions.uploadCommit(token, trialId, input.assetId, bytes, input.expected, input.crop); }
+        else if (input.op === 'transaction') { data = storage.transactionSync(() => sessions.uploadCommit(token, trialId, input.assetId, bytes, input.expected, input.crop)); }
         else { throw new Error('unexpected fixture operation'); }
       }
       return { status: 200, data, before, after: snapshot() };
