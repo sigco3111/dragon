@@ -60,8 +60,68 @@ export function mountPortraitUploads({ documentTarget, fetchImpl, trialId, getPa
   const upload = documentTarget.createElement("button");
   upload.textContent = "上传头像";
   const note = documentTarget.createElement("p");
+  // Author-confirmed square crop (mirrors the approved game-library flow):
+  // the client only previews; the server applies the rectangle after bounded
+  // full decode and emits canonical 128x128 PNG. Upload stays disabled until
+  // the preview is ready and the crop is explicitly confirmed.
+  const cropBox = documentTarget.createElement("div");
+  const cropX = documentTarget.createElement("input");
+  const cropY = documentTarget.createElement("input");
+  const cropSide = documentTarget.createElement("input");
+  for (const [box, label] of [[cropX, "裁剪X"], [cropY, "裁剪Y"], [cropSide, "边长"]]) { box.type = "number"; box.min = "0"; box.title = label; box.disabled = true; }
+  const previewCanvas = documentTarget.createElement("canvas");
+  previewCanvas.width = 128; previewCanvas.height = 128;
+  const cropStatus = documentTarget.createElement("p");
+  cropStatus.textContent = "请先选图。";
+  const confirm = documentTarget.createElement("button");
+  confirm.textContent = "确认裁剪"; confirm.disabled = true;
+  cropBox.append("裁剪：", cropX, cropY, cropSide, previewCanvas, cropStatus, confirm);
   const list = documentTarget.createElement("div");
-  section.append(title, file, name, upload, note, list);
+  section.append(title, file, name, upload, note, cropBox, list);
+  let cropGeneration = 0, confirmedGeneration = null, bitmap = null, bitmapW = 0, bitmapH = 0;
+  const resetCrop = (message) => {
+    cropGeneration += 1; confirmedGeneration = null; bitmap = null;
+    for (const box of [cropX, cropY, cropSide]) { box.disabled = true; box.value = ""; }
+    confirm.disabled = true;
+    previewCanvas.getContext("2d").clearRect(0, 0, 128, 128);
+    cropStatus.textContent = message;
+  };
+  const drawCrop = () => {
+    if (!bitmap) { return; }
+    const side = Math.min(Math.max(1, Math.floor(Number(cropSide.value))), bitmapW, bitmapH);
+    const x = Math.min(Math.max(0, Math.floor(Number(cropX.value))), bitmapW - side);
+    const y = Math.min(Math.max(0, Math.floor(Number(cropY.value))), bitmapH - side);
+    cropSide.value = String(side); cropX.value = String(x); cropY.value = String(y);
+    cropGeneration += 1; confirmedGeneration = null;
+    previewCanvas.getContext("2d").clearRect(0, 0, 128, 128);
+    previewCanvas.getContext("2d").drawImage(bitmap, x, y, side, side, 0, 0, 128, 128);
+    cropStatus.textContent = `原图 ${bitmapW}×${bitmapH}；裁剪 (${x}, ${y}) ${side}×${side}，请确认。`;
+  };
+  file.onchange = () => {
+    const picked = file.files?.[0] ?? null;
+    const invalid = pickError(picked);
+    if (invalid) { resetCrop(invalid); return; }
+    const generation = cropGeneration;
+    resetCrop("图片读取中…");
+    cropStatus.textContent = "图片读取中…";
+    createImageBitmap(picked).then((loaded) => {
+      if (generation + 1 !== cropGeneration) { return; }
+      bitmap = loaded; bitmapW = loaded.width; bitmapH = loaded.height;
+      const side = Math.min(bitmapW, bitmapH);
+      cropSide.max = String(side); cropSide.value = String(side);
+      cropX.max = String(bitmapW - side); cropX.value = String(Math.floor((bitmapW - side) / 2));
+      cropY.max = String(bitmapH - side); cropY.value = String(Math.floor((bitmapH - side) / 2));
+      for (const box of [cropX, cropY, cropSide]) { box.disabled = false; }
+      confirm.disabled = false;
+      drawCrop();
+    }).catch(() => { if (generation + 1 === cropGeneration) { resetCrop("读取失败，请重新选图。"); } });
+  };
+  for (const box of [cropX, cropY, cropSide]) { box.oninput = drawCrop; }
+  confirm.onclick = () => {
+    if (!bitmap) { return; }
+    confirmedGeneration = cropGeneration;
+    cropStatus.textContent += " 已确认。";
+  };
   const paint = (portraits) => {
     list.replaceChildren();
     for (const entry of portraits) {
@@ -89,13 +149,17 @@ export function mountPortraitUploads({ documentTarget, fetchImpl, trialId, getPa
       if (invalid) { note.textContent = invalid; return; }
       const assetId = (name.value || randomId()).trim();
       if (!/^[A-Za-z]{1,32}$/.test(assetId)) { note.textContent = "编号须为 1..32 个英文字母。"; return; }
+      if (!bitmap || confirmedGeneration !== cropGeneration) { note.textContent = "请等待预览就绪并确认裁剪后再上传。"; return; }
+      const generation = cropGeneration;
+      const crop = { x: Math.floor(Number(cropX.value)), y: Math.floor(Number(cropY.value)), side: Math.floor(Number(cropSide.value)) };
       const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error("读取失败")); reader.readAsDataURL(picked); });
+      if (generation !== cropGeneration || confirmedGeneration !== cropGeneration || file.files?.[0] !== picked) { note.textContent = "选择已变更，请重新确认裁剪。"; return; }
       const dataBase64 = String(dataUrl).split(",", 2)[1] ?? "";
       if (!dataBase64) { note.textContent = "读取失败。"; return; }
       const uploaded = await fetchImpl(`/api/trials/${trialId}/portraits`, {
         method: "POST", credentials: "same-origin", cache: "no-store",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ assetId, dataBase64 }),
+        body: JSON.stringify({ assetId, dataBase64, crop }),
       });
       if (!uploaded.ok) {
         let reason = uploaded.status;
@@ -111,6 +175,7 @@ export function mountPortraitUploads({ documentTarget, fetchImpl, trialId, getPa
       note.textContent = `已上传 ${created.assetId}。`;
       name.value = "";
       file.value = "";
+      resetCrop("请先选图。");
     } catch (error) {
       note.textContent = `上传失败：${error?.message ?? String(error)}`;
     } finally {

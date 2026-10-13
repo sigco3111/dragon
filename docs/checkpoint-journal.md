@@ -310,3 +310,9 @@
 - 真机全链：上传 201（422/409 负例）→列表→绑定→发布→包内→asset 字节→删拒 409→解绑→删除落库。附带修真 bug×2：workerd BLOB 系 ArrayBuffer（instanceof Uint8Array 永假）＋`#postPortraitDelete` 漏解构 request。
 - 环境注记：miniflare HTTPS 慢响应（47s＋）客户端掉线为环境抖动，服务端均 200/落库；探针以同键重试＋状态复核应对。
 - 当轮验证：静态 69（＋4 B4e）＋单测 15＋自检绿＋LSP clean，editor-shell-b4e 当轮封存，后纳入 965dc06。封存只涵盖库/API 链，未完成 Q37：源尺寸不限与规范128输出分开；源大小／裁剪确认、服务端安全解码和同 byte 不同 key 隔离仍缺；清除绑定按钮当时被 `if (!key) return` 阻断（前轮源码审计）；后继UI小闭环已修清除／源限制／裁剪确认／预览守卫，详细范围见[头像UI维护源](editor-portrait-ui-fix.md)，不追认旧B4e为全部UI证据。
+
+## 本轮会话记录（2026-10-13，D lane：Trial 壳作者确认裁剪 UI）
+
+- 承接 A/B/C（已提交 `470fd97`，不 push）：`web/src/editor/servertrialapp.js` 的 `mountPortraitUploads` 加作者确认方形裁剪（x/y/side 输入、128 预览 canvas、确认门、代次守卫；确认前上传拦截，改选／改参清确认；源字节＋crop 矩形直发 A 端点，传后重置）；`build_trial_web_bundle.mjs` 重建（217 文件，仅 `server/public/trialweb.txt` 变化，无 pin 引用 churn）。
+- 新入口 `node tools/verify_trial_portrait_ui_browser.mjs <轮号>`：真 Chromium＋fresh profile＋回环静态 `web/`，被测模块真实 import，fetchImpl 与 pack 均为 stub（只证 UI 行为，不证 workerd 认证／解码）。200×100 自有图案：居中默认 50/0/100、确认前上传零 fetch、确认后源字节＋矩形发出、改参清确认、错类型／超限拒零 fetch、零页面错误。attempt1–3 失败现场保留（bare require／确认按钮与状态选择器／传后重选流程），attempt4 通过：7检查。
+- 生产 server 文件自 A／B／C seal 未动，A／C lane 不重跑；shell69／parity20 读 worker 不读束，不受束字节变化影响。文档回流：裁剪维护源（改动表＋D UI 验证＋仍缺）、本地验证（新 UI-1 节＋CROP-1 尾）、矩阵 Q37、closeout 审计。改动未提交。
