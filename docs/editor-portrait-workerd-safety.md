@@ -19,6 +19,7 @@
 | 本轮入口／检查 | 结果 | 限定域 |
 | --- | --- | --- |
 | `verify_workerd_portrait_browser.mjs … safety` | 17项，status0，1497.19秒；31 Node HTTP、390浏览器API响应 | 全新真实认证／复制／UI上传绑定清除／发布API／匿名App，串行生命周期；不是并发或普通作者交叉权限矩阵 |
+| `verify_workerd_portrait_browser.mjs portrait-workerd-safety-attempt2 safety`（HEAD 重绿） | 17项同名全过，status0，1397秒 | 在 A–H（含 D 壳 UI／F 库重签）之后当前 SHA 重跑，无静默漂移；TLS 噪声既往已知。仍不冒并发／发布 UI／完整消费者。 |
 | 本轮错误门 | pageErrors／failedRequests／outside空，未分类console空，编辑IDB0 | console仅精确分类bootstrap session401及在用删除409；workerd自签TLS预握手错误日志原件保留，不用它判SDK／并发根因 |
 | 头像库／壳／静态对等 | 17／69／20，各status0 | 新日志、同当前输入；不是69/20项live或旧轮追认 |
 | 工具语法 | Node检查＋Python AST两项通过 | 两本批工具；不把语法替代LSP |

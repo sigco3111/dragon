@@ -352,3 +352,8 @@
 - 用户「往后」跳过游戏侧并发深挖（根因 UNKNOWN 旧骨头，暂不烧轮次）。发布冒烟先判死：发布绑定 source 注册表，F 未动其 digest 链，无意义。
 - 旗舰 lane `verify_workerd_portrait_browser.mjs portrait-workerd-attempt12` 在当前 SHA（A–H 全含）重跑：14 项同名全过，status0，1133秒；TLS 噪声既往已知。无静默漂移。
 - 文档回流：workerd.md 重绿行。审计改动连同本轮均未提交（用户明确不用提交）。
+
+## 本轮会话记录（2026-10-13，HEAD 重绿：safety 变体 attempt2）
+
+- 用户「提交代码，然后继续」后提交 `5c3dc02`。safety 变体（JPEG 安全公开 API 链）`verify_workerd_portrait_browser.mjs portrait-workerd-safety-attempt2 safety` 在当前 SHA 重跑：17 项同名全过，status0，1397秒。A–H 无静默漂移及于游戏侧深链。
+- 文档回流：workerd-safety.md 重绿行。改动未提交。
