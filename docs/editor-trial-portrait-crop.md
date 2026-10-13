@@ -35,7 +35,7 @@
 | 阶段2 真实 worker 路由门 | 5门 | 回环 HTTPS＋轮转 admin＋随机 trial：旧形状直达 401 授权（无 `REQUEST_FIELDS` 回退）；合法 crop 同达授权；畸形 crop 先于授权 422；未知键仍 422 |
 | 兼容（新 SHA 重跑） | Trial5组／Trial PNG attempt5 66／105／33／Trial JPEG attempt3 58／124／84／库17／壳69／对等20 | 旧收据不拼绿；游戏库文件未改，其单测收据仍立 |
 
-主动 LSP 六文件 clean，`git diff --check` 通过。失败现场（attempt1–5）保留，只计 attempt6 通过。
+主动 LSP 六文件 clean，`git diff --check` 通过。失败现场（attempt1–5）保留，只计 attempt6 通过。attempt7 在 F（库重签）／G／H 后 HEAD 重跑通过：阶段1同 24检查／45 HTTP／Pillow 11图，阶段2同 5 路由门，无静默漂移。
 
 D UI 壳裁剪控件（新 scope，不覆写 A seal）：入口 `node tools/verify_trial_portrait_ui_browser.mjs <轮号>`；scope `.dragon-analysis/editor-phase/trial-portrait-ui-r1/attemptN/`。真 Chromium＋fresh profile＋回环静态 `web/`，被测模块真实 import，fetchImpl 与 pack 均为 stub：只证 UI 行为（默认值、确认门、crop 载荷、拒绝路径），不证 workerd 认证或解码（A／C lane 已覆）。200×100 自有图案：居中默认 50/0/100；确认前上传被拦且零 fetch；确认后发出源字节＋矩形；改参清确认；错类型／超 100KiB 拒绝且零 fetch；零页面错误。失败轮 attempt1–3 保留（bare require／确认按钮与状态选择器／传后重选流程），attempt4 通过：7检查。
 

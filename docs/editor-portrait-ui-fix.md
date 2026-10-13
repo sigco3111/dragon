@@ -21,11 +21,11 @@
 
 | 当前入口 | 结果 | 限度 |
 | --- | --- | --- |
-| `node tools/verify_editor_portrait_ui_browser.mjs` | 最终attempt3，16项通过 | 实际HTML／general模块、全新Chromium／自有loopback，API／会话是内存夹具；不是workerd认证／真实草稿存储／发布链。真浏览器PNG/JPEG和像素检查，IDB0，console/page/outside0 |
-| `node tools/verify_editor_shell.mjs` | 69通过 | 当前静态壳矩阵，不冒live浏览器69项 |
-| `node tools/verify_game_portraits.mjs` | 15通过 | 内存SQLite，原header-only合同；假头正例不证明图片可解码 |
-| `node tools/verify_workerd_parity.mjs` | 20通过 | 静态对等路由／顺序，不冒本次workerd全链 |
-| `node tools/editor_server.mjs` | 自有temp自检通过 | 本地copy/save/validate/compile/头像绑定清除/publish，不用实际用户存档 |
+| `node tools/verify_editor_portrait_ui_browser.mjs` | 最终attempt3，16项通过；HEAD 重跑 exit0，16 检查，errors/outside 空 | 实际HTML／general模块、全新Chromium／自有loopback，API／会话是内存夹具；不是workerd认证／真实草稿存储／发布链。真浏览器PNG/JPEG和像素检查，IDB0，console/page/outside0 |
+| `node tools/verify_editor_shell.mjs` | 69通过（HEAD 重跑仍 69 全过） | 当前静态壳矩阵，不冒live浏览器69项 |
+| `node tools/verify_game_portraits.mjs` | 15通过；HEAD 重跑 17 全过（工具后续增检查，如实记） | 内存SQLite，原header-only合同；假头正例不证明图片可解码 |
+| `node tools/verify_workerd_parity.mjs` | 20通过（HEAD 重跑仍 20 全过） | 静态对等路由／顺序，不冒本次workerd全链 |
+| `node tools/editor_server.mjs` | 自有temp自检通过（HEAD 重跑 OK：copy/save/validate/compile/escape/refusals/publish） | 本地copy/save/validate/compile/头像绑定清除/publish，不用实际用户存档 |
 | `node --test tools/verify_native_road_arrival.mjs` | 首轮30/31；只修夹具后31/31 | 生产native表未改，原期望不变；不是全战役证书 |
 | `node --test tools/verify_native_road_movement.mjs` | 32/32 | 此入口才是历史road32/0，合成bytes＋四严格mock URL，无forward |
 

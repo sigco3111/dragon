@@ -13,7 +13,7 @@
 ## TRIAL-PORTRAIT-E2E-1：浏览器驱动真实 Trial 裁剪往返（E切片）
 
 - 新入口 `node tools/verify_trial_browser_crop_e2e.mjs <轮号>`＋独立 Pillow 核 `tools/fixtures/trial_e2e_check.py`（C 的 oracle 只认 C scope，不动 C 封存件）。阶段1（Node）为 C 自举原文：回环 HTTPS workerd＋R2 落盘安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局；阶段2为同源代理＋harness 页（真实 `servertrialapp.js` 模块、真实 trialId、API 种子 pack，`/api/*` 逐字节转发并由服务端注入 C 已证 admin 会话，零生产改动）；阶段3真 Chromium＋fresh profile 选图／确认／命名上传；阶段4（Node）读包＋serve＋Node exact＋Pillow＋结束。
-- 写新 `.dragon-analysis/editor-phase/trial-portrait-e2e-r1/attemptN/`，attempt1（指纹门，F 前）、attempt2（harness 名含数字被产品正则拒）、attempt3（同，诊断落盘）、attempt4（代理 `out` 遮蔽的工具 bug）、attempt5（C oracle 拒异 scope，工具行为正确）失败现场保留，attempt6 通过：23检查／1 Pillow 图 exact（自举11＋浏览器5＋代理／包／serve／exact／oracle／结束7）。其实质 subsumes C 链（自举＋上传＋serve＋manifest＋oracle 全含）；C attempt5 保留为 D-era 失败现场。不冒 App boot（见上 H 切片补 Trial 侧，会话／登录 UI 与引擎内行为仍各有边界）、并发游玩、发布 UI、游戏库公开侧，不关闭 Q37／Q69／Q70／Q71。
+- 写新 `.dragon-analysis/editor-phase/trial-portrait-e2e-r1/attemptN/`，attempt1（指纹门，F 前）、attempt2（harness 名含数字被产品正则拒）、attempt3（同，诊断落盘）、attempt4（代理 `out` 遮蔽的工具 bug）、attempt5（C oracle 拒异 scope，工具行为正确）失败现场保留，attempt6 通过：23检查／1 Pillow 图 exact（自举11＋浏览器5＋代理／包／serve／exact／oracle／结束7）。其实质 subsumes C 链（自举＋上传＋serve＋manifest＋oracle 全含）；C attempt5 保留为 D-era 失败现场。attempt7 在 G（Trial 会话撤销）／H 后 HEAD 重跑通过：23检查／1 Pillow 图 exact，无静默漂移。不冒 App boot（见上 H 切片补 Trial 侧，会话／登录 UI 与引擎内行为仍各有边界）、并发游玩、发布 UI、游戏库公开侧，不关闭 Q37／Q69／Q70／Q71。
 
 ## TRIAL-LIBRARY-RESTAGE-1：D 后库 manifest 重签（F切片）
 
@@ -41,7 +41,7 @@
 - 用户按 A/B/C 顺序授权，本 slice 只做 Trial 服务端裁剪参数＋规范128（opt-in），不改游戏库／预算／旧路径。唯一详源见 [Trial 裁剪切片](editor-trial-portrait-crop.md)。
 - 新纯模块 `server/portraitcrop.js`（形状门／边界门／整数最近邻 square→128）；`server/trials.js` 解码后应用裁剪并重编码 128 PNG，畸形矩形 422 `TRIAL_PORTRAIT_CROP`；`server/worker.js` 路由有 crop 键走三键严格门、无则两键旧门；manifest 条目形状不变，旧资产不迁移。
 - 新入口 `node tools/verify_trial_portrait_crop.mjs <轮号>`：阶段1生产 TrialSessions 在 Node 内存 SQLite 与真实 Miniflare workerd SQLite DO 对等（stub principal／games／drafts／catalog，非 Root／R2／App），4 PNG＋3平坦灰 JPEG 裁剪独立像素 exact、legacy 无裁剪保源几何、13畸形矩形无写、换裁剪 commit 判 `TRIAL_CHANGED`；阶段2真实 worker.js 回环 HTTPS＋轮转 admin＋随机 trial：旧形状直达授权、合法 crop 同达、畸形先于授权 422、未知键仍 422。合成源只用自有图案／已装 Pillow 平坦灰 JPEG，不读用户图或 DOS。
-- 写新 `.dragon-analysis/editor-phase/trial-portrait-crop-r1/attemptN/` 输入副本、原 HTTP／调用、输出 PNG 及 Pillow oracle，wx 不覆写旧 seal；attempt1–5 失败现场保留（源超 100KiB 门／工具期待与大数组 diff 写法修正），attempt6 通过：阶段1为 24检查／45 HTTP／Pillow 11图，阶段2为 5路由门。兼容在新 SHA 重跑：Trial5组／Trial PNG attempt5 66／105／33／Trial JPEG attempt3 58／124／84／库17／壳69／对等20 全绿；六文件主动 LSP clean，`git diff --check` 通过。更大 JPEG 源仍缺（公开整链见上 C 切片，壳裁剪 UI 见上 D 切片），不关闭 Q37／Q69／Q70／Q71。
+- 写新 `.dragon-analysis/editor-phase/trial-portrait-crop-r1/attemptN/` 输入副本、原 HTTP／调用、输出 PNG 及 Pillow oracle，wx 不覆写旧 seal；attempt1–5 失败现场保留（源超 100KiB 门／工具期待与大数组 diff 写法修正），attempt6 通过：阶段1为 24检查／45 HTTP／Pillow 11图，阶段2为 5路由门。attempt7 在 F／G／H 后 HEAD 重跑通过（阶段1同 24／45／11，阶段2同 5 门）。兼容在新 SHA 重跑：Trial5组／Trial PNG attempt5 66／105／33／Trial JPEG attempt3 58／124／84／库17／壳69／对等20 全绿；六文件主动 LSP clean，`git diff --check` 通过。更大 JPEG 源仍缺（公开整链见上 C 切片，壳裁剪 UI 见上 D 切片），不关闭 Q37／Q69／Q70／Q71。
 
 ## TRIAL-PORTRAIT-JPEG-1：保持旧预算的矩形JPEG子集（后继本地实施）
 

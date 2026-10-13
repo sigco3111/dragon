@@ -27,6 +27,7 @@
 | 最终入口／检查 | 实际结果 | 可以支持的结论 |
 | --- | --- | --- |
 | 新PNG／提交专项 attempt3 | 66项，106次workerd HTTP，status0／无超时 | 11真PNG正例，36拒绝样本，预检无资源写入、四字段／缺预检／重复／三个坏manifest直调无资源写入、SQL写失败外事务回滚；一项JPEG legacy仅缺口登记 |
+| HEAD 重绿 attempt6 | 66项，105 HTTP，33图exact，status0 | 在 A–H（含 F 库重签）之后当前 SHA 重跑，形状同 attempt5（假JPEG头422故少一次commit）；Trial 人像 PNG 路径不受 F 影响，无静默漂移。 |
 | 正例独立Pillow | 33图全部RGBA exact | 11份源、Node规范输出、实际workerd输出；包含非方形、packed奇数宽透明、100KiB源边界、4Mi pixels／8192边界，不设epsilon |
 | 权限／生命周期夹具 | 拒绝无新头像 | foreign／invalid principal／不存在Trial在decode前拒；epoch／删除栅栏／已结束拒；前两种生命周期可合法清原资产，不声称整个SQL命名空间零写 |
 | 当前头像上传原单测 | 五组status0，JPEG一组登记未修 | 真实256×128 PNG、规范DTO／资源及错误前状态，替换假PNG上传正例 |

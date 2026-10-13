@@ -21,6 +21,7 @@
 | 当前新入口 | 实际结果 | 限定覆盖 |
 | --- | --- | --- |
 | Trial JPEG attempt2 | 58 checks／124 workerd HTTP／status0无超时 | 28正例、18 JPEG拒绝、四expected字段、预检后坏源、权限先于decode、manifest缺失、SQL写失败外事务回滚、epoch／deleting／ended拒绝无新头像 |
+| HEAD 重绿 attempt4 | 58 checks／124 HTTP／84图exact／status0 | 在 A–H（含 F 库重签）之后当前 SHA 重跑；Trial 人像 JPEG 路径不受 F 影响，无静默漂移。 |
 | 独立Pillow | 84图全RGBA exact | 28源JPEG＋各Node和workerd PNG；gray／RGB中性、baseline／progressive、7种源形状，含极长边及16384像素；纯IHDR／IDAT／IEND，无输入元数据 |
 | Trial PNG attempt4 | 66／105 HTTP／33图exact／status0 | 原PNG全域当前兼容，假JPEG头期望已改422，故比旧106少一次commit，不拼旧绿 |
 | 游戏库JPEG attempt6 | 91／90 HTTP／56图／status0 | 当前wrapper SHA、原28正例／56负例／六gate；彩色Pillow差异仍只登记，未设epsilon或冒符合性 |

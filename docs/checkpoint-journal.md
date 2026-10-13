@@ -357,3 +357,24 @@
 
 - 用户「提交代码，然后继续」后提交 `5c3dc02`。safety 变体（JPEG 安全公开 API 链）`verify_workerd_portrait_browser.mjs portrait-workerd-safety-attempt2 safety` 在当前 SHA 重跑：17 项同名全过，status0，1397秒。A–H 无静默漂移及于游戏侧深链。
 - 文档回流：workerd-safety.md 重绿行。改动未提交。
+
+## 本轮会话记录（2026-10-13，HEAD 重绿：轻量聚焦五套件）
+
+- 用户「提交，然后进行下步任务」后提交 `0ccc1d9`。无 scope 的源码断言工具直接在 HEAD 重跑（无产物、无 seal 覆写）：shell 69、parity 20、game_portraits 17（工具自 15 增检查，如实记）、portrait UI browser 16（exit0，errors/outside 空）、editor_server 自检 OK。全绿。
+- 文档回流：workerd.md 三行＋ui-fix.md 五行＋本块。改动未提交。
+
+## 本轮会话记录（2026-10-13，HEAD 重绿：Trial PNG／JPEG 安全 lane）
+
+- 用户「继续」（未授权提交，前批三文档仍在树上）。F 动了库 manifest，Trial 人像路径须自证无损：`verify_trial_portrait_png_safety.mjs 6` 通过 66／105／33，`verify_trial_portrait_jpeg_safety.mjs 4` 通过 58／124／84。全绿，无静默漂移。
+- 文档回流：两维护源 HEAD 重绿行＋本块。改动未提交。
+
+## 本轮会话记录（2026-10-13，HEAD 重绿：E 浏览器裁剪端到端 attempt7）
+
+- E attempt6 已是 F 后，attempt7 新覆盖 G／H 之后：`verify_trial_browser_crop_e2e.mjs 7` 通过 23检查／1 Pillow 图 exact。全绿。
+- 文档回流：本地验证 E 节＋本块。改动未提交（树上共六文档）。
+
+## 本轮会话记录（2026-10-13，HEAD 重绿：A 作物 lane attempt7，矩阵关齐）
+
+- 查 G／H 均为纯工具＋文档提交、零生产改动；A 作物代码自 seal 未动，F 后唯缺 A 工具本身重跑：`verify_trial_portrait_crop.mjs 7` 通过（阶段1 24／45／11，阶段2 5 门）。
+- F 后重绿矩阵至此关齐：游戏侧 14＋safety 17、壳69／对等20／库17／UI16／自检、Trial PNG66／JPEG58／作物24+5／E端到端23。
+- 文档回流：作物维护源＋本地验证 CROP-1 尾＋本块。改动未提交（树上共七文档）。

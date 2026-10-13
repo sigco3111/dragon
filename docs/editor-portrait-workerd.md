@@ -23,9 +23,9 @@
 | `verify_workerd_portrait_browser.mjs portrait-workerd-attempt11` | 14项，status0，1138.87秒；21 Node控制HTTP、385浏览器响应记录 | 实际管理菜单／游戏清单；两张256×128 PNG裁剪确认→规范128上传；upper-1的G7/G93同原byte7分别绑定First/Second，保存修订3；真实发布API与匿名包／资源SHA；在用删除409；UI清除G7保存修订4、等目标行刷新及busy结束；随后匿名App运行固定修订3，两实体不同URL全部128×128 RGBA正确 |
 | `verify_workerd_portrait_browser.mjs portrait-workerd-attempt12`（HEAD 重绿） | 14项同名全过，status0，1133秒 | 与 attempt11 同链同断言，在 A–H（含 D 壳 UI／F 库重签）之后当前 SHA 重跑，无静默漂移；TLS CERTIFICATE_UNKNOWN 为既往 miniflare 噪声（浏览器侧探针），非失败，385+响应结构同旧轮。仍不冒并发／发布 UI／完整消费者。 |
 | 同轮错误门 | pageErrors／failedRequests／outside均空，未分类console空，编辑IDB0 | console仅精确分类预登录session401和在用删除409；不吞任意401/409或超时。匿名实际App／资源方法有证，非全战役／战术／存档恢复或所有人物模态组合 |
-| `verify_editor_shell.mjs`／`shell-final` | 静态69，status0 | 源码壳矩阵，不冒69项live |
-| `verify_workerd_parity.mjs`／`parity-final` | 静态20，status0 | 原对等路由／顺序，非完整权限或竞态矩阵 |
-| `verify_editor_portrait_ui_browser.mjs`／`ui-final` | 16项，status0，IDB/errors/outside0 | 当前真实HTML/general模块，内存API／session夹具，保前批裁剪／代次／拒绝断言 |
+| `verify_editor_shell.mjs`／`shell-final` | 静态69，status0（HEAD 重跑仍 69 全过） | 源码壳矩阵，不冒69项live |
+| `verify_workerd_parity.mjs`／`parity-final` | 静态20，status0（HEAD 重跑仍 20 全过） | 原对等路由／顺序，非完整权限或竞态矩阵 |
+| `verify_editor_portrait_ui_browser.mjs`／`ui-final` | 16项，status0，IDB/errors/outside0（HEAD 重跑 exit0，16 检查，errors/outside 空） | 当前真实HTML/general模块，内存API／session夹具，保前批裁剪／代次／拒绝断言 |
 | `editor_server.mjs`／`self-check-final` | 自有temp自检OK，status0 | copy/save/validate/compile/escape/refusals/publish；非部署 |
 | `build_trial_web_bundle.mjs`／`build-final`与`syntax-final` | 217文件，重建三txt字节完全不变；五文件语法通过 | worker／builder／新tool的node检查，client/general按ESM stdin；生成束／Trial壳未改变 |
 
