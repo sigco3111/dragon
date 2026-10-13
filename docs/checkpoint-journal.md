@@ -340,3 +340,15 @@
 - 用户「提交并继续后续任务」后提交 `2d62b93`（G，未 push）。H 切片：真 Chromium＋fresh profile 载 workerd 真实售卖壳页＋束模块，同源代理注入已证会话，选势力→真引擎 `openApp`。
 - 迭代：attempt1（waitForSelector 传 null）→ attempt2（harness 缺 `#cv`，真壳自带，改直载壳页并钉两束）→ attempt3–6 引擎 lazy 派生资产 401：attempt6 取证行状态 ended／explicit 且代理零 POST，初疑产品 bug，终证为工具自编排 race（running 通过后工具先 end，lazy 加载撞关闭）→ 加 6 资产落定门。attempt7 通过：20检查（自举11＋浏览器9，含 rAF 存活／画布／结束耐受）。attempt1–6 现场保留。
 - 文档回流：本地验证 TRIAL-APP-BOOT-1、矩阵 Q37 Trial 侧句、E-1 尾指針。改动未提交。
+
+## 本轮会话记录（2026-10-13，审计：D/F 后游戏侧封存健康）
+
+- 用户「提交代码后继续」后提交 `8e6ffb2`（H，未 push）。绝对期限项先判死：trial 与会话同 `absolute_until`，worker 门先赢，`#settle` expiry 分支经 API 不可达；idle 孤儿行不可观察且不改变——不开新工具，不烧轮次。
+- 只读静态审计 D/F 影响面：旧三 digest（462dacc2／4031b32d／7da93227）在工具侧仅 `verify_editor_backend_library_png.mjs:16` 的 76cdf28 钉（已按先例退役登记）；`verify_workerd_portrait_browser.mjs` 与 `audit_editor_trial_asset_coverage.mjs` 仅快照 hash，不断言旧值，无碍；E／G／H 自举已覆盖新 manifest 真实安装。
+- 真问题两处文档「当前／仍」陈述失效：identity.md:35（库／束现值）与 workerd.md:54（束／库／壳），已各加 dated supersede 注（现值 c89cb0c9／6f864b71／0386710c，与磁盘核对无漂移），历史原文保留。改动未提交。
+
+## 本轮会话记录（2026-10-13，HEAD 重绿：游戏侧旗舰人像链 attempt12）
+
+- 用户「往后」跳过游戏侧并发深挖（根因 UNKNOWN 旧骨头，暂不烧轮次）。发布冒烟先判死：发布绑定 source 注册表，F 未动其 digest 链，无意义。
+- 旗舰 lane `verify_workerd_portrait_browser.mjs portrait-workerd-attempt12` 在当前 SHA（A–H 全含）重跑：14 项同名全过，status0，1133秒；TLS 噪声既往已知。无静默漂移。
+- 文档回流：workerd.md 重绿行。审计改动连同本轮均未提交（用户明确不用提交）。

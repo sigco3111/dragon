@@ -36,6 +36,8 @@
 - 当前trialweb束SHA：`7da93227d083b11af143a4c2e27a8814f0f9007cec80f33d9c1e2141d48a1f7b`，217文件。
 - 新工具SHA：`d42e61a4152c5ecede4d134a1d3b16787700c454cbd55540726a6d49dcfd0b80`。
 
+（D/F 后 superseded，上文为历史封存：库 manifest 现 `c89cb0c99ec2b3dd13900c35c2882f26799eadef074d7d2d4811c2d8059291f2`（93632字节不变），trialweb 束现 `6f864b71df7f868c3db4bf89ffe2a9d6231cbf7ea1fc077bff96fa2c68ecd1f9`，`servertrialapp.js` 现 `0386710c4fe4ed163437da27ae97fcb3de3b96e898f591e1e18c5770dc635559`；见[库存 D 后重签节](editor-trial-asset-inventory.md)与[本地验证](editor-local-validation.md) TRIAL-APP-BOOT-1。）
+
 旧安装注册表不能直接冒当前policy；后续真实lane须显式按新pin重stage／重新登记。本批没有改真实R2／数据库或部署，不追认旧native/browser链为当前束通过。
 
 ## 诊断与交付核对

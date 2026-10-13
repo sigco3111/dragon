@@ -21,6 +21,7 @@
 | 入口／收据 | 当前结果 | 覆盖与限制 |
 | --- | --- | --- |
 | `verify_workerd_portrait_browser.mjs portrait-workerd-attempt11` | 14项，status0，1138.87秒；21 Node控制HTTP、385浏览器响应记录 | 实际管理菜单／游戏清单；两张256×128 PNG裁剪确认→规范128上传；upper-1的G7/G93同原byte7分别绑定First/Second，保存修订3；真实发布API与匿名包／资源SHA；在用删除409；UI清除G7保存修订4、等目标行刷新及busy结束；随后匿名App运行固定修订3，两实体不同URL全部128×128 RGBA正确 |
+| `verify_workerd_portrait_browser.mjs portrait-workerd-attempt12`（HEAD 重绿） | 14项同名全过，status0，1133秒 | 与 attempt11 同链同断言，在 A–H（含 D 壳 UI／F 库重签）之后当前 SHA 重跑，无静默漂移；TLS CERTIFICATE_UNKNOWN 为既往 miniflare 噪声（浏览器侧探针），非失败，385+响应结构同旧轮。仍不冒并发／发布 UI／完整消费者。 |
 | 同轮错误门 | pageErrors／failedRequests／outside均空，未分类console空，编辑IDB0 | console仅精确分类预登录session401和在用删除409；不吞任意401/409或超时。匿名实际App／资源方法有证，非全战役／战术／存档恢复或所有人物模态组合 |
 | `verify_editor_shell.mjs`／`shell-final` | 静态69，status0 | 源码壳矩阵，不冒69项live |
 | `verify_workerd_parity.mjs`／`parity-final` | 静态20，status0 | 原对等路由／顺序，非完整权限或竞态矩阵 |
@@ -51,7 +52,7 @@
 | `tools/verify_workerd_portrait_browser.mjs` | `9cc4b0f2c4369137be54e4ca25b4f78d53e1accd8b5baed88e1a65941678aef8` |
 | `server/public/playapp.txt` | `515019f2fc5ac16bb4f0efb238f586a0840a325db57a66fb78c4a48bb7f00ffe` |
 
-束仍`7da93227…`，库manifest仍`4031b32d…`，Trial壳仍`a456d356…`。最终输入／收据／文档hash、链接／表格／编号／diff与主动LSP及session-all见父scope最终报告。LSP不是全clean：txt无server，push-only不保证clean，新tool保留一个flag-argument风格warning及await括号提示；既有startmenu导航error／GameBar扫描上限不借本批关闭。Jev前批HTTP451地区限制尚无解除证据，本批不绕过或重复联网，不作advisory通过。
+束仍`7da93227…`，库manifest仍`4031b32d…`，Trial壳仍`a456d356…`（D/F 后 superseded，此句为历史封存：现值束 `6f864b71…`／库 `c89cb0c9…`／壳 `0386710c…`，见[本地验证](editor-local-validation.md) TRIAL-APP-BOOT-1；旧 tool 不重跑。）最终输入／收据／文档hash、链接／表格／编号／diff与主动LSP及session-all见父scope最终报告。LSP不是全clean：txt无server，push-only不保证clean，新tool保留一个flag-argument风格warning及await括号提示；既有startmenu导航error／GameBar扫描上限不借本批关闭。Jev前批HTTP451地区限制尚无解除证据，本批不绕过或重复联网，不作advisory通过。
 
 ## 仍未完成
 
