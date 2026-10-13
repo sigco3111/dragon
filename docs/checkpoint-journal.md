@@ -316,3 +316,15 @@
 - 承接 A/B/C（已提交 `470fd97`，不 push）：`web/src/editor/servertrialapp.js` 的 `mountPortraitUploads` 加作者确认方形裁剪（x/y/side 输入、128 预览 canvas、确认门、代次守卫；确认前上传拦截，改选／改参清确认；源字节＋crop 矩形直发 A 端点，传后重置）；`build_trial_web_bundle.mjs` 重建（217 文件，仅 `server/public/trialweb.txt` 变化，无 pin 引用 churn）。
 - 新入口 `node tools/verify_trial_portrait_ui_browser.mjs <轮号>`：真 Chromium＋fresh profile＋回环静态 `web/`，被测模块真实 import，fetchImpl 与 pack 均为 stub（只证 UI 行为，不证 workerd 认证／解码）。200×100 自有图案：居中默认 50/0/100、确认前上传零 fetch、确认后源字节＋矩形发出、改参清确认、错类型／超限拒零 fetch、零页面错误。attempt1–3 失败现场保留（bare require／确认按钮与状态选择器／传后重选流程），attempt4 通过：7检查。
 - 生产 server 文件自 A／B／C seal 未动，A／C lane 不重跑；shell69／parity20 读 worker 不读束，不受束字节变化影响。文档回流：裁剪维护源（改动表＋D UI 验证＋仍缺）、本地验证（新 UI-1 节＋CROP-1 尾）、矩阵 Q37、closeout 审计。改动未提交。
+
+## 本轮会话记录（2026-10-13，E lane 阻塞：D 致库消费者指纹失配）
+
+- 已提交 `47eb818`（D 切片＋文档回流，工作树干净，未 push）。E 切片（浏览器驱动真实 Trial 裁剪往返）工具 `tools/verify_trial_browser_crop_e2e.mjs` 已写就（C 自举＋同源代理＋真 UI，零生产改动），attempt1 在 staging 秒级失败：`stageInstalledAvailableLibrary` 指纹门拒——`server/available-library.txt` 的 20 programHashes 中唯 `web/src/editor/servertrialapp.js` 失配，正是 D 所改。未绕门。
+- 对照取证：C 工具新轮 attempt5 同样秒级失败于同一门，C seal 在当前 SHA 已不可复现（重型链未启动，非回归 bug，是 D 变更控制的预期后果）。
+- E 阻塞：继续需先做 F（为新 `servertrialapp.js` 重签库 manifest → 改 `server/available-library.txt` pin → 联动库断言与库 lane 重验），属 pinned 生产策略变更，待用户授权。attempt1／attempt5 失败现场保留。
+
+## 本轮会话记录（2026-10-13，F 重签＋E 打通）
+
+- 用户授权 F：原 stager 新 owned round `trial-asset-restage-f1` 重捕（398 项／387 blob／20 引用全同），manifest `4031b32d→c89cb0c9`（93632 字节不变，仅 servertrialapp.js 指纹 `462dacc2→0386710c`），安装 `server/available-library.txt`＋`sourcecatalogpolicy.js` manifestHash 继任，registryId 保持（先例登记决定）。policy 验证就地通过（400 roles／10 负控／旧 r4 被拒）；旧 png 工具 76cdf28 钉属封存现场不更新。
+- E 工具迭代：attempt2（harness 名 `E2ECrop` 含数字被产品正则拒）→ attempt3（诊断落盘确认）→ attempt4（代理回调 `const out = []` 遮蔽 scope 目录 `out` 的真 bug，改名 pieces）→ attempt5（走通全部浏览器检查＋Node exact，倒在 C oracle 拒异 scope——脚本行为正确）→ 新独立 oracle `tools/fixtures/trial_e2e_check.py` → attempt6 通过：23检查／1 Pillow 图 exact。attempt1–5 失败现场保留。
+- E 实质 subsumes C（自举＋上传＋serve＋manifest＋oracle 全含），C 不重跑。文档回流：库存（D 后重签节）、本地验证（E-1／F 节＋PUBLIC-1 尾）。改动未提交。

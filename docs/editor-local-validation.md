@@ -1,5 +1,15 @@
 # 本地编辑器验证清单
 
+## TRIAL-PORTRAIT-E2E-1：浏览器驱动真实 Trial 裁剪往返（E切片）
+
+- 新入口 `node tools/verify_trial_browser_crop_e2e.mjs <轮号>`＋独立 Pillow 核 `tools/fixtures/trial_e2e_check.py`（C 的 oracle 只认 C scope，不动 C 封存件）。阶段1（Node）为 C 自举原文：回环 HTTPS workerd＋R2 落盘安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局；阶段2为同源代理＋harness 页（真实 `servertrialapp.js` 模块、真实 trialId、API 种子 pack，`/api/*` 逐字节转发并由服务端注入 C 已证 admin 会话，零生产改动）；阶段3真 Chromium＋fresh profile 选图／确认／命名上传；阶段4（Node）读包＋serve＋Node exact＋Pillow＋结束。
+- 写新 `.dragon-analysis/editor-phase/trial-portrait-e2e-r1/attemptN/`，attempt1（指纹门，F 前）、attempt2（harness 名含数字被产品正则拒）、attempt3（同，诊断落盘）、attempt4（代理 `out` 遮蔽的工具 bug）、attempt5（C oracle 拒异 scope，工具行为正确）失败现场保留，attempt6 通过：23检查／1 Pillow 图 exact（自举11＋浏览器5＋代理／包／serve／exact／oracle／结束7）。其实质 subsumes C 链（自举＋上传＋serve＋manifest＋oracle 全含）；C attempt5 保留为 D-era 失败现场。不冒 App boot（会话／登录 UI、势力选择、引擎）、并发游玩、发布 UI、游戏库公开侧，不关闭 Q37／Q69／Q70／Q71。
+
+## TRIAL-LIBRARY-RESTAGE-1：D 后库 manifest 重签（F切片）
+
+- D 改 `web/src/editor/servertrialapp.js` 致 20 programHashes 唯一失配，E／C 自举在 staging 秒级失败（attempt1／attempt5 取证）。用户授权 F：原 stager 新 owned round `trial-asset-restage-f1` 重捕（398／387 blob／20 引用全同），manifest `4031b32d→c89cb0c9`（93632 字节不变，仅单指纹 `462dacc2→0386710c`），安装 `server/available-library.txt`＋`sourcecatalogpolicy.js` manifestHash 继任，registryId 保持。唯一详源见[库存维护源](editor-trial-asset-inventory.md) D 后重签节。
+- policy 验证就地通过（400 roles／10 负控／旧 r4 被拒）；旧 png 工具 76cdf28 钉属封存现场不更新（先例登记）。E attempt6 在新 manifest 下通过，覆盖真实安装链。改动未提交。
+
 ## TRIAL-PORTRAIT-UI-1：Trial 壳作者确认方形裁剪 UI（D切片）
 
 - 承接 A/B/C（已提交 `470fd97`，不 push）；生产 server 文件自 A／C seal 未动，A／C lane 不重跑。D 只改 Trial 壳 `mountPortraitUploads`＋重建 web 束，不改 Trial 服务端／预算／旧路径。唯一详源见 [Trial 裁剪切片](editor-trial-portrait-crop.md) D UI 节。
@@ -9,7 +19,7 @@
 ## TRIAL-PORTRAIT-PUBLIC-1：当前 SHA 公开 Trial 链裁剪接续（C切片）
 
 - 用户按 A/B/C 顺序授权；无生产改动，无浏览器 App boot。真实回环 HTTPS workerd＋R2 落盘 staged 源安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局＋裁剪上传（真路由）＋资产 serve（sha 头）＋pack manifest＋Trial 结束，全程当前 SHA。
-- 新入口 `node tools/verify_trial_crop_public_chain.mjs <轮号>`＋独立 Pillow 核 `tools/fixtures/trial_public_check.py`；只读明确 worker／Trial／裁剪／PNG／安全／staging／policy／pinned／wrangler 文件与自有合成图案，不读用户图或 DOS。写新 `.dragon-analysis/editor-phase/trial-portrait-public-r1/attemptN/`，attempt1–3 失败现场保留（进度文件写旗／重调用超时／draft 回执形状），attempt4 通过：15检查／1 Pillow 图 exact。 copies/run 实测 137s、draft 读 57s，重调用取 600s 预算、轻调用 120s。不冒浏览器运行、并发游玩、发布 UI 或游戏库公开侧。
+- 新入口 `node tools/verify_trial_crop_public_chain.mjs <轮号>`＋独立 Pillow 核 `tools/fixtures/trial_public_check.py`；只读明确 worker／Trial／裁剪／PNG／安全／staging／policy／pinned／wrangler 文件与自有合成图案，不读用户图或 DOS。写新 `.dragon-analysis/editor-phase/trial-portrait-public-r1/attemptN/`，attempt1–3 失败现场保留（进度文件写旗／重调用超时／draft 回执形状），attempt4 通过：15检查／1 Pillow 图 exact。 copies/run 实测 137s、draft 读 57s，重调用取 600s 预算、轻调用 120s。D 后 staging 门拒，attempt5 为取证失败现场；F 重签后由上 E 切片实质覆盖，不重跑 C。不冒浏览器运行、并发游玩、发布 UI 或游戏库公开侧。
 
 ## PORTRAIT-BUDGET-1：解码资源预算验证（B切片，零生产改动）
 
