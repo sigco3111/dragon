@@ -38,4 +38,4 @@
 
 ## 剩余
 
-游戏库JPEG有界子集解码／规范PNG输出已由[JPEG后继](editor-portrait-jpeg-safety.md)完成，不再等同一vendor批准；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补有界源矩形规范化／原存储预算及提交前写门；Trial JPEG／裁剪合同、隔离执行、完整格式／独立彩色精度、旧不安全资产策略仍未完成；后继[当前SHA真实链](editor-portrait-workerd-safety.md)已补17项真实worker路由／发布API／匿名App（含原JPEG规范PNG），不冒完整App或所有消费者认证。同时游玩／保存、发布UI和全部消费者／窗口组合也未关闭。
+游戏库JPEG有界子集解码／规范PNG输出已由[JPEG后继](editor-portrait-jpeg-safety.md)完成，不再等同一vendor批准；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补有界源矩形规范化／原存储预算及提交前写门；后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)补旧预算内矩形JPEG规范PNG；更大JPEG源／裁剪合同、隔离执行、完整格式／独立彩色精度、旧不安全资产策略仍未完成；后继[当前SHA真实链](editor-portrait-workerd-safety.md)已补17项真实worker路由／发布API／匿名App（含原JPEG规范PNG），不冒完整App或所有消费者认证。同时游玩／保存、发布UI和全部消费者／窗口组合也未关闭。

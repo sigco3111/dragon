@@ -1,5 +1,13 @@
 # 本地编辑器验证清单
 
+## TRIAL-PORTRAIT-JPEG-1：保持旧预算的矩形JPEG子集（后继本地实施）
+
+- 承接用户「提交代码，继续」：既有59文件已提交 `4629ee0`，不push；提交gate复核16source／4075历史artifact／868当前输入／727文档链接及暂存字节。初inline表格regex被shell反斜线转义损坏，改落盘只读gate `.dragon-analysis/editor-phase/portrait-commit-r2/audit.py`通过；不改生产追绿，脚本LSP silence为inconclusive，不称clean。
+- 新slice只接Trial JPEG完整有界解码→源矩形RGBA PNG。库固定128入口仍严格；新Trial入口保原16384 pixels／4MiB估算／100KiB／256segments／64scans，不放大allocation预算，只允许边≤8192矩形，超域／未知profile失败关闭。不是源图必须128的新产品规定，也不称任意源尺寸／裁剪128／进程隔离合同已完成。共享vendor／PNG／Web束／Root认证不改。
+- 新入口 `node tools/verify_trial_portrait_jpeg_safety.mjs <轮号>`，Pillow生成及像素核 `python -B tools/fixtures/trial_portrait_jpeg.py <新scope> <generate|check>`；读明确server Trial／JPEG wrapper／vendor／PNG／policy／pinned／wrangler及原测试fixture，不读用户图或DOS。合成中性真实JPEG（方形／矩形／奇数宽／极长边、baseline／progressive／灰度／三分量）与假头／压缩／EOI／元数据／预算负例；Node与真实workerd SQLite共用production TrialSessions，principal／games／drafts／catalog仍stub，不冒公开Root／CSRF／R2／App。
+- 写新 `.dragon-analysis/editor-phase/trial-portrait-jpeg-r1/attemptN/` 与父 `trial-portrait-jpeg-parent-r1/`：输入副本、原HTTP／fixture请求与完整前后assets BLOB、合成源／输出、独立全RGBA核及日志，wx不覆写旧封存。实际SQL拒绝、预检await后commit重新规范化／授权与manifest顺序不改，生命周期清理不冒全SQL零写。
+- 兼容入口显式 `verify_trial_portrait_upload.mjs`／`verify_trial_portrait_png_safety.mjs <新轮>`／`verify_portrait_jpeg_safety.mjs <新轮> library`／`verify_portrait_png_safety.mjs <新轮>`及库17／壳69／parity20，各新日志。旧JPEG假头期望改422，不算旧green。环境必要白名单，HTTP30秒／Pillow60秒／父300秒，仅自有监听退出；不安装／推送／部署／fetch／触真实profile，Jev451不绕。当前专项attempt2为58／124 HTTP／84图exact，28正例／18拒绝；attempt1末JPEG无n_frames属性误判失败，保原件，只修新oracle并全fresh。当前PNG66／105／33、库JPEG91／90／56、库PNG54／53／30与四focused全部通过；主server六改动代码＋owned runner七clean、12文档主server clean，all-server代码仍2clean／5inconclusive，不冒全server通过。session-all62文件保旧1blocking／10warnings／106hint-info，GameBar旧扫描上限不借本批关闭。最终owned `trial-portrait-jpeg-parent-r1/final-audit.py`只读明确870输入副本／四当前专项／四focused／12文档及本轮产物，校hash／HTTP-BLOB一致／Pillow84／链接表格Q73／diff，写新父report，不覆盖旧seal；其诊断／报告另核。
+
 ## PORTRAIT-COMMIT-1：用户授权提交既有头像链（不推送）
 
 - 用户要求「提交代码，继续」。提交范围为前述本地头像UI／身份／公开链／库PNG-JPEG／Trial PNG代码、测试、许可证与必要状态文档；不提交 `.dragon-analysis` 产物，不push／deploy／fetch，也不改真实存档或profile。

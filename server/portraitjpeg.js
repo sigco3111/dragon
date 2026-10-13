@@ -1,11 +1,12 @@
-// Server-only fixed-128 JPEG candidate boundary. Not a process sandbox.
+// Server-only JPEG boundary: fixed-128 library and bounded Trial source geometry.
+// No caller-controlled budgets or process sandbox.
 // T.81 Annex B/C/E/F/G: complete segments/tables, single frame, scan sequencing,
 // restart syntax and padding. Wrapper budgets are engineering limits, not DOS rules.
 import { decode } from './vendor/jpeg-js/decoder.js';
 export class PortraitJPEGError extends Error {}
 const reject = () => { throw new PortraitJPEGError('Invalid or unsupported portrait JPEG'); };
 const requireJPEG = condition => { if (!condition) { reject(); } };
-export const JPEG_LIMITS = Object.freeze({ bytes: 100 * 1024, segments: 256, scans: 64, memoryMiB: 4 });
+export const JPEG_LIMITS = Object.freeze({ bytes: 100 * 1024, segments: 256, scans: 64, memoryMiB: 4, sourcePixels: 128 * 128, sourceSide: 8192 });
 
 function tables(data, kind, quant, huffman, usedQuant) {
   let at = 0;
@@ -38,7 +39,7 @@ function tables(data, kind, quant, huffman, usedQuant) {
 
 // Preflight makes all header allocation/iteration inputs bounded before codec work.
 // APP/COM are never passed to the codec, so EXIF/comments/thumbnails cannot escape.
-export function preflightPortraitJPEG(bytes) {
+function preflightJPEG(bytes, sourceGeometry) {
   requireJPEG(bytes instanceof Uint8Array && bytes.length >= 4 && bytes.length <= JPEG_LIMITS.bytes);
   requireJPEG(bytes[0] === 0xff && bytes[1] === 0xd8);
   const clean = [bytes.subarray(0, 2)], quant = new Set(), usedQuant = new Set(), huffman = new Set();
@@ -81,7 +82,12 @@ export function preflightPortraitJPEG(bytes) {
     else if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
       requireJPEG(!frame && scans === 0 && data.length >= 6 && data[0] === 8);
       const height = (data[1] << 8) | data[2], width = (data[3] << 8) | data[4], count = data[5];
-      requireJPEG(width === 128 && height === 128 && (count === 1 || count === 3) && data.length === 6 + count * 3);
+      // Trial may retain a rectangle, but never expands the existing pixel or
+      // allocation budget. Fixed-128 library callers keep their exact size gate.
+      const dimensions = sourceGeometry
+        ? width > 0 && height > 0 && width <= JPEG_LIMITS.sourceSide && height <= JPEG_LIMITS.sourceSide && width * height <= JPEG_LIMITS.sourcePixels
+        : width === 128 && height === 128;
+      requireJPEG(dimensions && (count === 1 || count === 3) && data.length === 6 + count * 3);
       const components = [];
       for (let i = 0; i < count; i++) {
         const id = data[6 + i * 3], sampling = data[7 + i * 3], q = data[8 + i * 3], h = sampling >> 4, v = sampling & 15;
@@ -128,14 +134,20 @@ export function preflightPortraitJPEG(bytes) {
   reject();
 }
 
-export function decodePortraitJPEG(bytes) {
-  const input = preflightPortraitJPEG(bytes);
+export function preflightPortraitJPEG(bytes) { return preflightJPEG(bytes, false); }
+
+function decodePixels(input) {
   let decoded;
   try {
     // Synchronous, non-reentrant byte-array-only call. Module allocation counter
     // resets every call; 4MiB is an estimate, not a hard isolate/RSS/CPU limit.
     decoded = decode(input.data, { useTArray: true, formatAsRGBA: true, tolerantDecoding: false, colorTransform: input.colorTransform, maxResolutionInMP: 0.016384, maxMemoryUsageInMB: JPEG_LIMITS.memoryMiB });
   } catch (cause) { throw new PortraitJPEGError('JPEG entropy/pixel decode failed', { cause }); }
-  requireJPEG(decoded.width === 128 && decoded.height === 128 && decoded.data instanceof Uint8Array && decoded.data.length === 128 * 128 * 4);
+  requireJPEG(decoded.width === input.width && decoded.height === input.height && decoded.data instanceof Uint8Array && decoded.data.length === input.width * input.height * 4);
   return { width: decoded.width, height: decoded.height, pixels: decoded.data };
 }
+
+export function decodePortraitJPEG(bytes) { return decodePixels(preflightPortraitJPEG(bytes)); }
+// Trial-only supported source subset. Oversize/unsupported inputs fail closed;
+// this is not the product's eventual arbitrary-source/crop/128-output contract.
+export function decodeTrialPortraitJPEG(bytes) { return decodePixels(preflightJPEG(bytes, true)); }

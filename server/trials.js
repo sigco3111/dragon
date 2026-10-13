@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { HttpError, fail } from './security.js';
 import { FIXED_COPY_PROFILE } from './copyprofile.js';
 import { encodePNG, decodePNG, PNGError } from './pngio.js';
+import { decodeTrialPortraitJPEG, PortraitJPEGError } from './portraitjpeg.js';
 import { isInstalledSourcePolicy } from './sourcecatalogpolicy.js';
 import { projectTrialChapter } from '../web/src/editor/trialscope.js';
 import { FIXED_TRIAL_ASSET_PATHS } from '../web/src/editor/trialassetpaths.js';
@@ -20,8 +21,8 @@ const DERIVED_ASSETS = Object.freeze(['manifest', 'chapter', 'terrain', 'roadGra
 const SERVED_ASSETS = Object.freeze(DERIVED_ASSETS.slice(2));
 const SERVED_MIME = Object.freeze({ terrain: 'application/octet-stream', roadGraph: 'application/json', roadCost: 'application/octet-stream', roadOffset: 'application/json', minimapBase: 'image/png', minimapLarge: 'image/png' });
 // Web product: PNG/JPEG source ≤100KiB, source geometry not forced to 128.
-// Trial PNG now uses bounded pixel decode/re-encode at the SOURCE dimensions.
-// This slice does not implement crop parameters/128 output or arbitrary-source JPEG safety.
+// PNG and the supported bounded JPEG subset normalize at SOURCE dimensions.
+// Crop parameters/128 output and larger arbitrary JPEG sources remain unsupported.
 const PORTRAIT_MAX_BYTES = 100 * 1024;
 export function sniffPortraitMime(bytes) {
   if (bytes instanceof Uint8Array && bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) { return 'image/png'; }
@@ -253,12 +254,20 @@ export class TrialSessions {
         if (!(error instanceof PNGError)) { throw error; }
         fail(422, 'TRIAL_PORTRAIT_PNG_INVALID');
       }
+    } else {
+      try {
+        const decoded = decodeTrialPortraitJPEG(stored);
+        stored = encodePNG(decoded.pixels, decoded.width, decoded.height);
+      } catch (error) {
+        if (!(error instanceof PortraitJPEGError)) { throw error; }
+        fail(422, 'TRIAL_PORTRAIT_JPEG_INVALID');
+      }
     }
     // Raw uploads previously bounded stored assets to 100KiB as well. Preserve
-    // that storage budget: source-compliant PNG can grow after normalization.
+    // that storage budget: source-compliant images can grow after normalization.
     // A distinct error does not pretend the source exceeded its input limit.
     if (stored.length > PORTRAIT_MAX_BYTES) { fail(422, 'TRIAL_PORTRAIT_OUTPUT_BYTES'); }
-    return { mime, sha256: shaBytes(stored), bytes: stored };
+    return { mime: 'image/png', sha256: shaBytes(stored), bytes: stored };
   }
   uploadPreview(tokenHash, trialId, assetId, bytes) {
     const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes);

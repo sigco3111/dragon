@@ -2,11 +2,13 @@
 
 ## 当前收口摘要（本地审计基线 98f0630）
 
+后继头像链已按用户「提交代码，继续」提交 `4629ee0`（59文件），未push；下面的未提交／未授权记载保审计基线时效，不代表这次提交未发生。其后的Trial JPEG为新本地切片，不自动提交新改动。
+
 [小范围审计](editor-closeout-audit.md)是本次代码／收据／漂移及真实剩余的详细维护源；[Q1–Q73索引](editor-requirements-matrix.md)维护逐项状态。任务二限定地图域已交付；任务一仍未完成，不根据历史 goal ID／active 文案推定本会话跟踪状态。
 
 - 已接线：Trial 服务端1–7e／8a–8h及后继限定 lane、战略／战术 App 边界，workerd 发布／匿名玩入口，B1–B4e 壳及 BOOT-1 本机全链。最新 `trial-tactical-browser-r1` 20项证真实战术帧、offline/online及改密终止，非全部 Q69/Q70/Q71 完成。
 - 用户事项①统一／胜利免实证已关闭（journal记载的产品范围决定），不再列为待办；8h只证fence同事务级联，不是物理删除。
-- 当前头像库/API链已存在；后继[PORTRAIT-UI-FIX-1](editor-portrait-ui-fix.md)已修清除按钮／源限制／可调裁剪确认／预览代次，当前SHA浏览器16项及相关聚焦回归通过。后继[PORTRAIT-IDENTITY-1](editor-portrait-identity.md)已修全局byte覆盖、所属world／章实体绑定和消费者接线，当前22项浏览器及兼容回归通过，六pin／束已升级。后继[PORTRAIT-WORKERD-1](editor-portrait-workerd.md)补真实上传／保存／发布API／匿名App串行14项，编辑IDB0、未分类错误／失败请求／outside空；非全程发布UI或并发传输证书。后继[PNG安全切片](editor-portrait-png-safety.md)已接游戏库PNG完整有界解码／规范重编码，54检查／30张Pillow像素对拍；后继[JPEG有界实现](editor-portrait-jpeg-safety.md)已补游戏库JPEG规范PNG输出，正式库91检查／90 HTTP及56张Pillow图（独立彩色精度未认证）；后继[当前SHA真实链](editor-portrait-workerd-safety.md)补串行17项真实账户／R2／UI绑定／发布API／匿名App，原JPEG输出PNG及三实体全RGBA正确；不是完整App／全部消费者认证。后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补源矩形有界规范化／原存储预算及提交前写门，66项内部SQLite检查；Trial JPEG／服务端裁剪与进程沙箱仍缺。前批17项只保当轮860输入，不冒新Trial源码的公开整链。完整图片安全、同时游玩／保存与完整消费者组合仍缺，不称Q37完成。
+- 当前头像库/API链已存在；后继[PORTRAIT-UI-FIX-1](editor-portrait-ui-fix.md)已修清除按钮／源限制／可调裁剪确认／预览代次，当前SHA浏览器16项及相关聚焦回归通过。后继[PORTRAIT-IDENTITY-1](editor-portrait-identity.md)已修全局byte覆盖、所属world／章实体绑定和消费者接线，当前22项浏览器及兼容回归通过，六pin／束已升级。后继[PORTRAIT-WORKERD-1](editor-portrait-workerd.md)补真实上传／保存／发布API／匿名App串行14项，编辑IDB0、未分类错误／失败请求／outside空；非全程发布UI或并发传输证书。后继[PNG安全切片](editor-portrait-png-safety.md)已接游戏库PNG完整有界解码／规范重编码，54检查／30张Pillow像素对拍；后继[JPEG有界实现](editor-portrait-jpeg-safety.md)已补游戏库JPEG规范PNG输出，正式库91检查／90 HTTP及56张Pillow图（独立彩色精度未认证）；后继[当前SHA真实链](editor-portrait-workerd-safety.md)补串行17项真实账户／R2／UI绑定／发布API／匿名App，原JPEG输出PNG及三实体全RGBA正确；不是完整App／全部消费者认证。后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补源矩形有界规范化／原存储预算及提交前写门，66项内部SQLite检查；后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)补旧16384像素／4MiB预算内矩形子集完整解码与规范PNG，58项／124内部HTTP／84图exact；更大JPEG源／服务端裁剪与进程沙箱仍缺。前批17项只保当轮860输入，不冒新Trial源码的公开整链。完整图片安全、同时游玩／保存与完整消费者组合仍缺，不称Q37完成。
 - 尚需：当前SHA完整验收绑定、正式release／公告与玩家版本政策、完整实体／章节初始化／地图编辑、RuntimeManifest／物理清理及SDK502独立lane；新拓扑／扩容仍须原证准入。
 - `98f0630` lint后源码／束已与历史浏览器lane不同；提交记载的聚焦回归不是本轮独立完整链。未重跑密封lane、未commit/push/deploy。
 

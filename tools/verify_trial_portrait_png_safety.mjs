@@ -16,7 +16,7 @@ const base = '.dragon-analysis/editor-phase/trial-portrait-png-r1';
 mkdirSync(base, { recursive: true });
 const out = `${base}/attempt${round}`; mkdirSync(out);
 const sha = b => createHash('sha256').update(b).digest('hex');
-const inputs = ['server/trials.js', 'server/pngio.js', 'server/security.js', 'server/sourcecatalogpolicy.js', 'server/pinned/world-manifest.txt', 'server/pinned/entity-manifest.txt', 'server/wrangler.jsonc', 'tools/verify_trial_portrait_png_safety.mjs', 'tools/fixtures/trial_portrait_fixture.mjs', 'tools/fixtures/trial_portrait_png_worker.mjs', 'tools/verify_trial_portrait_png_oracle.py', '.dragon-analysis/editor-phase/trial-portrait-png-parent-r1/budget-source.png'];
+const inputs = ['server/trials.js', 'server/pngio.js', 'server/portraitjpeg.js', 'server/vendor/jpeg-js/decoder.js', 'server/security.js', 'server/sourcecatalogpolicy.js', 'server/pinned/world-manifest.txt', 'server/pinned/entity-manifest.txt', 'server/wrangler.jsonc', 'tools/verify_trial_portrait_png_safety.mjs', 'tools/fixtures/trial_portrait_fixture.mjs', 'tools/fixtures/trial_portrait_png_worker.mjs', 'tools/verify_trial_portrait_png_oracle.py', '.dragon-analysis/editor-phase/trial-portrait-png-parent-r1/budget-source.png'];
 const pins = {};
 for (const [i, name] of inputs.entries()) { const b = readFileSync(name); pins[name] = sha(b); writeFileSync(`${out}/input-${i}.txt`, b, { flag: 'wx' }); }
 writeFileSync(`${out}/inputs.json`, JSON.stringify(pins, null, 2), { flag: 'wx' });
@@ -126,7 +126,7 @@ try {
   }
   await call({op:'seed'});const preview=await call(payload('Rollback',source));await call({op:'abort'});
   const rollback=await call(payload('Rollback',source,'transaction',{expected:preview.data}));assert.equal(rollback.error,'FIXTURE_SQL_ABORT');assert.deepEqual(rollback.before,rollback.after);checks.push('outer-transaction-write-abort-rollback');
-  await call({op:'seed'});const legacy=Buffer.from('ffd8ffe000000000','hex'),lp=await call(payload('LegacyJPEG',legacy));assert.equal(lp.data.mime,'image/jpeg');await call(payload('LegacyJPEG',legacy,'transaction',{expected:lp.data}));checks.push('known-legacy-jpeg-header-not-safety');
+  await call({op:'seed'});const fakeJPEG=Buffer.from('ffd8ffe000000000','hex'),lp=await call(payload('FakeJPEG',fakeJPEG));assert.equal(lp.status,422);assert.equal(lp.error,'TRIAL_PORTRAIT_JPEG_INVALID');assert.deepEqual(lp.before,lp.after);checks.push('fake-jpeg-header-rejected');
   for(const op of ['epoch','deleting','ended']) {await call({op:'seed'});const reply=await call(payload('Guarded',source,op));assert.equal(reply.error,'TRIAL_INVALID');assert.ok(!reply.after.some(x=>x.asset_id==='Guarded'));checks.push(op+'-reject-no-new-portrait');}
   writeFileSync(`${out}/oracle.json`,JSON.stringify(oracleImages,null,2),{flag:'wx'});
   const env={};for(const [k,v] of Object.entries(process.env)){if(['path','systemroot','windir','temp','tmp','userprofile','localappdata','appdata'].includes(k.toLowerCase())){env[k]=v;}}env.PYTHONDONTWRITEBYTECODE='1';env.PYTHONUTF8='1';

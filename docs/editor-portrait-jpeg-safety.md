@@ -45,4 +45,4 @@
 
 ## 仍未完成
 
-后继[当前SHA真实链](editor-portrait-workerd-safety.md)已补17项真实账户API／R2／UI绑定／发布API／匿名App，含原JPEG规范PNG及三实体全部RGBA；不是完整App／所有消费者认证。后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补有界源矩形规范化／存储预算及提交前写门；Trial JPEG原图安全／裁剪合同、进程隔离与硬CPU／RSS限额、独立彩色精度／完整格式支持、旧不安全库／历史包处理策略仍缺；并发传输、发布UI及所有消费者／窗口组合另列。旧14项功能链不能拼成新SHA全绿，不自动迁移资产、修改规则／Web束／pin、安装依赖、部署、提交或推送；不触实际SAVE或用户浏览器profile。Jev旧HTTP451地区限制未解除，不重复绕策略、不作advisory通过。
+后继[当前SHA真实链](editor-portrait-workerd-safety.md)已补17项真实账户API／R2／UI绑定／发布API／匿名App，含原JPEG规范PNG及三实体全部RGBA；不是完整App／所有消费者认证。后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补有界源矩形规范化／存储预算及提交前写门；后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)复用内部预检／解码，固定128库入口保持，旧预算内矩形JPEG规范PNG及当前库91项通过；本页wrapper SHA为当轮，不冒后继当前全App。更大JPEG源／裁剪合同、进程隔离与硬CPU／RSS限额、独立彩色精度／完整格式支持、旧不安全库／历史包处理策略仍缺；并发传输、发布UI及所有消费者／窗口组合另列。旧14项功能链不能拼成新SHA全绿，不自动迁移资产、修改规则／Web束／pin、安装依赖、部署、提交或推送；不触实际SAVE或用户浏览器profile。Jev旧HTTP451地区限制未解除，不重复绕策略、不作advisory通过。

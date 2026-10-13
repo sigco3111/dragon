@@ -1,5 +1,7 @@
 # TRIAL-PORTRAIT-PNG-1：Trial源矩形PNG规范化与提交前写门
 
+> 本页为当轮封存，JPEG假头接受只描述此轮旧行为。后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)已改为完整有界解码／规范PNG或422，库固定128门保；当前PNG专项attempt4为66／105 HTTP／33图exact，原106次少一条legacy commit。原报告／SHA不覆写，不追认当轮JPEG安全。
+
 用户「继续，遇到问题，分析原因，找到办法解决」授权本地接续。仅完成本页限定Web工程切片，不改原规则／RNG／原头像byte，不commit/push/deploy/fetch、不触DOS存档或用户profile。产品源尺寸不限于128与工程128裁剪输出仍分开，见[产品§4.3](game-editor-design.md)／[工程§6](game-editor-technical-design.md)。**本批不关闭Q37／完整图片安全或裁剪合同。**
 
 ## 原因与最小修复

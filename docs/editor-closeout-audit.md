@@ -1,6 +1,6 @@
 # 编辑器小范围收口审计（基线 98f0630）
 
-> 后继实施：用户再次要求「按建议执行」后，头像清除／源限制／裁剪确认／预览代次已修并补当前SHA聚焦验证，详见[PORTRAIT-UI-FIX-1](editor-portrait-ui-fix.md)。随后[PORTRAIT-IDENTITY-1](editor-portrait-identity.md)修正全局byte覆盖及消费者接线，聚焦浏览器22项通过。随后[PORTRAIT-WORKERD-1](editor-portrait-workerd.md)补真实上传／保存／发布API／匿名App串行14项，并修壳可见性／匿名资源路径。本文以下为前轮只读审计基线，不再以当时「未修」作当前UI／运行时身份状态；随后[PORTRAIT-PNG-SAFETY-1](editor-portrait-png-safety.md)补游戏库PNG有界解码／规范重编码。随后[JPEG有界实现](editor-portrait-jpeg-safety.md)补游戏库JPEG解码／规范PNG输出。后继[当前SHA真实链](editor-portrait-workerd-safety.md)补串行17项，含原JPEG公开API规范PNG／UI绑定／发布／匿名App三实体全部RGBA；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补源矩形有界规范化／存储预算及提交前写门；Trial JPEG／裁剪／隔离／完整格式与独立彩色精度、完整App、同时游玩／保存及完整消费者组合仍open，不称完整workerd验收。
+> 后继实施：用户再次要求「按建议执行」后，头像清除／源限制／裁剪确认／预览代次已修并补当前SHA聚焦验证，详见[PORTRAIT-UI-FIX-1](editor-portrait-ui-fix.md)。随后[PORTRAIT-IDENTITY-1](editor-portrait-identity.md)修正全局byte覆盖及消费者接线，聚焦浏览器22项通过。随后[PORTRAIT-WORKERD-1](editor-portrait-workerd.md)补真实上传／保存／发布API／匿名App串行14项，并修壳可见性／匿名资源路径。本文以下为前轮只读审计基线，不再以当时「未修」作当前UI／运行时身份状态；随后[PORTRAIT-PNG-SAFETY-1](editor-portrait-png-safety.md)补游戏库PNG有界解码／规范重编码。随后[JPEG有界实现](editor-portrait-jpeg-safety.md)补游戏库JPEG解码／规范PNG输出。后继[当前SHA真实链](editor-portrait-workerd-safety.md)补串行17项，含原JPEG公开API规范PNG／UI绑定／发布／匿名App三实体全部RGBA；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补源矩形有界规范化／存储预算及提交前写门；后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)补旧16384像素预算内矩形解码／规范PNG，58项内部SQLite检查；更大JPEG源／裁剪／隔离／完整格式与独立彩色精度、完整App、同时游玩／保存及完整消费者组合仍open，不称完整workerd验收。
 
 本轮按用户「按你建议执行」核对当前代码、限定收据与状态索引，只修文档；不新增功能、不重跑密封 lane、不提交／推送／部署。不是完整编辑器验收，也不是新的原版机制证明。
 

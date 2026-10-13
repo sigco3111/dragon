@@ -1,6 +1,6 @@
 // 事项④人物头像上传验证：真 installedSourcePolicy（pinned 文件）＋stub 端口，直连真实
 // TrialSessions。真实PNG规范化、拒绝前无资源写入、ID/大小/幂等/权限及manifest。
-// JPEG假头仅旧行为缺口对照，不算解码安全；裁剪与JPEG后继另验。
+// JPEG假头拒绝；矩形JPEG子集另有workerd/Pillow专项，裁剪合同仍未完成。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
@@ -82,15 +82,14 @@ tlog('场景1通过：PNG/JPG 魔数识别，GIF/空/非字节拒绝');
   assert.notEqual(sha(PNG), portrait.sha256);
   tlog('场景2通过：真实矩形PNG规范RGBA输出＋manifest／SHA／长度一致');
 }
-// 场景3：明确未修的JPEG legacy对照，不是安全正例
+// 场景3：假JPEG头不再作为有效图片存储
 {
   const { storage, sessions } = newSessions();
   const trialId = addTrial(storage);
-  const preview = sessions.uploadPreview('tok', trialId, 'upPortraitB', JPG);
-  assert.equal(preview.mime, 'image/jpeg');
-  sessions.uploadCommit('tok', trialId, 'upPortraitB', JPG, preview);
-  assert.equal(sessions.asset('tok', trialId, 'upPortraitB').mime, 'image/jpeg');
-  tlog('场景3登记：JPEG假头仍legacy原字节，安全缺口未关闭');
+  const before = storage.sql.exec('SELECT COUNT(*) AS n FROM trial_assets').toArray()[0].n;
+  assert.equal(codeOf(() => sessions.uploadPreview('tok', trialId, 'upPortraitB', JPG)), 'TRIAL_PORTRAIT_JPEG_INVALID');
+  assert.equal(storage.sql.exec('SELECT COUNT(*) AS n FROM trial_assets').toArray()[0].n, before);
+  tlog('场景3通过：JPEG假头拒绝，不写新头像');
 }
 // 场景4：负例矩阵
 {
@@ -109,7 +108,7 @@ tlog('场景1通过：PNG/JPG 魔数识别，GIF/空/非字节拒绝');
   assert.equal(codeOf(() => s2.uploadCommit('tok', t, 'upDup', PNG, p)), 'TRIAL_PORTRAIT_EXISTS');
   const snapshot = () => JSON.stringify(storage.sql.exec('SELECT asset_id,sha256,byte_length,hex(bytes) AS bytes FROM trial_assets WHERE trial_id=? ORDER BY asset_id', t).toArray());
   const before = snapshot();
-  assert.equal(codeOf(() => s2.uploadCommit('tok', t, 'upChanged', JPG, p)), 'TRIAL_CHANGED');
+  assert.equal(codeOf(() => s2.uploadCommit('tok', t, 'upChanged', PNG, p)), 'TRIAL_CHANGED');
   assert.equal(snapshot(), before);
   assert.equal(codeOf(() => s2.asset('tok', t, 'noSuchAsset')), 'TRIAL_ASSET_NOT_FOUND');
   assert.equal(codeOf(() => s2.asset('tok', t, 'manifest')), 'TRIAL_ASSET_NOT_FOUND');
@@ -127,4 +126,4 @@ tlog('场景1通过：PNG/JPG 魔数识别，GIF/空/非字节拒绝');
   assert.equal(codeOf(() => sessions.asset('tok2', t, 'manifest')), 'TRIAL_INVALID');
   tlog('场景5通过：他人／已结束 trial 401，派生 manifest 不可经资产路由取');
 }
-tlog('人物头像上传五组通过；JPEG legacy缺口另登记，不算JPEG安全');
+tlog('人物头像上传五组通过；矩形JPEG子集与剩余裁剪合同另验');

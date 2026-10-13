@@ -2,9 +2,60 @@
 
 > 本文件记录当前主线摘要与有日期的历史批次，不是长期约定或新任务授权。
 > 当前小范围审计见 [editor-closeout-audit.md](editor-closeout-audit.md)，后继头像实施／验证见 [editor-portrait-ui-fix.md](editor-portrait-ui-fix.md)；逐批证据见各 `docs/editor-*.md` 维护源，验证清单见 [editor-local-validation.md](editor-local-validation.md)。Trial R17 为旧交接，已落后于后继壳／头像／战术批次，不作当前待办源。
-> 下方“本轮／未提交／下批”均指该日期的历史批次；四批代码现已在本地提交，当前未推送的新判定仅相对本地 remote-tracking ref，未核实时远端。旧标题曾记 `ebd4d52` 已 push／v0.1.6 已发布，当前本地 VERSION／标签不支持据此宣称最新发布。
+> 当前交接以紧接下方的新块为准；更下方“本轮／未提交／下批”均指各历史批次，不据其重开实施或判断当前工作区。未核实时远端；旧标题曾记 `ebd4d52` 已 push／v0.1.6 已发布，本地 VERSION／标签不支持据此宣称最新发布。
 
-## 当前主线状态（本地审计基线 dev HEAD=`98f0630`，仓库 VERSION=`0.1.5`）
+## 本次交接（提交前快照）：PORTRAIT-COMMIT-1 → TRIAL-PORTRAIT-JPEG-1
+
+> 此块记录写交接时的HEAD／未提交状态。用户随后明确要求「提交代码」，本批代码／测试／12文档一并本地提交；提交结果以Git记录为准，不授权push／deploy。下文未提交及权限措辞保交接时效，不代表后续未执行提交。
+
+### 本轮目标与当前状态
+
+- 用户先要求「提交代码，继续」，本次另要求写checkpoint供下一对话续接。已提交前续头像链；随后完成Trial JPEG假头旁路的限定安全修复、兼容验证、文档回流及最终审计。当前没有活动goal，不新增提交／推送／部署授权。
+- 本地分支 `dev`，HEAD=`4629ee00e87512062ff77c6854cde837865a78d9`，提交标题 `Fix portrait identity and upload safety across editor and Trial`，59文件；提交后曾干净。未push／deploy／fetch，仓库VERSION仍 `0.1.5`，不宣称实时远端状态。
+- 当前工作区为后继四旧源码修改＋两新测试＋12文档（含本日志），尚未提交，暂存区空。保留所有本地改动及ignored证据，不reset／clean。此次请求仅更新日志，不实施下一代码切片或自动再次commit。
+
+### 已完成工作与关键决策
+
+- Trial上传JPEG不再只认魔数并保存原字节：授权／源门后完整有界预检和解码，再按源宽高编码RGBA PNG；坏码流422 `TRIAL_PORTRAIT_JPEG_INVALID`，无原JPEG兜底。DTO／资源行／manifest／serve的MIME、SHA、长度统一取规范输出。
+- 新Trial JPEG入口保 **总像素≤16384、单边≤8192、输入≤100KiB、256segments／64scans、原4MiB codec估算**；公共游戏库入口仍严格128×128。不扩大allocation预算，不把工程支持域冒为「源图必须128」产品决定；256×128等超预算JPEG仍拒绝。源矩形保留，未做裁剪／缩放／EXIF方向或规范128输出。
+- PNG现有规范化及规范产物100KiB门不变。预检不写资源；commit重新授权／解码，expected字段及manifest在写前核验。公开Root原有外层事务仍负责SQL失败回滚，不自造嵌套事务，也不声称生命周期拒绝均无SQL写入（可合法清资产）。
+- vendor、共享PNG适配器、认证／Root协议、Web束／库pin、规则／RNG／原头像byte未改；旧资产不迁移。server-only固定vendor方向已有批准，无需重复索取同一批准。
+
+### 验证与最终收据
+
+| 当前新轮 | 实际结果 | 覆盖边界 |
+| --- | --- | --- |
+| Trial JPEG attempt2 | 58检查／124 workerd HTTP／84图Pillow全RGBA exact | 28中性真JPEG正例、18拒绝及提交／权限／生命周期；Node与真实SQLite DO，但principal／games／drafts／catalog是stub |
+| Trial PNG attempt4 | 66／105 HTTP／33图exact | 假JPEG现拒绝，较旧106少一次commit，不能拼旧绿 |
+| 库JPEG／PNG各attempt6 | 91／90 HTTP／56图；54／53 HTTP／30图 | 当前wrapper兼容；彩色精度差异只登记，不认证完整JPEG符合性 |
+| 四focused | Trial5组／库17／壳69／静态对等20 | 全部新日志status0；八入口各保存870项执行前字节副本，无超时 |
+
+- 最终只读collector `.dragon-analysis/editor-phase/trial-portrait-jpeg-parent-r1/final-audit.py` AST／主server LSP clean、执行status0；独立postseal复核 **30直接输入pins／12文档pins／9859产物pins EXACT**，636本地链接、表格／Q1..73唯一、无新增乱码／冲突标记、diff检查通过。保全部失败／通过源码副本、原HTTP、完整assets BLOB前后及合成图。
+- 父scope `report.json` SHA=`c4cb3be5ece13dae671c44405e4246347341795b46ed21562176188418db9dfa`。报告明确 `fullImageSafetyPassed=false`、`currentSHAPublicAppChainRevalidated=false`。本次日志追加发生在seal之后，故该报告的journal文档pin从此属于追加前历史；不覆写旧报告或冒12个文档仍与当前全部相同，源码／产物证据保原时效。
+- 主server六改动代码＋runner七clean、12文档clean；all-server代码为2clean／5inconclusive，collector另probe也有未确认server，不能称全server通过。最后session-all62文件仍既有1blocking／10warnings／106hint-info（startmenu导航、arrival等），GameBar旧扫描上限未解除，不称全仓clean。
+- 本次交接只做文档诊断／链接与diff检查，不重跑游戏。前17项真实公开App链用860旧输入，含旧Trial和wrapper；未重跑那24分钟链，不能替本轮当前SHA作Root／R2／App认证。
+
+### 失败尝试与原因
+
+- 提交gate首次inline表格regex被shell转义损坏；改为审过的落盘只读gate后通过，未改生产追绿。新vendor原尾空白用仅对应路径的Git whitespace属性处理，完整源码／许可证字节保留。本次日志校验inline也遇同类转义失败，改逐字符表格／链接检查后重验通过，未放松检查目标或改旧报告。
+- Trial JPEG attempt1已走58检查／124 HTTP，但末Pillow误把静态JPEG缺 `n_frames` 当多帧而失败。探针确认JPEG缺该属性、PNG为1；仅在PNG/JPEG格式门内把缺省改为1，仍拒MPO、保全RGBA／尺寸／预算／SHA，再fresh attempt2和全部兼容lane。原失败保留，partial计数不冒整轮通过。
+- Jev既有HTTP451地区限制未解除，不重复联网或绕过；不阻塞权威本地验证。没有本切片未解决的测试失败。
+
+### 相关文件与恢复入口
+
+- 生产：`server/trials.js`（当前SHA `4a55c1bee85aeee699be85372f4f15204fa37357725e7d00566a663121b83927`）、`server/portraitjpeg.js`（`77b8cb26adb76c562b8206092de20dac5691a4507d05c2905c9d4993b32e79f9`）。
+- 测试：修改 `tools/verify_trial_portrait_upload.mjs`、`tools/verify_trial_portrait_png_safety.mjs`；新增 `tools/verify_trial_portrait_jpeg_safety.mjs`、`tools/fixtures/trial_portrait_jpeg.py`；复用现有Trial fixture／worker。
+- 唯一详源：[Trial JPEG安全](editor-trial-portrait-jpeg-safety.md)；入口／I/O：[本地验证](editor-local-validation.md)；范围：[逐项索引](editor-requirements-matrix.md)及[小范围审计](editor-closeout-audit.md)。12文档后继同步已保历史结论与限制。
+- 新证据父scope `trial-portrait-jpeg-parent-r1/`、子scope `trial-portrait-jpeg-r1/attempt1/`（失败）与`attempt2/`（通过），均在 `.dragon-analysis/editor-phase/`，不进Git、不覆写。最终collector和report已经完成，不要从旧“报告另核”措辞误开重复轮。
+
+### 阻塞点与下一步
+
+1. **当前限定切片可交付；完整头像合同未完成。** Trial更大JPEG源的资源预算／隔离、服务端裁剪参数及规范128输出仍缺；先读全局／仓库AGENTS、产品§4.3、工程§6和本详源，核对合同再按已授权方向拆最小切片，不直接放大codec预算或添加原字节fallback。
+2. 新切片须先登记入口／依赖／I/O，另建scope保失败与当前SHA；独立像素oracle及库固定128／PNG／Trial兼容保持。源码变化后旧收据只作历史，不拼绿。涉及UI才使用全新隔离浏览器；不读DOS `SAVE.DAT`、用户实际profile或存档。
+3. 当前SHA公开Trial／Root认证／R2／App链需独立新轮，不能用stub专项代替。完整色彩／格式、硬CPU-RSS／进程隔离、旧不安全资产策略、全部消费者／窗口组合、并发和发布UI仍open；Q37／Q69／Q70／Q71不关闭。
+4. GameBar native／SDK502原因UNKNOWN、RuntimeManifest／物理删除及地图扩容原证是独立旧缺口，不借头像批次关闭或升级为本切片停工。下一次提交、push、deploy分别须明确授权；先保存现有未提交后继，不覆盖前续工作。
+
+## 历史主线状态（本地审计基线 dev HEAD=`98f0630`，仓库 VERSION=`0.1.5`）
 
 - **任务一（编辑器）E-05 Trial 服务端线程：批次 1-7e＋8a-8h 全部闭合**。8h 删除级联：`GameDeletionFence.begin()` 同事务级联 trial 行＋资产，链已封存（deletecascade-r1：derive 双向绿→guards 562/269→gate 12/13 真后端→audit 9785→postdoc 9787）。guards **567/272**（multigame-r1 已继任封存）；Q69-(ii)(iii)、round-trip、多游戏 b2 均已链封存；仍不称 Q69/Q70/Q71 闭包完成。
 - **用户事项队列**：①统一/胜利终局——✅ 关闭（终局属原版规则不管，编辑器只改地图/据点/道路/人物，规则原样，不做实证）；②战术帧实际验证——✅ 8g 闭合；③删除级联——✅ 8h 闭合；④人物头像上传——✅ 链已封存；浏览器整轮 lane 回归——✅ 全绿封存（browser-regres-r1：pin 换新 guards 564/270→gate 17/0→audit 9843→postdoc 9845；talk 23/11＋talkdirect 23/11＋endview 15/7＋tactical 23/7 真浏览器）；⑤历史推送／发布记载不作实时结论；本地四提交已存在（HEAD 98f0630），相对本地 github/dev ahead 4，本轮未 fetch／commit／push／deploy。
@@ -62,6 +113,13 @@
 - 512×512合成源3789B规范后686274B，补原100KiB存储预算独立错误码，源尺寸不强制128；后继裁剪仍缺，不能称所有≤100KiB合法源都可上传。JPEG原魔数／原字节保持，假头可过是未修缺口，不算安全正例。
 - 最终新attempt3：66项／106实际workerd HTTP／Pillow33图exact，Node与真实SQLite DO一致，但principal／games／drafts／catalog是stub，非Root认证／R2／App。原头像上传五组（含JPEG legacy登记）、库17／壳69／静态对等20新日志通过；六改动代码主动all-server LSP clean。首Worker文本模块类型拒绝失败、预算门前attempt2与最终3均保，未放松来源hash／类型门。
 - 868执行前明确输入／源码与产物新钉；仅Trial服务／单测和新测试／文档改动，规则／RNG／原byte／共享PNG适配器／认证／Web束／库pin未改。前批860输入17项公开链含旧Trial源码，不能拼新SHA全绿；JPEG原图／裁剪／隔离／完整格式／旧资产及Q37/Q69/Q70/Q71整体open。详细证据见[唯一维护源](editor-trial-portrait-png-safety.md)，未commit/push/deploy/fetch或触实档／用户profile。
+
+## 后继提交 PORTRAIT-COMMIT-1 与 TRIAL-PORTRAIT-JPEG-1（后继本地改动未提交）
+
+- 用户「提交代码，继续」：前续头像链59文件提交 `4629ee0`，提交后工作区干净；未push/deploy/fetch。只读gate核16source／4075原artifact／868输入及727本地链接／暂存字节；首次inline regex被shell转义破坏，改落盘审过入口通过，不改生产。保vendor与完整许可证原字节，仅路径级Git whitespace属性处理其原尾空白。
+- 后继本地Trial JPEG修假头原字节旁路：共用有界预检／解码后源矩形RGBA PNG，固定128库入口仍严格，不扩大原16384 pixels／4MiB codec估算；更大源失败关闭，不冒“源必须128”产品决定。vendor／PNG／规则／RNG／认证／Web束／库pin未改，旧资产未迁移。
+- 新attempt2为58检查／124实际workerd HTTP／84中性图Pillow全RGBA exact，28真JPEG正例／18拒绝；Node／SQLite DO但服务端口stub，非Root账户／R2／App。attempt1末Pillow JPEG缺n_frames属性误判失败保，探针确认后仅oracle修再全fresh。当前PNG66／105／33、库JPEG91／90／56、库PNG54／53／30及Trial5组／库17／壳69／parity20新日志通过。
+- 每入口870 current输入副本／原HTTP／完整assets BLOB前后保存；旧17真实App所用860含旧Trial／wrapper，不能拼新SHA公开整链。更大JPEG源／裁剪128／隔离／彩色精度／完整格式／旧资产和Q37／69／70／71整体仍缺，详见[唯一维护源](editor-trial-portrait-jpeg-safety.md)。
 
 ## 稳定架构事实（Trial 栈，实锤）
 

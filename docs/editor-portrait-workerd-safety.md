@@ -41,4 +41,4 @@
 
 两变更代码主动LSP初等待超时，主server重probe确认两clean，不把初零诊断当通过；all-server覆盖仍两超时，不能称全部server已确认。11文档7clean／4findings，仅28条既有typos信息。最终session-all共47文件，仍1blocking／10warnings／106hint-info；此前缓存含harness布尔退层参数警告，primary刷新后的减少不替代all-server覆盖确认；既有startmenu导航error／arrival warnings／GameBar扫描上限不借本批关闭。Jev地区451未解除，不重复联网或绕限制。
 
-本批补的是**当轮SHA限定头像App链再验**，不是完整App／战役／战术／存档／全部consumer认证。后继[Trial PNG切片](editor-trial-portrait-png-safety.md)改变Trial源码，860输入不再整组等于当前，不复写原收据或冒新Root／App再验；该切片只补有界源矩形规范化／存储预算及提交前写门。Trial JPEG原图安全和服务端裁剪合同、进程隔离／硬CPU-RSS、完整格式／独立彩色精度、旧不安全资产策略、发布UI、同时游玩／保存及全部窗口／撤销／迟到组合仍未完成。Q37/Q69/Q70/Q71整体保持open，见[逐项索引](editor-requirements-matrix.md)。
+本批补的是**当轮SHA限定头像App链再验**，不是完整App／战役／战术／存档／全部consumer认证。后继[Trial PNG切片](editor-trial-portrait-png-safety.md)改变Trial源码，860输入不再整组等于当前，不复写原收据或冒新Root／App再验；该切片只补有界源矩形规范化／存储预算及提交前写门。后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)又改Trial／wrapper，旧17项仍仅当轮证据，补旧预算内矩形JPEG规范PNG，非公开整链再验。更大JPEG源和服务端裁剪合同、进程隔离／硬CPU-RSS、完整格式／独立彩色精度、旧不安全资产策略、发布UI、同时游玩／保存及全部窗口／撤销／迟到组合仍未完成。Q37/Q69/Q70/Q71整体保持open，见[逐项索引](editor-requirements-matrix.md)。
