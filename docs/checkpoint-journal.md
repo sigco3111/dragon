@@ -334,3 +334,9 @@
 - 用户「同意改动，继续」后提交 `3641ad5`（F＋E，未 push）。G 切片：先读 `trials.js` #bound／authorize／#close 与 `worker.js` 登录／改密／上传事务／重放钉死码位，再写新工具 `tools/verify_trial_session.mjs`（零生产改动，Node 直驱真实 workerd）。
 - 迭代：attempt1（管理先于轮转被 must_change 403）→ 编排改先轮转；attempt2（转后创建会话已死致 status 不可见，符合重登不复活）→ G2 改 T2b 完整复现；attempt3（G3／G4 沿用死会话签发）→ issue 传会话；attempt4（结束 serve 为 401 非 404——authorize 先于存储，wipe 纵深不可观察）→ 改断言并如实登记。attempt5 通过：65检查（G1 第二会话撤销／G2 改密死亡＋转后复现／G3 结束全关闭＋二次结束重放／G4 四并行＋重放＋重名 guards）。
 - 文档回流：本地验证 TRIAL-SESSION-1、矩阵 Q70 Trial 侧句。改动未提交。
+
+## 本轮会话记录（2026-10-13，H lane：Trial 浏览器 App 启动）
+
+- 用户「提交并继续后续任务」后提交 `2d62b93`（G，未 push）。H 切片：真 Chromium＋fresh profile 载 workerd 真实售卖壳页＋束模块，同源代理注入已证会话，选势力→真引擎 `openApp`。
+- 迭代：attempt1（waitForSelector 传 null）→ attempt2（harness 缺 `#cv`，真壳自带，改直载壳页并钉两束）→ attempt3–6 引擎 lazy 派生资产 401：attempt6 取证行状态 ended／explicit 且代理零 POST，初疑产品 bug，终证为工具自编排 race（running 通过后工具先 end，lazy 加载撞关闭）→ 加 6 资产落定门。attempt7 通过：20检查（自举11＋浏览器9，含 rAF 存活／画布／结束耐受）。attempt1–6 现场保留。
+- 文档回流：本地验证 TRIAL-APP-BOOT-1、矩阵 Q37 Trial 侧句、E-1 尾指針。改动未提交。

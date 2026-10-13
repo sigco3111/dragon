@@ -1,5 +1,10 @@
 # 本地编辑器验证清单
 
+## TRIAL-APP-BOOT-1：Trial 浏览器 App 启动（H切片）
+
+- 新入口 `node tools/verify_trial_app_boot.mjs <轮号>`（真 Chromium＋fresh profile；零生产改动）。Node 自举（回环 HTTPS workerd＋R2 安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局）后，同源代理转发 `/api/*`（注入已证 admin 会话）并直传 workerd 的真实售卖壳页 `trialapp.txt` 及其束模块（`trialweb.txt`，两束均钉 inputs）。页内真实 `servertrialapp.js` 自举：会话→包→选首势力→开始→真引擎 `openApp`；断言势力面板／运行行（僅記憶體）／rAF 存活／引擎画布／零页错，静候 6 派生资产（terrain／roadCost／roadOffset／roadGraph／minimapBase／minimapLarge）全 200 落定后经 API 结束，页 15s 内无新增错误（探针 401 由 monitor 消化）。
+- 写新 `.dragon-analysis/editor-phase/trial-app-boot-r1/attemptN/`，attempt1（waitForSelector 传 null）、attempt2（harness 缺 `#cv` 致 import 期 null.getContext——真壳自带，改直载壳页）、attempt3–6（引擎 lazy 资产被工具抢先 end：attempt6 取证行状态 ended／explicit＋零 POST，实为自编排 race，非产品 bug）失败现场保留，attempt7 通过：20检查（自举11＋浏览器9）。不冒浏览器内登录／会话 UI、存读档（trial 设计停用）、结束显示文案、游戏侧 App／发布／并发。
+
 ## TRIAL-SESSION-1：Trial 会话撤销与并发上传 fail-closed（G切片）
 
 - 新入口 `node tools/verify_trial_session.mjs <轮号>`（Node 直驱，无浏览器；零生产改动）。真实回环 HTTPS workerd＋R2 安装＋真实登录／轮转＋完整复制＋草稿读；四 trial 分测：G1 第二活会话读包 401 `TRIAL_INVALID`＋创建会话见 ended／session-revoked，创建会话包／上传同 401；G2 改密杀死签发会话（死 cookie 打活 trial 仍 worker 级 401 `SESSION_INVALID`，转后会话读转前 trial 401＋关闭），转后新开 trial 完整复现 G1；G3 结束 trial 全路由关闭（包／上传 401，serve 先过 active 门同 401——资产 wipe 为纵深不可经 API 观察，如实登记），status 见 ended／explicit，二次结束重放同一终态；G4 四路并行上传全 200＋包 4 行＋逐字节 exact（Node decodePNG，codec 已在 A／C／E 经 Pillow 证），同键重放同体不增行，同名新键 409 `TRIAL_PORTRAIT_EXISTS` 不增行。
@@ -8,7 +13,7 @@
 ## TRIAL-PORTRAIT-E2E-1：浏览器驱动真实 Trial 裁剪往返（E切片）
 
 - 新入口 `node tools/verify_trial_browser_crop_e2e.mjs <轮号>`＋独立 Pillow 核 `tools/fixtures/trial_e2e_check.py`（C 的 oracle 只认 C scope，不动 C 封存件）。阶段1（Node）为 C 自举原文：回环 HTTPS workerd＋R2 落盘安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局；阶段2为同源代理＋harness 页（真实 `servertrialapp.js` 模块、真实 trialId、API 种子 pack，`/api/*` 逐字节转发并由服务端注入 C 已证 admin 会话，零生产改动）；阶段3真 Chromium＋fresh profile 选图／确认／命名上传；阶段4（Node）读包＋serve＋Node exact＋Pillow＋结束。
-- 写新 `.dragon-analysis/editor-phase/trial-portrait-e2e-r1/attemptN/`，attempt1（指纹门，F 前）、attempt2（harness 名含数字被产品正则拒）、attempt3（同，诊断落盘）、attempt4（代理 `out` 遮蔽的工具 bug）、attempt5（C oracle 拒异 scope，工具行为正确）失败现场保留，attempt6 通过：23检查／1 Pillow 图 exact（自举11＋浏览器5＋代理／包／serve／exact／oracle／结束7）。其实质 subsumes C 链（自举＋上传＋serve＋manifest＋oracle 全含）；C attempt5 保留为 D-era 失败现场。不冒 App boot（会话／登录 UI、势力选择、引擎）、并发游玩、发布 UI、游戏库公开侧，不关闭 Q37／Q69／Q70／Q71。
+- 写新 `.dragon-analysis/editor-phase/trial-portrait-e2e-r1/attemptN/`，attempt1（指纹门，F 前）、attempt2（harness 名含数字被产品正则拒）、attempt3（同，诊断落盘）、attempt4（代理 `out` 遮蔽的工具 bug）、attempt5（C oracle 拒异 scope，工具行为正确）失败现场保留，attempt6 通过：23检查／1 Pillow 图 exact（自举11＋浏览器5＋代理／包／serve／exact／oracle／结束7）。其实质 subsumes C 链（自举＋上传＋serve＋manifest＋oracle 全含）；C attempt5 保留为 D-era 失败现场。不冒 App boot（见上 H 切片补 Trial 侧，会话／登录 UI 与引擎内行为仍各有边界）、并发游玩、发布 UI、游戏库公开侧，不关闭 Q37／Q69／Q70／Q71。
 
 ## TRIAL-LIBRARY-RESTAGE-1：D 后库 manifest 重签（F切片）
 
