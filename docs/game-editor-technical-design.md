@@ -271,11 +271,11 @@ profileCertificateRef, minimapStyleRevision
 
 ### 5.1 接入边界及持久化模型
 
-两个入口沿用既有GitHub→Cloudflare程序部署；编辑器要求独立端口／登录，具体监听映射只在已存在环境核对，不自行改域名、开端口或新增服务器。代码与数据通道分离：保存／发布绝不触发Git、重启或部署。
+最新用户确认VPS编辑器／Cloudflare玩家端拆分（[产品§5.5](game-editor-design.md#55-vps编辑器与cloudflare玩家端拆分最新确认)），不再让两入口都部署到Cloudflare。玩家程序保既有部署／origin／内置资源，编辑器代码部署方式和VPS权限另核实；不自行改域名、开端口、创建资源或部署。代码与数据通道分离：保存／发布不触发Git、重启或部署。平台适配、发布投影及读取端的唯一详细提案见[拆分方案](editor-vps-cloudflare-plan.md)，尚非运行代码或接线验收。
 
 受信服务需要三个抽象接口（不是三个网络端口）：`MetadataStore.transaction/compareAndSwap`、`BlobStore.putImmutable/read/delete`、`CompileJobs.enqueue/checkpoint/retry`。实现可适配既有环境，但不能拿进程Map、最终一致键值覆盖或前端localStorage代替所要求的事务／持久性。若现有绑定不足，列明缺哪一能力再处理依赖部分，不退回提交JSON到Git发布游戏。
 
-发布计数、当前指针、上架状态、管理限制和公告唯一键必须能在**同一事务域**提交；不要求对象文件与数据库跨服务事务。最小逻辑记录如下（不指定数据库产品）：
+发布计数、当前指针、上架状态、管理限制和公告唯一键必须能在**同一事务域**提交；不要求对象文件与数据库跨服务事务。拆分提案将权威事务留VPS SQLite，R2仅承载受控公开投影；SQL／R2没有跨主机事务，不能把分发完成当作本机事务自动完成。权威已提交但分发未知不得报发布失败或回滚计数，「已提交／同步中」与「公开确认完成」的状态提案须确认及故障验证，细节仅维护在拆分方案§5。最小逻辑记录如下（逻辑合同，不表示适配已实现）：
 
 | 记录／键 | 必需字段及约束 |
 | --- | --- |
@@ -554,7 +554,7 @@ actualfresh browser13检查24控制请求9管理POST5operationGET、独立fakeDO
 - **不同端口不隔离cookie，SameSite也不是同Origin。** 精确Origin必须包含scheme/host/port，不能用通配CORS；独立端口不是单独的安全论据。草稿试运行放在编辑器受控源，复用同引擎静态模块及仅编辑端可读的资源路由，不访问玩家正式源的IDB。
 - 会话携带账户`authEpoch`；禁用／重置／改密在事务递增epoch并撤销旧会话，写提交再次查验。启用不复活旧token。管理员撤销与已开始写事务以提交点定义先后，已经提交的合法保存不倒回。
 - idle/absolute期限、登录速率、上传／草稿／编译配额是集中版本化的运维配置，必须有非零有限值并在适配器测试用固定时钟证明；不得无限制或用这些配置增加游戏机制阈值。具体容量按既有环境测量冻结，不在未测时承诺并发量／SLA。
-- 头像只收实际可解码的PNG/JPEG静态图，拒绝SVG、HTML、动画、多态内容及远程URL抓取；先检查字节／尺寸／像素数量上限，再隔离解码、按裁剪参数重编码128×128规范PNG，丢弃EXIF等元信息。客户端预览不替代服务端处理。源尺寸不限于128（产品§4.3后续裁决），安全像素预算与规范输出是不同约束；B4e当轮只做header检验；后继[PNG安全切片](editor-portrait-png-safety.md)已补游戏库PNG有界完整解码／规范重编码，后继[JPEG有界实现](editor-portrait-jpeg-safety.md)已补游戏库JPEG子集解码／规范PNG输出（用户明确批准server-only固定vendor，不npm运行时安装或云binding）；后继[当前SHA真实链](editor-portrait-workerd-safety.md)补17项公开API／发布／匿名App，含原JPEG规范PNG；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补有界源矩形规范化及原存储预算、提交前写门；后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)补旧16384像素／4MiB预算内矩形JPEG完整解码／规范PNG（不是新源尺寸产品要求），固定128库入口保持；后继[Trial裁剪切片](editor-trial-portrait-crop.md)补服务端方形裁剪＋规范128输出（opt-in，预算不变）；后继[预算探针](editor-portrait-decode-budget.md)验上限内最坏解码有界完成＋exact＋无留存（零生产改动）；更大源接受、进程隔离与独立彩色精度／完整格式未提供，不关闭本安全合同。差距见[审计](editor-closeout-audit.md)。
+- 头像只收实际可解码的PNG/JPEG静态图，拒绝SVG、HTML、动画、多态内容及远程URL抓取；先检查字节／尺寸／像素数量上限，再隔离解码、按裁剪参数重编码128×128规范PNG，丢弃EXIF等元信息。客户端预览不替代服务端处理。源尺寸不限于128（产品§4.3后续裁决），安全像素预算与规范输出是不同约束；B4e当轮只做header检验；后继[PNG安全切片](editor-portrait-png-safety.md)已补游戏库PNG有界完整解码／规范重编码，后继[JPEG有界实现](editor-portrait-jpeg-safety.md)已补游戏库JPEG子集解码／规范PNG输出（用户明确批准server-only固定vendor，不npm运行时安装或云binding）；后继[当前SHA真实链](editor-portrait-workerd-safety.md)补17项公开API／发布／匿名App，含原JPEG规范PNG；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补有界源矩形规范化及原存储预算、提交前写门；后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)补旧16384像素／4MiB预算内矩形JPEG完整解码／规范PNG（不是新源尺寸产品要求），固定128库入口保持；后继[Trial裁剪切片](editor-trial-portrait-crop.md)补服务端方形裁剪＋规范128输出（opt-in，预算不变）；后继[预算探针](editor-portrait-decode-budget.md)验上限内最坏解码有界完成＋exact＋无留存（零生产改动）；更大源接受、进程隔离与独立彩色精度／完整格式未提供，不关闭本安全合同。后继[隔离排查](editor-portrait-decode-isolation.md)独立Node child探针23检查／5HTTP，非生产安装，V8 old-space／wall timeout不冒硬RSS／CPU；后继Windows Job探针17检查／15 native jobs验提交内存门、周期检查的用户CPU quota终止及后代清理，不是RSS、精确CPU截止或文件／网络权限沙箱；临时自动fallback生产接线已撤回。用户要求OS隔离；最新平台决定将编辑器移VPS，改为正式Node／Linux受限解码接入方案，不再建Cloudflare Containers／解码Worker。详细适配／验收见[拆分方案](editor-vps-cloudflare-plan.md)，不以runtime isolate或旧Windows实验代替Linux生产隔离。本批只设计，差距见[审计](editor-closeout-audit.md)。
 - 上传先进入当前游戏私有暂存，扫描／解码失败不能引用；用户文件名不作存储路径。资源ID和hash不构成读取权限；草稿及试运行资源每次查授权，`Cache-Control: no-store`，不进公共CDN或Service Worker缓存。
 - 统一文本输出使用textContent／受控Canvas绘字，不拼HTML，CSP不允许作者脚本；文件路径防穿越。发布可分发的正式图像资源只来自已校验manifest。
 - 审计记录操作者、对象ID、操作、前后修订、结果及requestId；不录密码／token／个人资料正文／完整草稿。账户可选姓名邮箱电话备注仅本人和用户管理权限可见，不进入匿名API或公告。

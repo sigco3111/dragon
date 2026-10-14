@@ -1,5 +1,17 @@
 # 本地编辑器验证清单
 
+## PORTRAIT-DECODE-JOB-1：Windows Job 内核限额探针（非生产安装）
+
+- 用户要求继续第2项；新 `node tools/verify_portrait_decode_job.mjs <轮号>`，自有C#／PowerShell／child三个fixture，实际Job限额先读回、CREATE_SUSPENDED→Assign→Resume；清理整组核零活进程，无无约束／直接解码fallback。唯一详源见[隔离排查](editor-portrait-decode-isolation.md#portrait-decode-job-1windows-内核限额后继仅本地工具)。
+- 新scope `portrait-decode-job-r1/attemptN/`，7显式pins与副本、合成原预算内图、逐case输入／输出／launcher／job报告；环境白名单，无网络、真实图／DOS／profile访问，不安装／提权／改执行策略。attempt1错误文本断言失败、attempt2为17检查，attempt3暴露只等spawn不等READY的后代测量；必要环境＋READY后attempt4和同SHA attempt5均 **17检查／15 native jobs**，全部原件保留。
+- 三格式及原最大图shared-codec像素exact、两坏源错误类、96／192MiB原生Buffer提交内存门、busy-loop内核quota终止／未触wall、wall整组终止、活后代清理、crash／坏回复／无法创建／非法限额失败关闭及父存活。提交内存不是RSS；1s用户CPU设置为周期检查，attempt5实测用户4.578125s／wall5.450s，不称精确截止或kernel CPU限制。实验512MiB／5s CPU／15s wall非生产阈值批准。两个MJS主动LSP clean，C#/PS未确认，实际Add-Type编译／运行和PS AST另验；生产隔离／权限沙箱仍依赖服务承载，不关闭Q37等。
+
+## PORTRAIT-DECODE-ISOLATION-1：独立 Node 隔离探针（非生产安装）
+
+- 用户要求OS隔离并继续；最终撤回不能保证Worker隔离的临时生产接线，`server/` 无Git差异。新入口 `node tools/verify_portrait_decode_isolation.mjs <轮号>`，两个子进程fixture只在 `tools/fixtures/`，不被生产或Web束引用。唯一详源见[隔离排查与探针](editor-portrait-decode-isolation.md)；#1／#5／#6解释后待统一决策，#3／#4／#7按建议暂缓／冻结，均不撤销原安全合同。
+- 只读明确15输入并保字节副本，自有128彩色JPEG／PNG、2048×2048 PNG、8192×2 JPEG，Python与child环境白名单，不读DOS／用户图／profile，不安装。独占 `.dragon-analysis/editor-phase/portrait-decode-isolation-r1/attemptN/`，保attempt1–3失败（父进程同步阻塞后HTTP空闲连接复用重置）；attempt4为21检查／5HTTP，后工具诊断修正＋原最大输入传输的attempt5为 **23检查／5HTTP**。三格式像素／损坏错误类对拍、1.5s timeout、crash／spawn失败／坏JSON／坏像素／非法配置拒、父进程存活；现有直接Trial API Node／workerd两侧产物与child输出一致，损坏源拒无assets写，不冒child已接生产。全部HTTP响应完整消费，`Connection: close`后同步阻塞6.5s仍200，无自动重试。
+- 控制 `connection-probe-r1.mjs/json` 同父scope：无解码child，Atomics阻塞6.5s；keep-alive下一请求ECONNRESET后新连接200，close组200。不是workerd被kill。30s wall／256MiB old-space只为实验值，不是用户批准的正式阈值；不是硬RSS／CPU配额／权限沙箱。生产OS隔离仍依赖独立解码服务承载；不得自动回退或改云配置，不关闭Q37／Q69／Q70／Q71。
+
 ## TRIAL-APP-BOOT-1：Trial 浏览器 App 启动（H切片）
 
 - 新入口 `node tools/verify_trial_app_boot.mjs <轮号>`（真 Chromium＋fresh profile；零生产改动）。Node 自举（回环 HTTPS workerd＋R2 安装＋真实登录轮转＋完整复制＋草稿读＋Trial 开局）后，同源代理转发 `/api/*`（注入已证 admin 会话）并直传 workerd 的真实售卖壳页 `trialapp.txt` 及其束模块（`trialweb.txt`，两束均钉 inputs）。页内真实 `servertrialapp.js` 自举：会话→包→选首势力→开始→真引擎 `openApp`；断言势力面板／运行行（僅記憶體）／rAF 存活／引擎画布／零页错，静候 6 派生资产（terrain／roadCost／roadOffset／roadGraph／minimapBase／minimapLarge）全 200 落定后经 API 结束，页 15s 内无新增错误（探针 401 由 monitor 消化）。

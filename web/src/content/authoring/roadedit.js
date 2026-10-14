@@ -244,3 +244,25 @@ export function encodeRoadGraphV2(roads, citiesById) {
   for (const n of nodes) delete n._city;
   return { version: 2, width: 384, height: 256, nodes, edges };
 }
+
+// City-move intent (B-1, Q14): validated relocation wish WITHOUT mutating
+// canonical records. Base coords are rule addresses (admission §3.2), so a
+// move is stored as intent, marks connected roads broken, and blocks
+// save/publish until reverted. Geometry rebuild is B-2.
+export function moveCityIntent(game, cityId, x, y) {
+  const city = game?.cities?.[cityId];
+  if (!city || city.cityId !== cityId) fail("unknown-city", `no such city: ${cityId}`, { cityId });
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x > 383 || y < 0 || y > 255)
+    fail("out-of-bounds", `move target out of bounds`, { cityId });
+  if (x === city.x && y === city.y) fail("no-op-move", `move target equals current position`, { cityId });
+  return Object.freeze({ cityId, x, y });
+}
+// Roads touching any moved city are broken until the intent is reverted
+// (B-1) or rebuilt (B-2). Pure derivation over the canonical graph.
+export function brokenRoads(game, moves) {
+  const moved = new Set((moves ?? []).map(m => m?.cityId));
+  if (!moved.size) return [];
+  return (game?.map?.roads ?? [])
+    .filter(r => moved.has(r?.fromCityId) || moved.has(r?.toCityId))
+    .map(r => r.id);
+}

@@ -21,13 +21,16 @@ import { PrivateWriteJournal } from './privatewrites.js';
 import { PrivateLibraryAssets } from './libraryassets.js';
 import { TrialSessions } from './trials.js';
 import { PublishedGames } from './published.js';
+import { ReleaseLedger } from './releases.js';
 import { PublishedPacks, RESERVED_ASSET_IDS } from './playpacks.js';
 import { GamePortraits } from './portraits.js';
+import { DraftTopology } from './topology.js';
 import { validateGameSource } from '../web/src/content/authoring/gamesource.js';
 import { compileTrialSource } from '../web/src/content/authoring/trialcompile.js';
 import worldManifest from './pinned/world-manifest.txt';
 import entityManifest from './pinned/entity-manifest.txt';
 import { HttpError, fail, config, fields, body, account, password, passwordHash, passwordMatches, randomToken, sha, mac, seal, unseal, equal } from './security.js';
+import { hasPendingMoves } from './topology.js';
 import page from './public/index.html';
 import client from './public/client.txt';
 import draftClient from './public/draft.txt';
@@ -124,8 +127,13 @@ export class EditorMetadata extends DurableObject {
     this.deletionFence = new GameDeletionFence({ storage: ctx.storage, principal: hash => this.principal(hash), operationGuard: (actor, key) => this.contentKey(actor, key, 'delete'), requestKey: env.EDITOR_REQUEST_KEY });
     // Published-game registry (node publish.json counterpart); pure SQLite, no blob dependency.
     this.publishedGames = new PublishedGames({ storage: ctx.storage, principal: hash => this.principal(hash) });
+    // Formal release ordinals (Q18/Q24) + history (Q23), no rollback (Q42).
+    this.releases = new ReleaseLedger({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games });
     // §4.3 game portrait library (owner-only, 128×128); pure SQLite, no blob dependency.
     this.portraits = new GamePortraits({ storage: ctx.storage, principal: hash => this.principal(hash), reservedIds: RESERVED_ASSET_IDS });
+    // B-1/Q14 draft topology intents (moves + rebuild records live outside
+    // the canonical game object; any pending move blocks save/publish).
+    this.topology = new DraftTopology({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games });
     this.trialSessions = null;
     this.blobs = null; this.installedSources = null; this.adminCopies = null; this.privateDrafts = null; this.stageApi = null; this.availableLibrary = null; this.libraryAssets = null;
     if (env.EDITOR_BLOBS) {
@@ -307,6 +315,7 @@ export class EditorMetadata extends DurableObject {
     if (typeof name !== 'string' || !name.trim()) { fail(422, 'PUBLISH_NAME'); }
     const owned = this.games.listOwn(tokenHash).find(entry => entry.gameId === gameId);
     if (!owned) { fail(404, 'GAME_NOT_FOUND'); }
+    if (hasPendingMoves(this.ctx.storage, gameId)) { fail(422, 'DRAFT_TOPOLOGY_BROKEN'); }
     const reference = this.games.snapshotReference(tokenHash, gameId, owned.draftRevision);
     const captured = await this.privateDrafts.captureForCompile(tokenHash, gameId, owned.draftRevision);
     if (captured.reference.rootKey !== reference.rootKey || captured.reference.sourceDigest !== reference.sourceDigest) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
@@ -317,9 +326,18 @@ export class EditorMetadata extends DurableObject {
     catch { fail(422, 'PUBLISH_NOT_COMPILED'); }
     if (compiled?.sourceDigest !== reference.sourceDigest) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
     if (!Array.isArray(captured.game.chapterOrder) || !captured.game.chapterOrder.length) { fail(422, 'PUBLISH_NOT_COMPILED'); }
-    // Pack first (orphan rows stay invisible), pin second (visible ⇒ servable).
+    // Pack first (orphan rows stay invisible), then ONE commit transaction:
+    // re-verify ownership/revision, issue the ordinal, write the pin.
+    // Pin shape unchanged; failures roll the ordinal back (Q18).
     await this.playPacks.buildAndStore(tokenHash, { game: captured.game, reference, compiled });
-    return this.publishedGames.publish(tokenHash, { gameId, name, revision: reference.draftRevision, sourceDigest: reference.sourceDigest, chapters: captured.game.chapterOrder });
+    return this.ctx.storage.transactionSync(() => {
+      const fresh = this.games.listOwn(tokenHash).find(entry => entry.gameId === gameId);
+      if (!fresh) { fail(404, 'GAME_NOT_FOUND'); }
+      const ref2 = this.games.snapshotReference(tokenHash, gameId, owned.draftRevision);
+      if (ref2.rootKey !== reference.rootKey || ref2.sourceDigest !== reference.sourceDigest) { fail(409, 'PUBLISH_STALE'); }
+      this.releases.issueInTxn(tokenHash, gameId, ref2.draftRevision, ref2.sourceDigest);
+      return this.publishedGames.publishInTxn(tokenHash, { gameId, name, revision: ref2.draftRevision, sourceDigest: ref2.sourceDigest, chapters: captured.game.chapterOrder });
+    });
   }
   #assertPasswordCurrent(user, path) {
     if (user.must_change && path !== '/api/auth/password' && path !== '/api/auth/logout') { fail(403, 'PASSWORD_CHANGE_REQUIRED'); }
@@ -532,8 +550,11 @@ export class EditorMetadata extends DurableObject {
     const { request, tokenHash, user, policy, url, value, managementPath, adminAction } = rt;
     const action = adminAction ?? 'unlist';
     if (url.search) { fail(422, 'MANAGEMENT_QUERY'); }
-    fields(value, ['action']);
-    if (value.action !== 'unlist') { fail(422, 'MANAGEMENT_ACTION'); }
+    // The UI contract sends {action:'unlist'} for unlist and {} for
+    // clear-restriction (dba2210 regressed the latter by requiring 'unlist'
+    // on both paths; A1-browser-r5 caught it).
+    if (action === 'unlist') { fields(value, ['action']); if (value.action !== 'unlist') { fail(422, 'MANAGEMENT_ACTION'); } }
+    else { fields(value, []); }
     const expected = /^"([1-9][0-9]*)"$/.exec(request.headers.get('If-Match') ?? ''); if (!expected || expected[1].length > 8192) { fail(428, 'IF_MATCH_REQUIRED'); }
     const op = await this.operation(request, [value, expected[1]], user.id, user.epoch, policy);
     return response(this.management.apply(tokenHash, op, { gameId: managementPath[1], action, expectedRowRevision: expected[1] }));
@@ -587,6 +608,44 @@ export class EditorMetadata extends DurableObject {
     const list = this.portraits.list(tokenHash, portraitPath[1]);
     const used = await this.#portraitUsedKeys(tokenHash, portraitPath[1]);
     return response({ gameId: portraitPath[1], portraits: list.map(entry => ({ ...entry, inUse: used.includes(entry.assetId) })) });
+  }
+  async #topologyGame(tokenHash, gameId) {
+    const owned = this.games.listOwn(tokenHash).find(entry => entry.gameId === gameId);
+    if (!owned) { fail(404, 'GAME_NOT_FOUND'); }
+    if (!this.privateDrafts) { fail(503, 'DRAFT_NOT_CONFIGURED'); }
+    return (await this.privateDrafts.captureForCompile(tokenHash, gameId, owned.draftRevision)).game;
+  }
+  async #getTopology(rt) {
+    const { tokenHash, policy, url, topologyPath } = rt;
+    if (!topologyPath || topologyPath[2]) { return null; }
+    if (url.search) { fail(422, 'TOPOLOGY_QUERY'); }
+    this.touch(tokenHash, policy);
+    const gameId = topologyPath[1];
+    return response({ gameId, moves: this.topology.list(tokenHash, gameId), rebuilds: this.topology.listRebuilds(tokenHash, gameId), blocked: hasPendingMoves(this.ctx.storage, gameId) });
+  }
+  async #postTopology(rt) {
+    const { request, tokenHash, user, policy, url, value, topologyPath } = rt;
+    if (!topologyPath?.[2]) { return null; }
+    if (url.search) { fail(422, 'TOPOLOGY_QUERY'); }
+    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'topology');
+    this.touch(tokenHash, policy);
+    const gameId = topologyPath[1], kind = topologyPath[2], clear = topologyPath[3] === 'clear';
+    if (!value || Array.isArray(value) || typeof value !== 'object') { fail(422, 'REQUEST_FIELDS'); }
+    if (kind === 'move' && clear) {
+      if (Object.keys(value).length > 1 || (value.cityId !== undefined && typeof value.cityId !== 'string')) { fail(422, 'REQUEST_FIELDS'); }
+      return response({ gameId, cleared: this.topology.clear(tokenHash, gameId, value.cityId) });
+    }
+    if (kind === 'rebuild' && clear) {
+      fields(value, ['roadId']);
+      return response({ gameId, cleared: this.topology.clearRebuild(tokenHash, gameId, value.roadId) });
+    }
+    const game = await this.#topologyGame(tokenHash, gameId);
+    if (kind === 'move') {
+      fields(value, ['cityId', 'x', 'y']);
+      return response(this.topology.record(tokenHash, game, value));
+    }
+    fields(value, ['roadId', 'geometry', 'travelKind']);
+    return response(this.topology.rebuild(tokenHash, game, value));
   }
   async #postPortraitUpload(rt) {
     const { request, tokenHash, user, policy, url, value, portraitPath } = rt;
@@ -782,6 +841,7 @@ export class EditorMetadata extends DurableObject {
     const managementPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/(listing|restriction\/clear)$/.exec(path);
     const deletionPath = /^\/api\/games\/([a-f0-9-]{36})\/deletion(-operations\/([A-Za-z0-9_-]{16,128}))?$/.exec(path);
     const portraitPath = /^\/api\/games\/([a-f0-9-]{36})\/portraits(?:\/([A-Za-z]{1,32}))?$/.exec(path);
+    const topologyPath = /^\/api\/games\/([a-f0-9-]{36})\/topology(?:\/(move|rebuild)(?:\/(clear))?)?$/.exec(path);
     const copyPath = /^\/api\/admin\/copies\/([A-Za-z0-9_-]{16,128})(?:\/(run|cancel))?$/.exec(path);
     const stageAssetsPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/stage-assets$/.exec(path);
     const libraryPath = this.libraryAssets?.match(path);
@@ -791,16 +851,16 @@ export class EditorMetadata extends DurableObject {
     const trialAssetPath = /^\/api\/trials\/([a-f0-9-]{36})\/assets\/([A-Za-z]{1,32})$/.exec(path);
     const trialPortraitPath = /^\/api\/trials\/([a-f0-9-]{36})\/portraits$/.exec(path);
     const draftPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/draft(?:\/(save|operations\/([A-Za-z0-9_-]{16,128})))?$/.exec(path);
-    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, portraitPath, copyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath };
+    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, portraitPath, copyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath, topologyPath };
     if (method === 'GET') {
-      const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getDeletion(rt)) ?? (await this.#getPortraits(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
+      const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getDeletion(rt)) ?? (await this.#getPortraits(rt)) ?? (await this.#getTopology(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
       if (hit) { return hit; }
       fail(404, 'NOT_FOUND');
     }
     if (method !== 'POST') { fail(404, 'NOT_FOUND'); }
     if (!equal(request.headers.get('X-CSRF-Token'), csrf)) { fail(403, 'CSRF_REJECTED'); }
     const value = await body(request);
-    return (await this.#postEntryRoutes({ ...rt, value })) ?? (await this.#postTrialStart({ ...rt, value })) ?? (await this.#postTrialEnd({ ...rt, value })) ?? (await this.#postTrialPortrait({ ...rt, value })) ?? (await this.#postPublishRoutes({ ...rt, value })) ?? (await this.#postAuthMutation({ ...rt, value }));
+    return (await this.#postEntryRoutes({ ...rt, value })) ?? (await this.#postTopology({ ...rt, value })) ?? (await this.#postTrialStart({ ...rt, value })) ?? (await this.#postTrialEnd({ ...rt, value })) ?? (await this.#postTrialPortrait({ ...rt, value })) ?? (await this.#postPublishRoutes({ ...rt, value })) ?? (await this.#postAuthMutation({ ...rt, value }));
   }
   #checkContentKeyNamespaces(actor, key, namespace) {
     for (const [table, kind, actorColumn] of [['operations', 'auth', 'actor'], ['source_operations', 'source', 'actor'], ['content_reservations', 'copy', 'actor'], ['copy_http_commands', 'command', 'actor'], ['draft_requests', 'draft', 'actor'], ['compile_operations', 'compile', 'actor_id'], ['stage_http_commands', 'stage-command', 'actor']]) {

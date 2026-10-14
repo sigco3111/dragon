@@ -2,11 +2,12 @@
 import { createHash } from 'node:crypto';
 import { canonicalSourceTokens, encodeSourceChunks, decodeSourceChunks, CanonicalSourceParser } from '../web/src/content/authoring/sourcejson.js';
 import { normalizeGameMetadata } from '../web/src/editor/gamemetadata.js';
-import { addBlankChapter, copyChapterInGame, deleteChapter, renameChapter, renameGeneral, setMonarch, setStrategist, removeMonarch, disbandFaction, chapterGapCounts, cityReferences } from '../web/src/content/authoring/gamesource.js';
+import { addBlankChapter, copyChapterInGame, deleteChapter, renameChapter, renameGeneral, setMonarch, setStrategist, removeMonarch, disbandFaction, editChapterCity, chapterGapCounts, cityReferences } from '../web/src/content/authoring/gamesource.js';
 import { setGeneralPortrait } from '../web/src/editor/generalportrait.js';
 import { editChapterResources } from '../web/src/editor/chapterresources.js';
 import { FixedCopyProfile, FIXED_COPY_PROFILE } from './copyprofile.js';
 import { GameSnapshotVerifier } from './snapshots.js';
+import { hasPendingMoves } from './topology.js';
 import { fail, fields, HttpError } from './security.js';
 const uuid = v => typeof v === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v);
 const hex = v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
@@ -35,6 +36,7 @@ function capture(input) {
     else if (edit.op === 'set-strategist') { fields(edit, ['op', 'chapterId', 'factionIdx', 'generalIdx']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.factionIdx) || (edit.generalIdx !== null && (!Number.isInteger(edit.generalIdx) || edit.generalIdx < 0 || edit.generalIdx > 127))) fail(422, 'DRAFT_CHAPTER_EDITS'); }
     else if (edit.op === 'remove-monarch') { fields(edit, ['op', 'chapterId', 'factionIdx', 'resolution']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.factionIdx) || !edit.resolution || typeof edit.resolution !== 'object' || Array.isArray(edit.resolution)) fail(422, 'DRAFT_CHAPTER_EDITS'); }
     else if (edit.op === 'disband-faction') { fields(edit, ['op', 'chapterId', 'factionIdx', 'confirm']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isInteger(edit.factionIdx) || edit.confirm !== true) fail(422, 'DRAFT_CHAPTER_EDITS'); }
+    else if (edit.op === 'city') { fields(edit, ['op', 'chapterId', 'cityIdx', 'values']); if (typeof edit.chapterId !== 'string' || !edit.chapterId.length || edit.chapterId.length > 256 || !Number.isSafeInteger(edit.cityIdx) || edit.cityIdx < 0 || !edit.values || typeof edit.values !== 'object' || Array.isArray(edit.values)) fail(422, 'DRAFT_CHAPTER_EDITS'); const cityKeys = Object.keys(edit.values); if (!cityKeys.length || cityKeys.some(k => (k !== 'troops' && k !== 'prod') || typeof edit.values[k] !== 'number' || !Number.isInteger(edit.values[k]) || Object.is(edit.values[k], -0))) fail(422, 'DRAFT_CHAPTER_EDITS'); }
     else fail(422, 'DRAFT_CHAPTER_EDITS');
   }
   const seen = new Set();
@@ -172,7 +174,7 @@ export class PrivateDrafts {
     const loaded = await this.#load(tokenHash, gameId, requested, actor), { profile, captured } = await this.#profile(tokenHash, gameId, actor);
     profile.verify(captured.capability, loaded.proof.game, this.#editHistory(gameId, requested)); this.#origin(tokenHash, gameId, actor);
     return { gameId, draftRevision: requested, sourceDigest: loaded.reference.sourceDigest, profileRevision: FIXED_COPY_PROFILE, metadata: loaded.proof.game.metadata,
-      chapters: loaded.proof.game.chapterOrder.map(id => { const st = loaded.proof.game.chapters[id].state; return { chapterId: id, name: loaded.proof.game.chapters[id].name ?? '', factions: st.factions.map((f, slot) => ({ slot, idx: f.idx, monarch_idx: f.monarch_idx, advisor_idx: f.advisor_idx ?? null, capital: f.capital, money: f.money, reserve_cav: f.reserve_cav, reserve_arc: f.reserve_arc, reserve_inf: f.reserve_inf })), generals: st.generals.map(g => ({ idx: g.idx, name: g.name, hao: g.hao, portraitKey: g.portraitKey ?? null, faction: g.faction ?? null })), cities: st.cities.map(c => ({ idx: c.idx, name: c.name, faction: c.faction ?? null })), gaps: chapterGapCounts(st, id) }; }),
+      chapters: loaded.proof.game.chapterOrder.map(id => { const st = loaded.proof.game.chapters[id].state; return { chapterId: id, name: loaded.proof.game.chapters[id].name ?? '', factions: st.factions.map((f, slot) => ({ slot, idx: f.idx, monarch_idx: f.monarch_idx, advisor_idx: f.advisor_idx ?? null, capital: f.capital, money: f.money, reserve_cav: f.reserve_cav, reserve_arc: f.reserve_arc, reserve_inf: f.reserve_inf })), generals: st.generals.map(g => ({ idx: g.idx, name: g.name, hao: g.hao, portraitKey: g.portraitKey ?? null, faction: g.faction ?? null })), cities: st.cities.map(c => ({ idx: c.idx, name: c.name, faction: c.faction ?? null, troops: c.troops ?? null, prod: c.prod ?? null, troopsCap: c.troops_cap ?? null, maxProd: c.max_prod ?? null })), gaps: chapterGapCounts(st, id) }; }),
       strongholds: Object.keys(loaded.proof.game.cities ?? {}).map(cityId => cityReferences(loaded.proof.game, cityId)),
       map: { placements: (loaded.proof.game.map?.placements ?? []).length, roads: (loaded.proof.game.map?.roads ?? []).map(road => ({ id: road.id, fromCityId: road.fromCityId, toCityId: road.toCityId, travelKind: road.travelKind ?? null, geometry: road.geometry ?? [] })) },
       limits: 'Fixed-copy draft metadata/four-resource representation only; not playable range or runtime/Trial/Release admission.' };
@@ -212,6 +214,7 @@ export class PrivateDrafts {
   }
   async save(tokenHash, gameId, expected, operationKey, operationDigest, input) {
     const { actor, row: gameRow } = this.#owned(tokenHash, gameId); this.#origin(tokenHash, gameId, actor);
+    if (hasPendingMoves(this.#storage, gameId)) fail(422, 'DRAFT_TOPOLOGY_BROKEN');
     if (!revision(expected) || !hex(operationDigest)) fail(422, 'DRAFT_OPERATION');
     const value = capture(input), capturedJSON = JSON.stringify(value);
     this.#storage.transactionSync(() => {
@@ -240,6 +243,7 @@ export class PrivateDrafts {
           else if (edit.op === 'set-monarch') setMonarch(candidate, edit.chapterId, edit.factionIdx, edit.generalIdx);
           else if (edit.op === 'set-strategist') setStrategist(candidate, edit.chapterId, edit.factionIdx, edit.generalIdx);
           else if (edit.op === 'remove-monarch') removeMonarch(candidate, edit.chapterId, edit.factionIdx, edit.resolution);
+          else if (edit.op === 'city') candidate = editChapterCity(candidate, edit.chapterId, edit.cityIdx, edit.values);
           else disbandFaction(candidate, edit.chapterId, edit.factionIdx);
         } catch { fail(422, 'DRAFT_CHAPTER_EDIT'); }
       }

@@ -17,6 +17,6 @@ attempt3：7检查／33 HTTP 通过——Node 直接解码三项（9／4／73ms�
 
 ## 仍 open（不关闭）
 
-- OS 进程隔离／硬 RSS／CPU 时间上限：从未提供，本探针只测上限内完成＋留存趋势，不冒此证。
+- 生产 OS 进程隔离／硬 RSS／CPU 时间上限仍未提供；后继[隔离排查与独立Node探针](editor-portrait-decode-isolation.md)23检查／5HTTP证实验child超时／失败关闭；后继Windows Job17检查／15 native jobs实测提交内存门及周期检查的用户CPU quota终止，不是RSS、精确CPU截止、权限沙箱或生产安装。本B探针只测上限内完成＋留存趋势，不冒此证。
 - 更大任意源（超 16384 像素／4MiB 估算）仍失败关闭；接受更大源须另立预算＋隔离方案，本切片未授权。
-- 完整格式／独立彩色精度、Trial UI、公开整链（C切片）仍缺；Q37 不关闭，见[逐项索引](editor-requirements-matrix.md)。
+- 完整格式／独立彩色精度未认证（用户后继同意暂缓）；B当轮缺Trial UI／公开链的记录已由[裁剪维护源](editor-trial-portrait-crop.md)D／E及[本地验证](editor-local-validation.md)C／H局部补齐，不追认B为UI证据。Q37不关闭，见[逐项索引](editor-requirements-matrix.md)。

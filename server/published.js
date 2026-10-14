@@ -12,10 +12,10 @@ const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a
 const revision = value => typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export class PublishedGames {
-  #sql; #principal;
+  #storage; #sql; #principal;
   constructor({ storage, principal }) {
     if (!storage?.sql || typeof principal !== 'function') { throw new TypeError('actual SQLite and trusted principal required'); }
-    this.#sql = storage.sql; this.#principal = principal;
+    this.#storage = storage; this.#sql = storage.sql; this.#principal = principal;
     storage.transactionSync(() => this.#sql.exec('CREATE TABLE IF NOT EXISTS published_games (game_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, pin_json TEXT NOT NULL, updated_at TEXT NOT NULL)'));
   }
   #one(query, ...values) { return this.#sql.exec(query, ...values).toArray()[0]; }
@@ -48,6 +48,11 @@ export class PublishedGames {
   // with the route layer (games.snapshotReference + drafts read), same split
   // as node (loadDraft + readBuild before the write).
   publish(tokenHash, input) {
+    return this.#storage.transactionSync(() => this.publishInTxn(tokenHash, input));
+  }
+  // Ambient-transaction form for the C-2 publish commit (pin + ordinal +
+  // pointer land or roll back together). Pin shape unchanged.
+  publishInTxn(tokenHash, input) {
     const actor = this.#actor(tokenHash);
     fields(input, ['gameId', 'name', 'revision', 'sourceDigest', 'chapters']);
     const gameId = this.#gameId(input.gameId), name = this.#displayName(input.name);

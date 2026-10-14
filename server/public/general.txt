@@ -77,7 +77,14 @@ export function installGenerals({ api, authority, work, isBusy }) {
     const before = game.draftRevision;
     const draft = await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft?revision=' + encodeURIComponent(before));
     // Fresh key per save (no retry of unknown state): verify by revision.
-    await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft/save', { metadata: draft.metadata, resourceEdits: [], chapterEdits }, { key: crypto.randomUUID(), revision: String(before) });
+    // Q30: failures land in the module area (prompt inputs are transient, so
+    // redo from the dialog); the error still propagates to the shell status.
+    try {
+      await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft/save', { metadata: draft.metadata, resourceEdits: [], chapterEdits }, { key: crypto.randomUUID(), revision: String(before) });
+    } catch (error) {
+      message('保存失敗：' + (error instanceof Error ? error.message : String(error)) + '；請重讀後重做。');
+      throw error;
+    }
     const after = await api('/api/games');
     const entry = after.games.find((item) => item.gameId === game.gameId);
     if (entry && BigInt(entry.draftRevision) === BigInt(before) + 1n) { game.draftRevision = entry.draftRevision; message('已保存，重新讀取中…'); await inspect(); return; }
@@ -238,7 +245,12 @@ export function installGenerals({ api, authority, work, isBusy }) {
       del.type = 'button'; del.textContent = '刪除';
       del.disabled = isBusy();
       del.onclick = () => work(async () => {
-        await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits/' + encodeURIComponent(entry.assetId), {}, { key: crypto.randomUUID() });
+        try {
+          await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits/' + encodeURIComponent(entry.assetId), {}, { key: crypto.randomUUID() });
+        } catch (error) {
+          message('刪除失敗：' + (error instanceof Error ? error.message : String(error)) + '；使用中須先解綁。');
+          throw error;
+        }
         await listPortraits();
       });
       row.append(del);
@@ -273,7 +285,12 @@ export function installGenerals({ api, authority, work, isBusy }) {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     assertPreview();
     const dataBase64 = base64(bytes);
-    await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits', { assetId, dataBase64 }, { key: crypto.randomUUID() });
+    try {
+      await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits', { assetId, dataBase64 }, { key: crypto.randomUUID() });
+    } catch (error) {
+      message('上傳失敗：' + (error instanceof Error ? error.message : String(error)) + '；已確認裁剪保留，可重試。');
+      throw error;
+    }
     if (!currentPreview(value) || generation !== portraitGeneration) return;
     confirmedGeneration = null;
     renderPortraitControls();

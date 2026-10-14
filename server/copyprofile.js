@@ -62,6 +62,26 @@ function revertAppliedChapterEdits(baseline, candidate, applied) {
     if (!rec || typeof rec !== 'object') fail(422, 'COPY_PROTECTED_DELTA');
     return rec;
   };
+  const revCity = (chapter, idx) => {
+    const list = chapter.state?.cities;
+    if (!Array.isArray(list)) fail(422, 'COPY_PROTECTED_DELTA');
+    const rec = list.find(c => c?.idx === idx);
+    if (!rec || typeof rec !== 'object') fail(422, 'COPY_PROTECTED_DELTA');
+    return rec;
+  };
+  const baseCity = (chapterId, idx) => {
+    const list = baseChapter(chapterId).state?.cities;
+    const rec = Array.isArray(list) ? list.find(c => c?.idx === idx) : null;
+    if (!rec || typeof rec !== 'object') fail(422, 'COPY_PROTECTED_DELTA');
+    return rec;
+  };
+  // City numeric restore: values plus the raw bytes the N3-1 writer patches
+  // in step (nothing else mutates city raw, so a baseline copy is exact).
+  const revertCityFields = (chapterId, idx, keys) => {
+    const rec = revCity(revChapter(chapterId), idx), base = baseCity(chapterId, idx);
+    for (const key of keys) rec[key] = clone(base[key]);
+    rec.raw = clone(base.raw);
+  };
   // Narrow field restore for one general / one faction post.
   const revertGeneralFields = (chapterId, idx, keys) => {
     const rec = revGeneral(revChapter(chapterId), idx), base = baseGeneral(chapterId, idx);
@@ -116,6 +136,11 @@ function revertAppliedChapterEdits(baseline, candidate, applied) {
       const keys = Object.keys(edit.values ?? {});
       if (!keys.length || keys.some(k => k !== 'name' && k !== 'hao')) fail(422, 'COPY_PROTECTED_DELTA');
       revertGeneralFields(chapterId, edit.generalIdx, keys);
+    } else if (op === 'city') {
+      const keys = Object.keys(edit.values ?? {});
+      if (!keys.length || keys.some(k => k !== 'troops' && k !== 'prod')) fail(422, 'COPY_PROTECTED_DELTA');
+      if (!Number.isSafeInteger(edit.cityIdx) || edit.cityIdx < 0) fail(422, 'COPY_PROTECTED_DELTA');
+      revertCityFields(chapterId, edit.cityIdx, keys);
     } else if (op === 'portrait') {
       const rec = revGeneral(revChapter(chapterId), edit.generalIdx);
       const base = baseGeneral(chapterId, edit.generalIdx);

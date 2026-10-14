@@ -130,6 +130,24 @@ export function placeComponent(source, definitionRef, x, y, id, waterClass, vari
     if (waterClass) next.map.waterGroups.push(newGroup(next, "group-" + id, def.name ?? "新水域組合", [id], [], true));
   });
 }
+// Q39 over-boundary preview: which cells WOULD exceed on the proposed move.
+// Pure read, no mutation, same input gates as translateDecorations.
+export function previewTranslateOutOfBounds(source, ids, dx, dy) {
+  unique(ids);
+  if (!ids.length || !Number.isInteger(dx) || !Number.isInteger(dy) || dx === 0 && dy === 0) fail("請選取完整裝飾並輸入非零整數圖格位移");
+  const selected = new Set(ids), instances = source.map.decorations.filter((d) => selected.has(d.id));
+  if (instances.length !== ids.length) fail("批量平移引用不存在的裝飾");
+  const cells = [];
+  for (const d of instances) for (const [x, y] of componentCells(source, d))
+    if (x + dx < 0 || x + dx >= 384 || y + dy < 0 || y + dy >= 256) cells.push([x + dx, y + dy]);
+  return Object.freeze({ count: cells.length, cells: Object.freeze(cells.map(pair => Object.freeze(pair))) });
+}
+// Q39 expansion confirmation: the map stays 384x256 (admission §4: capacity
+// is not a width switch). Confirming expansion is therefore always refused
+// with the capacity reason; unconfigured bounds block publish at freeze.
+export function requestMapExpansion() {
+  fail("MAP_EXPANSION_CLOSED：地圖固定 384x256，不開放擴邊；容量原證未閉合");
+}
 // Only decorations: never move cities, road stamps, topology or hidden base.
 export function translateDecorations(source, ids, dx, dy) {
   unique(ids);

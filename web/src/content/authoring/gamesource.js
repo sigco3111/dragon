@@ -394,6 +394,54 @@ export function checkCityDeletable(game, cityId) {
   blockers.push({ code: "CITY_COUNT_LOCKED", detail: "基础据点锁定 192 座，不开放增删" });
   return { cityId, deletable: false, blockers };
 }
+// Chapter city numeric edits (N3-1): troops (+13 byte) and prod (+0E word),
+// gated by the record's own caps (troops_cap/max_prod, re-notes §8 rule 3).
+// owner/governor/name/coords/adjacency stay closed (need attr rebuild,
+// identity sync, Big5 limits, tile evidence). Raw bytes are patched in step
+// with the decoded fields, mirroring editChapterResources.
+const CITY_EDIT_FIELDS = Object.freeze({ troops: [0x13, 1], prod: [0x0E, 2] });
+function chapterCity(game, chapterId, cityIdx) {
+  if (!isPlainObject(game)) throw new TypeError("game source required");
+  if (game.gameId === BUILTIN_GAME_ID || game.sourceRef?.kind !== "builtin-copy" || game.sourceRef.sourceId !== BUILTIN_GAME_ID) throw new RangeError("僅可編輯獨立完整副本的既有章節據點");
+  const chapter = game.chapters?.[chapterId];
+  if (!isPlainObject(chapter) || chapter.chapterId !== chapterId || !(game.chapterOrder ?? []).includes(chapterId)) throw new RangeError(`unknown chapter: ${chapterId}`);
+  const cities = chapter.state?.cities;
+  if (!Array.isArray(cities)) throw new TypeError("chapter cities required");
+  const record = cities.find(c => c?.idx === cityIdx);
+  if (!isPlainObject(record)) throw new RangeError(`unknown city: ${cityIdx}`);
+  return record;
+}
+function cityRawByte(raw, offset) {
+  return Number.parseInt(raw.slice(offset * 2, offset * 2 + 2), 16);
+}
+function cityRawWord(raw, offset) {
+  return Number.parseInt(raw.slice(offset * 2, offset * 2 + 2), 16) + Number.parseInt(raw.slice(offset * 2 + 2, offset * 2 + 4), 16) * 256;
+}
+export function editChapterCity(game, chapterId, cityIdx, values) {
+  if (!isPlainObject(values)) throw new TypeError("city values required");
+  const keys = Object.keys(values);
+  if (!keys.length || keys.some(k => !Object.hasOwn(CITY_EDIT_FIELDS, k))) throw new RangeError("city edit allows troops/prod only");
+  const record = chapterCity(game, chapterId, cityIdx);
+  if (typeof record.raw !== "string" || !/^[a-f0-9]{64}$/i.test(record.raw)) throw new RangeError("chapter city raw record required");
+  if (!Number.isSafeInteger(record.troops_cap) || record.troops_cap < 0 || !Number.isSafeInteger(record.max_prod) || record.max_prod < 0) throw new RangeError("chapter city caps required");
+  if (cityRawByte(record.raw, 0x13) !== record.troops || cityRawWord(record.raw, 0x0E) !== record.prod) throw new RangeError("章節據點數值／原生來源分歧");
+  const captured = {};
+  for (const key of keys) {
+    const value = values[key], cap = key === "troops" ? record.troops_cap : record.max_prod;
+    if (typeof value !== "number" || !Number.isInteger(value) || Object.is(value, -0) || value < 0 || value > cap) throw new RangeError("章節據點數值範圍不符：" + key);
+    captured[key] = value;
+  }
+  if (keys.every(key => record[key] === captured[key])) return game;
+  const next = deepClone(game), state = next.chapters[chapterId].state, target = state.cities.find(c => c?.idx === cityIdx);
+  for (const key of keys) {
+    const value = captured[key]; if (value === target[key]) continue;
+    const [offset, size] = CITY_EDIT_FIELDS[key];
+    const hex = Array.from({ length: size }, (_, i) => ((value >>> (i * 8)) & 255).toString(16).padStart(2, "0")).join("");
+    target[key] = value;
+    target.raw = target.raw.slice(0, offset * 2) + hex + target.raw.slice((offset + size) * 2);
+  }
+  return next;
+}
 // General field edits (§4.3 B4c1): chapter-scoped name/hao only. Person
 // add/delete is 128-locked (certified), so deletion is check-only.
 function chapterGeneral(game, chapterId, generalIdx) {

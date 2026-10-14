@@ -4,7 +4,7 @@
 // visual foundation for future editing, not an editor.
 export function installMapViewer({ api, authority, work, isBusy }) {
   const q = (id) => document.querySelector('#' + id);
-  let identity = null, games = [], selected = null, detail = null;
+  let identity = null, games = [], selected = null, detail = null, topo = null;
   const allowed = () => Boolean(identity?.user) && !identity.user.mustChangePassword;
   const message = (text) => { q('mapview-message').textContent = text; };
   function render() {
@@ -42,9 +42,45 @@ export function installMapViewer({ api, authority, work, isBusy }) {
     for (const dot of dots) {
       context.fillRect((dot.x - bounds.minX) * sx - 1, (dot.y - bounds.minY) * sy - 1, 3, 3);
     }
+    // B-3b topology overlay (display only): intended positions (amber),
+    // broken roads (red), rebuilt-recorded count as text. Derived locally
+    // from the read receipt + intent list; never mutates drafts.
+    const moved = new Map((topo?.moves ?? []).map(m => [m.cityId, m]));
+    if (moved.size) {
+      const byId = new Map(dots.map(d => [d.cityId, d]));
+      context.strokeStyle = '#d08000';
+      context.fillStyle = '#d08000';
+      for (const [cityId, m] of moved) {
+        const dot = byId.get(cityId);
+        if (dot) {
+          context.beginPath();
+          context.moveTo((dot.x - bounds.minX) * sx, (dot.y - bounds.minY) * sy);
+          context.lineTo((m.x - bounds.minX) * sx, (m.y - bounds.minY) * sy);
+          context.stroke();
+        }
+        context.fillRect((m.x - bounds.minX) * sx - 2, (m.y - bounds.minY) * sy - 2, 5, 5);
+      }
+      context.strokeStyle = '#d00000';
+      for (const road of roads) {
+        if (!moved.has(road.fromCityId) && !moved.has(road.toCityId)) continue;
+        const pts = road.geometry ?? [];
+        if (pts.length < 2) continue;
+        context.beginPath();
+        context.moveTo((pts[0].x - bounds.minX) * sx, (pts[0].y - bounds.minY) * sy);
+        for (const pt of pts.slice(1)) context.lineTo((pt.x - bounds.minX) * sx, (pt.y - bounds.minY) * sy);
+        context.stroke();
+      }
+    }
     const summary = document.createElement('p');
     summary.textContent = `放置 ${placedCount}／道路 ${roads.length}／邊界 ${bounds.width}×${bounds.height}`;
     q('mapview-roads').append(summary);
+    if (topo) {
+      const movedCount = (topo.moves ?? []).length;
+      const brokenCount = roads.filter(r => moved.has(r.fromCityId) || moved.has(r.toCityId)).length;
+      const note = document.createElement('p');
+      note.textContent = `拓撲意向 ${movedCount}／斷路 ${brokenCount}／已登記重建 ${(topo.rebuilds ?? []).length}／${topo.blocked ? '存盘发布阻挡' : '無阻挡'}`;
+      q('mapview-roads').append(note);
+    }
     for (const road of roads.slice(0, 200)) {
       const row = document.createElement('p');
       row.textContent = `${road.id ?? '?'}：${road.fromCityId} → ${road.toCityId}（${(road.geometry ?? []).length} 點，${road.travelKind ?? '?'}）`;
@@ -68,10 +104,12 @@ export function installMapViewer({ api, authority, work, isBusy }) {
     if (!game) throw new Error('請先選擇遊戲。');
     selected = game.gameId;
     detail = await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft?revision=' + encodeURIComponent(game.draftRevision));
+    try { topo = await api('/api/games/' + encodeURIComponent(game.gameId) + '/topology'); }
+    catch { topo = null; }
     render();
     message('示意圖唯讀：放置／道路／圖塊編輯尚未開放（模型鎖定，見 §4.4 缺口）。');
   }
   q('mapview-refresh').onclick = () => work(refresh);
   q('mapview-inspect').onclick = () => work(inspect);
-  return Object.freeze({ render, setIdentity(value) { identity = value; if (!allowed()) { games = []; selected = null; detail = null; } render(); }, canLeave() { return true; } });
+  return Object.freeze({ render, setIdentity(value) { identity = value; if (!allowed()) { games = []; selected = null; detail = null; topo = null; } render(); }, canLeave() { return true; } });
 }

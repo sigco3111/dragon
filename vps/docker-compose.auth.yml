@@ -1,0 +1,26 @@
+# Auth sidecar Compose, coexists with the probe (docker-compose.yml).
+# Listens on 127.0.0.1:8788; cut over to 8787 only after verification.
+# Layout under /srv/dragon-editor:
+#   docker-compose.auth.yml, app/{server,vps,web}, auth-data/, auth.env
+services:
+  auth:
+    build:
+      context: ./app
+      dockerfile: ./vps/Dockerfile
+    image: dragon-editor-auth:1
+    container_name: dragon-editor-auth
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    env_file:
+      - ./auth.env
+    environment:
+      PORT: "8788"
+      EDITOR_DB: /data/editor.db
+    ports:
+      - "127.0.0.1:8788:8788"
+    volumes:
+      - ./auth-data:/data
+    restart: unless-stopped
+    stop_grace_period: 30s

@@ -93,6 +93,10 @@ export class PublishedPacks {
   async buildAndStore(tokenHash, { game, reference, compiled }) {
     this.#actor(tokenHash);
     if (!game || game.gameId !== reference.gameId || !Array.isArray(game.chapterOrder) || game.chapterOrder.length < 1) { fail(422, 'PLAY_SNAPSHOT'); }
+    // Q39: unconfigured (non-384x256) maps block freeze/publish. Capacity is
+    // not a width switch (admission §4); expansion stays refused.
+    const bounds = game.map?.bounds;
+    if (!bounds || bounds.minX !== 0 || bounds.minY !== 0 || bounds.width !== 384 || bounds.height !== 256) { fail(422, 'PLAY_MAP_BOUNDS'); }
     const states = {};
     for (const chapterId of game.chapterOrder) {
       if (typeof chapterId !== 'string' || !chapterId) { fail(422, 'PLAY_SNAPSHOT'); }
