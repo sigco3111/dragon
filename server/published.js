@@ -40,8 +40,8 @@ export class PublishedGames {
     let pin;
     try { pin = JSON.parse(raw); }
     catch { fail(500, 'PUBLISH_CORRUPT'); }
-    if (!pin || pin.gameId !== gameId || typeof pin.name !== 'string' || !revision(pin.revision ?? null) || !digest(pin.sourceDigest) || !Array.isArray(pin.chapters) || !pin.chapters.every(entry => typeof entry === 'string' && entry.length > 0) || typeof pin.publishedAt !== 'string') { fail(500, 'PUBLISH_CORRUPT'); }
-    return Object.freeze({ gameId: pin.gameId, name: pin.name, revision: pin.revision, sourceDigest: pin.sourceDigest, chapters: Object.freeze([...pin.chapters]), publishedAt: pin.publishedAt });
+    if (!pin || pin.gameId !== gameId || typeof pin.name !== 'string' || !revision(pin.revision ?? null) || !digest(pin.sourceDigest) || !Array.isArray(pin.chapters) || !pin.chapters.every(entry => typeof entry === 'string' && entry.length > 0) || typeof pin.publishedAt !== 'string' || typeof pin.ordinal !== 'string' || !/^[0-9]+(\.[0-9]+)+$/.test(pin.ordinal)) { fail(500, 'PUBLISH_CORRUPT'); }
+    return Object.freeze({ gameId: pin.gameId, name: pin.name, revision: pin.revision, sourceDigest: pin.sourceDigest, chapters: Object.freeze([...pin.chapters]), publishedAt: pin.publishedAt, ordinal: pin.ordinal });
   }
   // Registry write: node stamps publishedAt server-side; owner is stamped here
   // for unpublish auth. Game existence/ownership/compiled-revision proof stays
@@ -54,13 +54,14 @@ export class PublishedGames {
   // pointer land or roll back together). Pin shape unchanged.
   publishInTxn(tokenHash, input) {
     const actor = this.#actor(tokenHash);
-    fields(input, ['gameId', 'name', 'revision', 'sourceDigest', 'chapters']);
+    fields(input, ['gameId', 'name', 'revision', 'sourceDigest', 'chapters', 'ordinal']);
     const gameId = this.#gameId(input.gameId), name = this.#displayName(input.name);
     if (!revision(input.revision)) { fail(422, 'PUBLISH_REVISION'); }
+    if (typeof input.ordinal !== 'string' || !/^[0-9]+(\.[0-9]+)+$/.test(input.ordinal)) { fail(422, 'PUBLISH_ORDINAL'); }
     if (!digest(input.sourceDigest)) { fail(422, 'PUBLISH_DIGEST'); }
     if (!Array.isArray(input.chapters) || !input.chapters.every(entry => typeof entry === 'string' && entry.length > 0)) { fail(422, 'PUBLISH_CHAPTERS'); }
     const now = new Date().toISOString();
-    const pin = Object.freeze({ gameId, name, revision: input.revision, sourceDigest: input.sourceDigest, chapters: Object.freeze([...input.chapters]), publishedAt: now });
+    const pin = Object.freeze({ gameId, name, revision: input.revision, sourceDigest: input.sourceDigest, chapters: Object.freeze([...input.chapters]), publishedAt: now, ordinal: input.ordinal });
     this.#sql.exec('INSERT OR REPLACE INTO published_games VALUES(?,?,?,?)', gameId, actor.id, JSON.stringify(pin), now);
     return pin;
   }
@@ -79,7 +80,9 @@ export class PublishedGames {
   }
   // No auth here: the route layer decides anonymity (玩侧匿名可达 per task 1).
   // The builtin head entry is prepended by the route, as in node.
+  // Only admin-listed games surface (Q25: publish is author finalization,
+  // listing is the admin go-live gate); unlisted or vanished rows drop out.
   list() {
-    return Object.freeze(this.#sql.exec('SELECT * FROM published_games ORDER BY game_id').toArray().map(row => this.#readPin(row.game_id, row.pin_json)));
+    return Object.freeze(this.#sql.exec('SELECT p.*, u.account AS creator_account FROM published_games p JOIN content_games g ON g.game_id=p.game_id JOIN users u ON u.id=g.owner_id WHERE g.listed=1 ORDER BY p.game_id').toArray().map(row => Object.freeze({ ...this.#readPin(row.game_id, row.pin_json), creatorAccount: row.creator_account })));
   }
 }

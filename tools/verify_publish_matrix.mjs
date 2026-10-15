@@ -55,17 +55,17 @@ check('author cannot publish route for other (predicate)', findOwn('hb', GA) ===
 check('admin cannot publish route for other (predicate)', games.listOwn('hadmin').length === 0);
 
 // Unpublish matrix on real pins.
-const pinA = registry.publish('ha', { gameId: GA, name: 'Agame', revision: '1', sourceDigest: 'b'.repeat(64), chapters: ['c1'] });
+const pinA = registry.publish('ha', { gameId: GA, name: 'Agame', revision: '1', sourceDigest: 'b'.repeat(64), chapters: ['c1'], ordinal: '1.0' });
 check('owner pin', pinA.gameId === GA);
 await fails('other-author unpublish 403', async () => registry.unpublish('hb', GA), 'PUBLISH_OWNER');
 const unAdmin = registry.unpublish('hadmin', GA);
 check('admin unpublish ok', unAdmin.unpublished === true);
 check('unpublish missing idempotent', registry.unpublish('ha', GA).unpublished === true);
 check('builtin unpublish noop', registry.unpublish('ha', 'wolong-builtin').unpublished === true);
-registry.publish('ha', { gameId: GA, name: 'Agame', revision: '1', sourceDigest: 'b'.repeat(64), chapters: ['c1'] });
+registry.publish('ha', { gameId: GA, name: 'Agame', revision: '1', sourceDigest: 'b'.repeat(64), chapters: ['c1'], ordinal: '1.0' });
 const unOwn = registry.unpublish('ha', GA);
 check('owner unpublish ok', unOwn.unpublished === true);
-registry.publish('ha', { gameId: GA, name: 'Agame', revision: '1', sourceDigest: 'b'.repeat(64), chapters: ['c1'] });
+registry.publish('ha', { gameId: GA, name: 'Agame', revision: '1', sourceDigest: 'b'.repeat(64), chapters: ['c1'], ordinal: '1.0' });
 await fails('must-change unpublish 403', async () => registry.unpublish('hmust', GA), 'PASSWORD_CHANGE_REQUIRED');
 
 // Must-change gate at drafts entry (publish pipeline entry point).

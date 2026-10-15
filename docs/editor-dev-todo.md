@@ -36,7 +36,7 @@ C-1已关闭（Q18/Q24/Q42核心）：`server/releases.js`（`bumpOrdinal`字符
 
 C-2b待续（E-01三十六表重验epic）：fixture链最终都经`EditorMetadata`构造器，`content_releases`（+1索引）必现，35→36表、243→249列、对象70→73；受影响：definitions/columns/draft-freeze/private-namespace/sql-freeze/bound-freeze/validated-waits/key-namespace诸轮（含before.json pin：worker/published/drafts等已变）+各维护文档。须逐轮改期望、重跑、重封存，不可批量祝福。
 - [缺] Q18/Q24 正式发布序号1.0→1.1→…→1.9→1.10（现revision不能冒充，失败不递增）。
-- [做] Q25 发布与上架分离：指定正式release、指针/公告事务、管理限制交叉与并发。
+- [判] Q25 发布与上架分离：指定正式release、指针/公告事务、管理限制交叉与并发。复判（2026-10-15）：发布链现状 `server/worker.js:310-341`＋`releases.js`＋`published.js`；缺口：① 玩家目录列全部 pin 无 `listed` 过滤——发布即公开；② pin 恒指最新发布，无指定正式 release 机制；③ 公告事务无表；④ 序号 CAS 已有。**用户决策（2026-10-15）：① 发布＝作者定版操作，上架＝管理员操作、只有上架才进玩家目录（即玩家目录必须按 `listed` 过滤，发布本身不公开）。② 不做指定正式版：只增不减；新版＝全新替换，旧版数据删，玩家下拉框只现新版本号（pin 须带 ordinal 供显示；`content_releases` 只留当前行，`next_ordinal` 照递增；A2 版本区只显示当前版）。③ 开放作者自建：模板＝第一章＋公用基础地图（全游戏永一张图，首章据点全中立，多章共同维护）；画像＝自传或模板库选（模板库待建，独立来源）；重名允许，玩家侧显示 `名＋版本（作者）`。**
 - [缺] Q42 无回滚：错版只发新序号递增修正。
 - [做] Q30/Q45/Q9/Q20：陈旧拒收、两作者/管理员权限矩阵、作者发布不被绕过。
 

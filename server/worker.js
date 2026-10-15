@@ -21,6 +21,7 @@ import { PrivateWriteJournal } from './privatewrites.js';
 import { PrivateLibraryAssets } from './libraryassets.js';
 import { TrialSessions } from './trials.js';
 import { PublishedGames } from './published.js';
+import { AnnouncementStore } from './announcements.js';
 import { ReleaseLedger } from './releases.js';
 import { PublishedPacks, RESERVED_ASSET_IDS } from './playpacks.js';
 import { GamePortraits } from './portraits.js';
@@ -129,13 +130,15 @@ export class EditorMetadata extends DurableObject {
     this.publishedGames = new PublishedGames({ storage: ctx.storage, principal: hash => this.principal(hash) });
     // Formal release ordinals (Q18/Q24) + history (Q23), no rollback (Q42).
     this.releases = new ReleaseLedger({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games });
+    // D组公告 (Q31–Q36, §8.3): unique(gameId,releaseId) rows + registry revision.
+    this.announcements = new AnnouncementStore({ storage: ctx.storage });
     // §4.3 game portrait library (owner-only, 128×128); pure SQLite, no blob dependency.
     this.portraits = new GamePortraits({ storage: ctx.storage, principal: hash => this.principal(hash), reservedIds: RESERVED_ASSET_IDS });
     // B-1/Q14 draft topology intents (moves + rebuild records live outside
     // the canonical game object; any pending move blocks save/publish).
     this.topology = new DraftTopology({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games });
     this.trialSessions = null;
-    this.blobs = null; this.installedSources = null; this.adminCopies = null; this.privateDrafts = null; this.stageApi = null; this.availableLibrary = null; this.libraryAssets = null;
+    this.blobs = null; this.installedSources = null; this.adminCopies = null; this.authorCopies = null; this.privateDrafts = null; this.stageApi = null; this.availableLibrary = null; this.libraryAssets = null;
     if (env.EDITOR_BLOBS) {
       const maxBytes = env.EDITOR_BLOB_MAX_BYTES === undefined ? 16 * 1024 * 1024 : Number(env.EDITOR_BLOB_MAX_BYTES);
       this.privateWrites = new PrivateWriteJournal({ storage: ctx.storage, bucket: env.EDITOR_BLOBS });
@@ -145,6 +148,7 @@ export class EditorMetadata extends DurableObject {
       const libraryPolicy = installedAvailableLibraryPolicy(new TextEncoder().encode(availableLibraryManifest));
       this.availableLibrary = new InstalledSourceCatalog({ storage: ctx.storage, bucket: env.EDITOR_BLOBS, principal: hash => this.principal(hash), policy: libraryPolicy, operationGuard: (actor, key) => this.contentKey(actor.id, key, 'source') });
       copies = this.adminCopies = new AdminFullCopy({ storage: ctx.storage, principal: hash => this.principal(hash), catalog: this.installedSources, games: this.games, blobs: this.blobs, leaseMs: 300000 });
+      this.authorCopies = new AdminFullCopy({ storage: ctx.storage, principal: hash => this.principal(hash), catalog: this.installedSources, games: this.games, blobs: this.blobs, leaseMs: 300000, roles: ['author'] });
       this.commandTargets = new HttpCommandTargets(ctx.storage, env.EDITOR_REQUEST_KEY);
       ctx.storage.transactionSync(() => this.sql.exec('CREATE TABLE IF NOT EXISTS copy_http_commands (actor TEXT NOT NULL, op_key TEXT NOT NULL, request_digest TEXT NOT NULL, auth_epoch INTEGER NOT NULL, PRIMARY KEY(actor,op_key))'));
       this.privateDrafts = new PrivateDrafts({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games, blobs: this.blobs, definition: () => this.installedSources.definition(), operationGuard: (actor, key) => this.contentKey(actor, key, 'draft') });
@@ -235,12 +239,17 @@ export class EditorMetadata extends DurableObject {
   // Anonymous play surface (task 4 extends with play sessions/pack). Trial
   // and editor routes never match here, so they 404 on the play domain.
   #isPlayRoute(method, path) {
-    return method === 'GET' && (path === '/api/published-games' || path === '/api/trial-pack' || path === '/api/trial-asset' || path.startsWith('/api/play/web/') || path.startsWith('/content/builtin/compiled/'));
+    return method === 'GET' && (path === '/api/published-games' || path === '/api/announcements' || path === '/api/trial-pack' || path === '/api/trial-asset' || path.startsWith('/api/play/web/') || path.startsWith('/content/builtin/compiled/'));
   }
   #getPlayAnonymous(url, path) {
     if (path === '/api/published-games') {
       // Node parity: query ignored; builtin head first, registry pins after.
       return response({ games: [{ gameId: 'wolong-builtin', name: '卧龙传·制霸天下', builtin: true }, ...this.publishedGames.list()] });
+    }
+    if (path === '/api/announcements') {
+      for (const key of url.searchParams.keys()) { if (key !== 'cursor') { fail(422, 'ANNOUNCE_QUERY'); } }
+      const cursor = url.searchParams.get('cursor');
+      return response(this.announcements.list(cursor === null ? {} : { cursor }));
     }
     if (path === '/api/trial-pack') { return response(this.#getPlayPack(url)); }
     if (path === '/api/trial-asset') { return this.#getPlayAsset(url); }
@@ -327,7 +336,8 @@ export class EditorMetadata extends DurableObject {
     if (compiled?.sourceDigest !== reference.sourceDigest) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
     if (!Array.isArray(captured.game.chapterOrder) || !captured.game.chapterOrder.length) { fail(422, 'PUBLISH_NOT_COMPILED'); }
     // Pack first (orphan rows stay invisible), then ONE commit transaction:
-    // re-verify ownership/revision, issue the ordinal, write the pin.
+    // re-verify ownership/revision, issue the ordinal, write the pin,
+    // prune superseded release rows (single live version per game).
     // Pin shape unchanged; failures roll the ordinal back (Q18).
     await this.playPacks.buildAndStore(tokenHash, { game: captured.game, reference, compiled });
     return this.ctx.storage.transactionSync(() => {
@@ -335,8 +345,20 @@ export class EditorMetadata extends DurableObject {
       if (!fresh) { fail(404, 'GAME_NOT_FOUND'); }
       const ref2 = this.games.snapshotReference(tokenHash, gameId, owned.draftRevision);
       if (ref2.rootKey !== reference.rootKey || ref2.sourceDigest !== reference.sourceDigest) { fail(409, 'PUBLISH_STALE'); }
-      this.releases.issueInTxn(tokenHash, gameId, ref2.draftRevision, ref2.sourceDigest);
-      return this.publishedGames.publishInTxn(tokenHash, { gameId, name, revision: ref2.draftRevision, sourceDigest: ref2.sourceDigest, chapters: captured.game.chapterOrder });
+      const issued = this.releases.issueInTxn(tokenHash, gameId, ref2.draftRevision, ref2.sourceDigest);
+      const pin = this.publishedGames.publishInTxn(tokenHash, { gameId, name, revision: ref2.draftRevision, sourceDigest: ref2.sourceDigest, chapters: captured.game.chapterOrder, ordinal: issued.ordinal });
+      this.releases.pruneExceptInTxn(tokenHash, gameId, issued.releaseId);
+      // D组公告：单版本替换删旧序号公告行；已上架则公告当前版本（Q31），
+      // 未上架只定版不公开。同一事务内提交或一起回滚。
+      this.announcements.pruneExceptInTxn(gameId, issued.releaseId);
+      const live = this.one('SELECT g.listed,u.account FROM content_games g JOIN users u ON u.id=g.owner_id WHERE g.game_id=?', gameId);
+      if (live && Number(live.listed) === 1) {
+        const nowIso = new Date().toISOString();
+        if (this.announcements.announceInTxn({ gameId, releaseId: issued.releaseId, ordinal: issued.ordinal, name: pin.name, creatorAccount: live.account, publishedAt: issued.createdAt, firstOnlineAt: nowIso })) {
+          this.announcements.bumpRegistryInTxn();
+        }
+      }
+      return pin;
     });
   }
   #assertPasswordCurrent(user, path) {
@@ -401,19 +423,21 @@ export class EditorMetadata extends DurableObject {
     this.touch(tokenHash, policy); return response({ accounts: this.sql.exec('SELECT * FROM users ORDER BY account').toArray().map(dto) });
   }
   async #getManagementCopy(rt) {
-    const { method, url, tokenHash, managementQuery, copyPath } = rt;
+    const { method, url, tokenHash, managementQuery, copyPath, authorCopyPath } = rt;
     if (method === 'GET' && managementQuery) { if (url.search) { fail(422, 'MANAGEMENT_QUERY'); } return response(this.management.query(tokenHash, managementQuery[1], managementQuery[2])); }
     if (method === 'GET' && copyPath && !copyPath[2]) { this.copyAccess(tokenHash); return response(this.adminCopies.query(tokenHash, copyPath[1])); }
+    if (method === 'GET' && authorCopyPath && !authorCopyPath[2]) { this.authorCopyAccess(tokenHash); return response(this.authorCopies.query(tokenHash, authorCopyPath[1])); }
     return null;
   }
   async #getPrimaryRoutes(rt) {
-    const { method, path, tokenHash, policy, user, csrf } = rt;
+    const { method, path, tokenHash, policy, user, csrf, url, releasesPath } = rt;
     if (method === 'GET' && path === '/api/session') { this.touch(tokenHash, policy); return response({ user: dto(user), csrf }); }
     if (method === 'GET' && path === '/api/admin/accounts') { return this.#getAdminAccounts(rt); }
     if (method === 'GET' && path === '/api/games') { return response({ games: this.games.listOwn(tokenHash) }); }
     if (method === 'GET' && path === '/api/admin/games') { return response({ games: this.games.managementSummaries(tokenHash) }); }
     if (method === 'GET' && path === '/api/admin/source') { return this.#getAdminSource(rt); }
     if (method === 'GET' && path === '/api/admin/library') { return this.#getAdminLibrary(rt); }
+    if (method === 'GET' && releasesPath) { if (url.search) { fail(422, 'RELEASE_QUERY'); } this.touch(tokenHash, policy); return response({ releases: this.releases.history(tokenHash, releasesPath[1]) }); }
     return (await this.#getManagementCopy(rt)) ?? null;
   }
   async #getAdminSource(rt) {
@@ -539,7 +563,13 @@ export class EditorMetadata extends DurableObject {
       if (user.role === 'admin' && value.action === 'unlist') { return this.#postAdminUnlist(rt); }
       fields(value, ['action', 'expectedRowRevision']);
       this.touch(tokenHash, policy);
-      return response(this.games.setListed(tokenHash, managementPath[1], value.action === 'list', value.expectedRowRevision));
+      // D-上架提交：flag 翻转＋公告/registry 同一事务，失败一起回滚。
+      return response(this.ctx.storage.transactionSync(() => {
+        const done = this.games.setListedInTxn(tokenHash, managementPath[1], value.action === 'list', value.expectedRowRevision);
+        if (done.becameListed) { if (!this.announcements.announceCurrentInTxn(managementPath[1])) { this.announcements.bumpRegistryInTxn(); } }
+        else if (done.changed) { this.announcements.bumpRegistryInTxn(); }
+        return done.summary;
+      }));
     }
     if (user.role !== 'admin') { fail(403, 'ADMIN_REQUIRED'); }
     fields(value, []);
@@ -685,7 +715,7 @@ export class EditorMetadata extends DurableObject {
     return response({ ...(await this.availableLibrary.install(tokenHash, staged.registryId, staged.root, request.headers.get('Idempotency-Key'))), mode: 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE', unresolvedReferences: 20 });
   }
   async #postEntryRoutes(rt) {
-    const { request, tokenHash, user, policy, url, path, value, managementPath, deletionPath, portraitPath, stagePath, copyPath, draftPath } = rt;
+    const { request, tokenHash, user, policy, url, path, value, managementPath, deletionPath, portraitPath, stagePath, copyPath, authorCopyPath, draftPath } = rt;
     if (managementPath) { return this.#postManagement(rt); }
     if (deletionPath) { return this.#postDeletion(rt); }
     if (portraitPath && !portraitPath[2]) { return this.#postPortraitUpload(rt); }
@@ -705,7 +735,12 @@ export class EditorMetadata extends DurableObject {
       this.copyAccess(tokenHash); fields(value, ['registryId', 'name', 'introduction']); this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'copy');
       return response(this.adminCopies.reserve(tokenHash, request.headers.get('Idempotency-Key'), value), 202);
     }
+    if (path === '/api/games') {
+      this.authorCopyAccess(tokenHash); fields(value, ['name', 'introduction']); this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'copy');
+      return response(this.authorCopies.reserve(tokenHash, request.headers.get('Idempotency-Key'), { registryId: this.installedSources.definition().registryId, name: value.name, introduction: value.introduction }), 202);
+    }
     if (copyPath?.[2]) { return this.copyCommand(request, tokenHash, user, policy, value, copyPath[1], copyPath[2]); }
+    if (authorCopyPath?.[2]) { return this.authorCopyCommand(request, tokenHash, user, policy, value, authorCopyPath[1], authorCopyPath[2]); }
     if (draftPath?.[2] === 'save') { return this.#postDraftSave(rt); }
     return null;
   }
@@ -843,6 +878,7 @@ export class EditorMetadata extends DurableObject {
     const portraitPath = /^\/api\/games\/([a-f0-9-]{36})\/portraits(?:\/([A-Za-z]{1,32}))?$/.exec(path);
     const topologyPath = /^\/api\/games\/([a-f0-9-]{36})\/topology(?:\/(move|rebuild)(?:\/(clear))?)?$/.exec(path);
     const copyPath = /^\/api\/admin\/copies\/([A-Za-z0-9_-]{16,128})(?:\/(run|cancel))?$/.exec(path);
+    const authorCopyPath = /^\/api\/games\/create\/([A-Za-z0-9_-]{16,128})(?:\/(run|cancel))?$/.exec(path);
     const stageAssetsPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/stage-assets$/.exec(path);
     const libraryPath = this.libraryAssets?.match(path);
     const stagePath = this.stageApi?.match(path);
@@ -851,7 +887,8 @@ export class EditorMetadata extends DurableObject {
     const trialAssetPath = /^\/api\/trials\/([a-f0-9-]{36})\/assets\/([A-Za-z]{1,32})$/.exec(path);
     const trialPortraitPath = /^\/api\/trials\/([a-f0-9-]{36})\/portraits$/.exec(path);
     const draftPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/draft(?:\/(save|operations\/([A-Za-z0-9_-]{16,128})))?$/.exec(path);
-    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, portraitPath, copyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath, topologyPath };
+    const releasesPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/releases$/.exec(path);
+    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, portraitPath, copyPath, authorCopyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath, releasesPath, topologyPath };
     if (method === 'GET') {
       const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getDeletion(rt)) ?? (await this.#getPortraits(rt)) ?? (await this.#getTopology(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
       if (hit) { return hit; }
@@ -874,6 +911,9 @@ export class EditorMetadata extends DurableObject {
     this.#checkContentKeyNamespaces(actor, key, namespace);
   }
   copyAccess(tokenHash) { const actor = this.principal(tokenHash); if (actor.must_change) { fail(403, 'PASSWORD_CHANGE_REQUIRED');  }if (actor.role !== 'admin') { fail(403, 'FULL_COPY_ADMIN_REQUIRED');  }if (!this.installedSources || !this.adminCopies) { fail(503, 'COPY_NOT_CONFIGURED');  }return actor; }
+  // Q26 author self-service creation: same fixed pipeline as admin copies,
+  // pinned to the installed source server-side (no client registry choice).
+  authorCopyAccess(tokenHash) { const actor = this.principal(tokenHash); if (actor.must_change) { fail(403, 'PASSWORD_CHANGE_REQUIRED');  }if (actor.role !== 'author') { fail(403, 'FULL_COPY_ADMIN_REQUIRED');  }if (!this.installedSources || !this.authorCopies) { fail(503, 'COPY_NOT_CONFIGURED');  }return actor; }
   #recordCopyCommand(tokenHash, prior, op, target, action) {
     const actor = this.copyAccess(tokenHash); if (actor.epoch !== prior.epoch) { fail(401, 'SESSION_INVALID'); }
     this.contentKey(actor.id, op.key, 'command');
@@ -906,6 +946,36 @@ export class EditorMetadata extends DurableObject {
     // relied upon to renew a lease inside this request. A bounded5minute lease is
     // the already-tested internal policy, not a Cloudflare execution/SLA promise.
     return response(await this.adminCopies.execute(tokenHash, cap));
+  }
+  async #cancelAuthorCopy(tokenHash, target, expected) {
+    try { return response(this.authorCopies.cancel(tokenHash, target, expected[1])); } catch (error) { if (error instanceof HttpError && error.code === 'COPY_CHANGED') { fail(412, 'COPY_CHANGED'); } throw error; }
+  }
+  async authorCopyCommand(request, tokenHash, prior, policy, value, target, action) {
+    fields(value, []); this.authorCopyAccess(tokenHash); this.contentKey(prior.id, request.headers.get('Idempotency-Key'), 'command');
+    const expected = /^"([1-9][0-9]*)"$/.exec(request.headers.get('If-Match') ?? ''); if (!expected) { fail(428, 'IF_MATCH_REQUIRED'); }
+    const op = await this.operation(request, [value, expected[1]], prior.id, prior.epoch, policy);
+    this.ctx.storage.transactionSync(() => { this.#recordAuthorCopyCommand(tokenHash, prior, op, target, action); });
+    const row = this.one('SELECT * FROM copy_requests WHERE actor=? AND op_key=?', prior.id, target);
+    if (action === 'run' && row?.state === 'committed') { return response(this.authorCopies.query(tokenHash, target)); }
+    if (action === 'cancel' && row?.state === 'canceled') { return response({ gameId: row.game_id, state: row.state, rowRevision: row.row_revision, generation: row.generation, leaseUntil: row.lease_until, registryId: row.registry_id }); }
+    if (action === 'cancel') { return this.#cancelAuthorCopy(tokenHash, target, expected); }
+    let cap; try { cap = this.authorCopies.claim(tokenHash, target, expected[1]); } catch (error) { if (error instanceof HttpError && error.code === 'COPY_CHANGED') { fail(412, 'COPY_CHANGED');  }throw error; }
+    return response(await this.authorCopies.execute(tokenHash, cap));
+  }
+  #recordAuthorCopyCommand(tokenHash, prior, op, target, action) {
+    const actor = this.authorCopyAccess(tokenHash); if (actor.epoch !== prior.epoch) { fail(401, 'SESSION_INVALID'); }
+    this.contentKey(actor.id, op.key, 'command');
+    if (action === 'run') { this.authorCopies.query(tokenHash, target); }
+    else {
+      const targetRow = this.one('SELECT game_id FROM copy_requests WHERE actor=? AND op_key=?', actor.id, target);
+      if (!targetRow) { fail(409, 'COPY_CHANGED'); }
+      this.games.assertNotDeleting(targetRow.game_id);
+    }
+    const old = this.one('SELECT * FROM copy_http_commands WHERE actor=? AND op_key=?', actor.id, op.key);
+    if (old && old.request_digest !== op.digest) { fail(409, 'IDEMPOTENCY_CONFLICT'); }
+    if (old && old.auth_epoch !== actor.epoch) { fail(409, 'OPERATION_REVOKED'); }
+    if (!old) { this.sql.exec('INSERT INTO copy_http_commands VALUES(?,?,?,?)', actor.id, op.key, op.digest, actor.epoch); }
+    this.commandTargets.record('copy', actor.id, op.key, target);
   }
   async operation(request, value, actor, epoch, policy) {
     const key = request.headers.get('Idempotency-Key'); if (!key || !/^[a-zA-Z0-9_-]{16,128}$/.test(key)) { fail(422, 'IDEMPOTENCY_KEY'); }

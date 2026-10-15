@@ -18,11 +18,12 @@ function request(input) {
 }
 function key(value) { if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(value)) fail(422, 'COPY_OPERATION_KEY'); }
 export class AdminFullCopy {
-  #storage; #sql; #principal; #catalog; #games; #blobs; #verifier; #leaseMs; #caps = new WeakMap(); #executing = new WeakSet();
-  constructor({ storage, principal, catalog, games, blobs, leaseMs = 60000 }) {
+  #storage; #sql; #principal; #catalog; #games; #blobs; #verifier; #leaseMs; #roles; #caps = new WeakMap(); #executing = new WeakSet();
+  constructor({ storage, principal, catalog, games, blobs, leaseMs = 60000, roles = ['admin'] }) {
     if (!storage?.sql || typeof principal !== 'function' || typeof catalog?.loadFull !== 'function' || typeof games?.recoverGameId !== 'function' || typeof blobs?.putImmutable !== 'function') throw new TypeError('actual same-domain stores and principal required');
+    if (!Array.isArray(roles) || roles.length === 0 || !roles.every(role => role === 'admin' || role === 'author')) fail(503, 'COPY_ROLE_POLICY');
     if (!Number.isSafeInteger(leaseMs) || leaseMs < 1 || leaseMs > 300000) fail(503, 'COPY_LEASE_POLICY');
-    this.#storage = storage; this.#sql = storage.sql; this.#principal = principal; this.#catalog = catalog; this.#games = games; this.#blobs = blobs; this.#leaseMs = leaseMs; this.#verifier = new GameSnapshotVerifier({ blobs });
+    this.#storage = storage; this.#sql = storage.sql; this.#principal = principal; this.#catalog = catalog; this.#games = games; this.#blobs = blobs; this.#leaseMs = leaseMs; this.#roles = Object.freeze([...roles]); this.#verifier = new GameSnapshotVerifier({ blobs });
     storage.transactionSync(() => {
       this.#sql.exec('CREATE TABLE IF NOT EXISTS copy_requests (actor TEXT NOT NULL, op_key TEXT NOT NULL, request_digest TEXT NOT NULL, auth_epoch INTEGER NOT NULL, game_id TEXT NOT NULL UNIQUE, registry_id TEXT NOT NULL, definition_digest TEXT NOT NULL, catalog_root TEXT NOT NULL, profile_revision TEXT NOT NULL, metadata_json TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, lease_hash TEXT, lease_until INTEGER NOT NULL, row_revision TEXT NOT NULL, created_at TEXT NOT NULL, result_json TEXT, PRIMARY KEY(actor,op_key))');
       this.#sql.exec('CREATE TABLE IF NOT EXISTS copy_objects (game_id TEXT NOT NULL, sha256 TEXT NOT NULL, byte_length INTEGER NOT NULL, state TEXT NOT NULL, PRIMARY KEY(game_id,sha256))');
@@ -30,7 +31,7 @@ export class AdminFullCopy {
     });
   }
   #one(q, ...values) { return this.#sql.exec(q, ...values).toArray()[0]; }
-  #actor(tokenHash, prior) { const actor = this.#principal(tokenHash); if (actor.must_change) fail(403, 'PASSWORD_CHANGE_REQUIRED'); if (actor.role !== 'admin') fail(403, 'FULL_COPY_ADMIN_REQUIRED'); if (prior && (actor.id !== prior.id || actor.epoch !== prior.epoch)) fail(401, 'SESSION_INVALID'); return actor; }
+  #actor(tokenHash, prior) { const actor = this.#principal(tokenHash); if (actor.must_change) fail(403, 'PASSWORD_CHANGE_REQUIRED'); if (!this.#roles.includes(actor.role)) fail(403, 'FULL_COPY_ADMIN_REQUIRED'); if (prior && (actor.id !== prior.id || actor.epoch !== prior.epoch)) fail(401, 'SESSION_INVALID'); return actor; }
   #row(actor, operationKey) { key(operationKey); const row = this.#one('SELECT * FROM copy_requests WHERE actor=? AND op_key=?', actor.id, operationKey); if (!row) fail(404, 'COPY_NOT_FOUND'); if (row.auth_epoch !== actor.epoch) fail(409, 'COPY_OPERATION_REVOKED'); return row; }
   #source(tokenHash, row) { const source = this.#catalog.status(tokenHash, row.registry_id), definition = this.#catalog.definition(); if (source.definitionDigest !== row.definition_digest || source.rootDigest !== row.catalog_root || definition.profileRevision !== row.profile_revision) fail(409, 'COPY_SOURCE_CHANGED'); }
   #summary(row) { return { gameId: row.game_id, state: row.state, rowRevision: row.row_revision, generation: row.generation, leaseUntil: row.lease_until, registryId: row.registry_id }; }

@@ -105,6 +105,12 @@ export class GameMetadataStore {
   // blocks everyone (admin clears via management first); builtin excluded.
   // Single conditional UPDATE: naturally idempotent per expectedRowRevision.
   setListed(tokenHash, gameId, listed, expectedRowRevision) {
+    return this.#storage.transactionSync(() => this.setListedInTxn(tokenHash, gameId, listed, expectedRowRevision).summary);
+  }
+  // Ambient-transaction form for the D-listing commit (flag flip +
+  // announcement/registry land or roll back together). Same checks as
+  // setListed; the worker owns the outer transaction.
+  setListedInTxn(tokenHash, gameId, listed, expectedRowRevision) {
     const actor = this.#actor(tokenHash);
     if (gameId === 'wolong-builtin') { fail(403, 'BUILTIN_PROTECTED'); }
     if (!uuid(gameId)) { fail(422, 'GAME_ID'); }
@@ -114,11 +120,11 @@ export class GameMetadataStore {
     this.assertNotDeleting(gameId);
     if (row.restricted !== 0) { fail(409, 'LISTING_RESTRICTED'); }
     if (row.row_revision !== expectedRowRevision) { fail(409, 'GAME_CHANGED'); }
-    if (Number(row.listed) === Number(listed)) { return summary(row); }
+    if (Number(row.listed) === Number(listed)) { return Object.freeze({ summary: summary(row), changed: false, becameListed: false }); }
     const time = new Date().toISOString(), next = String(BigInt(row.row_revision) + 1n);
     const updated = this.#one('UPDATE content_games SET listed=?,row_revision=?,modified_at=? WHERE game_id=? AND row_revision=? RETURNING *', Number(listed), next, time, gameId, row.row_revision);
     if (!updated) { fail(409, 'GAME_CHANGED'); }
-    return summary(updated);
+    return Object.freeze({ summary: summary(updated), changed: true, becameListed: Number(row.listed) === 0 && Number(listed) === 1 });
   }
   managementSummaries(tokenHash) {
     const actor = this.#actor(tokenHash); if (actor.role !== 'admin') fail(403, 'ADMIN_REQUIRED');

@@ -3,6 +3,7 @@ import { installStageJobs } from '/stage.js';
 import { installLibraryBrowser } from '/library.js';
 import { installLibraryRegistration } from '/catalog.js';
 import { installGameManagement } from '/management.js';
+import { installPublish } from '/publish.js';
 import { installStronghold } from '/stronghold.js';
 import { installGenerals } from '/general.js';
 import { installMapViewer } from '/mapview.js';
@@ -34,14 +35,14 @@ async function api(path, value, options = {}) {
   if (!response.ok) { if (response.status === 401 && mark === sessionEpoch) { current = null; render(); } const error = new Error(errors[data.error] ?? '操作被拒絕：' + data.error); error.status = response.status; error.code = data.error; throw error; }
   return data;
 }
-const views = [['draft-editor', '我的草稿', false], ['stronghold-editor', '據點', false], ['generals-editor', '武將', false], ['mapview-editor', '地圖', false], ['stage-editor', '階段任務', false], ['stage-assets-editor', '階段結構', false], ['library-editor', '素材庫', false], ['copy', '獨立測試遊戲', false], ['admin', '帳戶與管理', true]];
+const views = [['draft-editor', '我的草稿', false], ['stronghold-editor', '據點', false], ['generals-editor', '武將', false], ['mapview-editor', '地圖', false], ['stage-editor', '階段任務', false], ['stage-assets-editor', '階段結構', false], ['library-editor', '素材庫', false], ['copy', '獨立測試遊戲', false], ['publish-editor', '發布', false], ['admin', '帳戶與管理', true]];
 let view = null;
 function show(next) { view = next; for (const [id] of views) { const el = q(id); if (el) el.hidden = id !== next; } if (!current || current.user.role !== 'admin' || current.user.mustChangePassword) q('admin').hidden = true; for (const button of document.querySelectorAll('#menu button')) button.classList.toggle('on', button.dataset.view === next); }
 function buildMenu() { const nav = q('menu'); nav.replaceChildren(); for (const [id, label, needAdmin] of views) { if (needAdmin && (current.user.role !== 'admin' || current.user.mustChangePassword)) continue; const button = document.createElement('button'); button.type = 'button'; button.dataset.view = id; button.textContent = label; button.onclick = () => show(id); nav.append(button); } show(views[0][0]); }
-function render() { q('login').hidden = Boolean(current); q('menu').hidden = !current; q('session').hidden = !current; if (current) { buildMenu(); fillProfile(); } else view = null; q('identity').textContent = current ? current.user.account + (current.user.mustChangePassword ? ' — 請先變更密碼' : '') : ''; draftUI.setIdentity(current); stageUI?.setIdentity(current); libraryUI?.setIdentity(current); catalogUI?.setIdentity(current); managementUI?.setIdentity(current); stageAssetUI?.setIdentity(current); strongholdUI?.setIdentity(current); generalsUI?.setIdentity(current); mapviewUI?.setIdentity(current); show(view); }
+function render() { q('login').hidden = Boolean(current); q('menu').hidden = !current; q('session').hidden = !current; if (current) { buildMenu(); fillProfile(); } else view = null; q('identity').textContent = current ? current.user.account + (current.user.mustChangePassword ? ' — 請先變更密碼' : '') : ''; draftUI.setIdentity(current); stageUI?.setIdentity(current); libraryUI?.setIdentity(current); catalogUI?.setIdentity(current); managementUI?.setIdentity(current); publishUI?.setIdentity(current); stageAssetUI?.setIdentity(current); strongholdUI?.setIdentity(current); generalsUI?.setIdentity(current); mapviewUI?.setIdentity(current); show(view); }
 async function run(action) {
   if (busy) return; busy = true; const controls = [...document.querySelectorAll('button,input,select,textarea')]; controls.forEach(node => { node.disabled = true; });
-  try { await action(); status('操作完成。'); } catch (error) { status(error.message); } finally { busy = false; controls.forEach(node => { node.disabled = false; }); draftUI.render(); catalogUI?.render(); managementUI?.render(); stageAssetUI?.render(); strongholdUI?.render(); generalsUI?.render(); mapviewUI?.render(); show(view); }
+  try { await action(); status('操作完成。'); } catch (error) { status(error.message); } finally { busy = false; controls.forEach(node => { node.disabled = false; }); draftUI.render(); catalogUI?.render(); managementUI?.render(); publishUI?.render(); stageAssetUI?.render(); strongholdUI?.render(); generalsUI?.render(); mapviewUI?.render(); show(view); }
 }
 async function list() {
   const data = await api('/api/admin/accounts'); q('accounts').replaceChildren();
@@ -53,17 +54,18 @@ async function list() {
     } q('accounts').append(row);
   }
 }
-let stageUI, libraryUI, catalogUI, managementUI, stageAssetUI, strongholdUI, generalsUI, mapviewUI;
+let stageUI, libraryUI, catalogUI, managementUI, publishUI, stageAssetUI, strongholdUI, generalsUI, mapviewUI;
 const draftUI = installDraftEditor({ api, authority: () => current, work: run, isBusy: () => busy, onContextChanged: () => { stageUI?.render(); libraryUI?.render(); stageAssetUI?.render(); } });
 stageUI = installStageJobs({ api, authority: () => current, work: run, isBusy: () => busy, savedContext: () => draftUI.savedContext() });
 libraryUI = installLibraryBrowser({ api, authority: () => current, work: run, isBusy: () => busy, savedContext: () => draftUI.savedContext() });
 catalogUI = installLibraryRegistration({ api, authority: () => current, work: run, isBusy: () => busy });
 managementUI = installGameManagement({ api, authority: () => current, work: run, isBusy: () => busy });
+publishUI = installPublish({ api, authority: () => current, work: run, isBusy: () => busy });
 strongholdUI = installStronghold({ api, authority: () => current, work: run, isBusy: () => busy });
 generalsUI = installGenerals({ api, authority: () => current, work: run, isBusy: () => busy });
 mapviewUI = installMapViewer({ api, authority: () => current, work: run, isBusy: () => busy });
 stageAssetUI = installStageAssetBrowser({ api, authority: () => current, work: run, isBusy: () => busy, requestContext: () => stageUI.assetContext() });
-const canLeave = () => draftUI.canLeave() && stageUI.canLeave() && catalogUI.canLeave() && managementUI.canLeave();
+const canLeave = () => draftUI.canLeave() && stageUI.canLeave() && catalogUI.canLeave() && managementUI.canLeave() && publishUI.canLeave();
 window.addEventListener('beforeunload', event => { if (current && !canLeave()) event.preventDefault(); });
 q('login').onsubmit = event => { event.preventDefault(); const data = new FormData(event.currentTarget); run(async () => { if (!canLeave()) return; current = await api('/api/auth/login', { account: String(data.get('account')), password: String(data.get('password')) }); sessionEpoch++; q('login').reset(); render(); if (!current.user.mustChangePassword && current.user.role === 'admin') await list(); }); };
 q('password').onsubmit = event => { event.preventDefault(); const data = new FormData(event.currentTarget); run(async () => { if (!canLeave()) return; if (data.get('newPassword') !== data.get('confirmPassword')) throw new Error('兩次新密碼不相同。'); current = await api('/api/auth/password', { oldPassword: String(data.get('oldPassword')), newPassword: String(data.get('newPassword')) }); sessionEpoch++; draftUI.passwordChanged(current); stageUI.passwordChanged(current); q('password').reset(); render(); if (current.user.role === 'admin') await list(); }); };

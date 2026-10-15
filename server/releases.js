@@ -74,4 +74,13 @@ export class ReleaseLedger {
     if (!row) fail(503, 'RELEASE_POINTER_CORRUPT');
     return Object.freeze({ gameId, releaseId: row.release_id, ordinal: row.ordinal, draftRevision: row.draft_revision, sourceDigest: row.source_digest, createdAt: row.created_at });
   }
+  // Single live version per game (product decision): after issuing the new
+  // ordinal, delete superseded release rows. Ambient-transaction form only;
+  // the publish route calls it inside the publish commit so a later failure
+  // still rolls everything back. next_ordinal keeps incrementing.
+  pruneExceptInTxn(tokenHash, gameId, keepReleaseId) {
+    this.#owned(tokenHash, gameId);
+    if (typeof keepReleaseId !== 'string' || !uuid(keepReleaseId)) fail(422, 'RELEASE_GAME_ID');
+    this.#sql.exec('DELETE FROM content_releases WHERE game_id=? AND release_id<>?', gameId, keepReleaseId);
+  }
 }
