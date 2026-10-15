@@ -75,6 +75,7 @@ export class StartMenu {
     try {
       await this._loadAssets();
       await this._loadGames();
+      await this._loadAnnouncements();
       await runStartFlow(
         {
           chooseAction: () => this._yesNo(),
@@ -651,6 +652,27 @@ export class StartMenu {
     this.selectedGameId = builtin.gameId;
   }
 
+  // ── 公告 (Q34 玩家側隻讀)：同源 /api/announcements，失败即空（不阻流程）。
+  // 服务端已按 first_online DESC 排序，首頁 30 條；對話框只讀前 5 條。
+  async _loadAnnouncements() {
+    const bases = ["", "http://127.0.0.1:8322"]; // 與 _loadGames 同基。
+    for (const base of bases) {
+      try {
+        const r = await fetch(`${base}/api/announcements`);
+        if (!r.ok) continue;
+        const data = await r.json();
+        const list = Array.isArray(data?.announcements) ? data.announcements : [];
+        this._announcements = list
+          .filter((a) => a && typeof a.gameId === "string" && typeof a.name === "string" && a.name && typeof a.ordinal === "string")
+          .map((a) => ({ gameId: a.gameId, name: a.name, ordinal: a.ordinal, creatorAccount: typeof a.creatorAccount === "string" ? a.creatorAccount : "" }));
+        return;
+      } catch {
+        continue;
+      }
+    }
+    this._announcements = [];
+  }
+
   _selectedGame() {
     return this._games?.find((g) => g.gameId === this.selectedGameId) ?? { gameId: "wolong-builtin", displayName: "臥龍傳·制霸天下" };
   }
@@ -1093,5 +1115,13 @@ export class StartMenu {
     }
     // 標題 "新游戏" 白字
     this._fwText("新游戏", ox + 72, oy + 4, 15);
+    // 公告隻讀區 (Q34)：選單頂部 canvas 走字，不設輸入。
+    const anns = Array.isArray(this._announcements) ? this._announcements.slice(0, 5) : [];
+    if (anns.length > 0) {
+      this._text("最新上架", 24, 16, 15);
+      anns.forEach((a, i) => {
+        this._text(`${a.name} ${a.ordinal}（${a.creatorAccount}）`, 24, 32 + i * 16, 15);
+      });
+    }
   }
 }
