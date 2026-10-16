@@ -3,9 +3,8 @@
 import { createHash } from 'node:crypto';
 import { HttpError, fail } from './security.js';
 import { FIXED_COPY_PROFILE } from './copyprofile.js';
-import { encodePNG, decodePNG, PNGError } from './pngio.js';
-import { decodeTrialPortraitJPEG, PortraitJPEGError } from './portraitjpeg.js';
-import { checkCropShape, cropSquareTo128, PortraitCropError } from './portraitcrop.js';
+import { encodePNG } from './pngio.js';
+import { GamePortraits } from './portraits.js';
 import { isInstalledSourcePolicy } from './sourcecatalogpolicy.js';
 import { projectTrialChapter } from '../web/src/editor/trialscope.js';
 import { FIXED_TRIAL_ASSET_PATHS } from '../web/src/editor/trialassetpaths.js';
@@ -21,17 +20,7 @@ const shaText = value => createHash('sha256').update(value, 'utf8').digest('hex'
 const DERIVED_ASSETS = Object.freeze(['manifest', 'chapter', 'terrain', 'roadGraph', 'roadCost', 'roadOffset', 'minimapBase', 'minimapLarge']);
 const SERVED_ASSETS = Object.freeze(DERIVED_ASSETS.slice(2));
 const SERVED_MIME = Object.freeze({ terrain: 'application/octet-stream', roadGraph: 'application/json', roadCost: 'application/octet-stream', roadOffset: 'application/json', minimapBase: 'image/png', minimapLarge: 'image/png' });
-// Web product: PNG/JPEG source ≤100KiB, source geometry not forced to 128.
-// Without an author-confirmed square crop, PNG and the supported bounded JPEG
-// subset normalize at SOURCE dimensions. With a crop, the server applies it
-// after bounded full decode and emits canonical 128x128 RGBA PNG.
-// Larger arbitrary JPEG sources remain unsupported.
-const PORTRAIT_MAX_BYTES = 100 * 1024;
-export function sniffPortraitMime(bytes) {
-  if (bytes instanceof Uint8Array && bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) { return 'image/png'; }
-  if (bytes instanceof Uint8Array && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) { return 'image/jpeg'; }
-  return null;
-}
+// Web product: trial portraits resolve from the shared kao manifest (B), no upload.
 // Q69 batch 8b start gate capture sets, derived from the single fixed-library source of truth (no hardcoded ranges).
 const TRIAL_PORTRAIT_CAPTURE = new Set(), TRIAL_CITY_VIEW_CAPTURE = new Set();
 for (const path of FIXED_TRIAL_ASSET_PATHS) {
@@ -59,6 +48,14 @@ function portraitGaps(generals) {
     if (!Number.isInteger(portrait) || !TRIAL_PORTRAIT_CAPTURE.has(portrait)) { gaps.push(kaoGap(general, portrait)); }
   }
   return gaps;
+}
+function trialPortraits(state) {
+  const ids = [];
+  for (const general of state?.generals ?? []) {
+    if (Number.isSafeInteger(general?.portrait)) { ids.push(String(general.portrait)); }
+    if (typeof general?.portraitKey === 'string') { ids.push(general.portraitKey); }
+  }
+  return Object.freeze(new GamePortraits().forPublish(ids).map(row => Object.freeze({ assetId: row.assetId, sha256: row.sha256, byteLength: row.byteLength, mime: row.mime, url: `kao/${row.assetId}.png` })));
 }
 function cityViewGaps(cities) {
   const gaps = [];
@@ -181,15 +178,15 @@ export class TrialSessions {
     const roles = { terrain: 'rules-initial-terrain', roadGraph: 'native-road-v2', roadCost: 'legacy-grid-visual', roadOffset: 'legacy-grid-visual', minimapBase: 'automatic-minimap', minimapLarge: 'automatic-minimap' };
     const entries = Object.entries(payloads).map(([assetId, data]) => ({ assetId, sha256: shaBytes(data), byteLength: data.length, role: roles[assetId], url: `/api/trials/${trialId}/assets/${assetId}` }));
     const visualAssets = await this.#visuals(tokenHash, gameId);
+    const chapterState = this.#checkChapterState(projection, chapterId);
     const manifest = { schemaVersion: 1, compilerRevision: TRIAL_COMPILER_REVISION, buildFormat: 'studio-chapter-1',
       scope: { kind: 'chapter', chapterId, savedSourceDigest: projection.savedSourceDigest, selectedSourceDigest: projection.selectedSourceDigest },
       compatibilityAssetMode: compiled.compatibilityAssetMode, ruleProfile: projection.selected.ruleProfile,
       identity: { gameId, draftRevision: reference.draftRevision, sourceDigest: projection.selectedSourceDigest, savedSourceDigest: projection.savedSourceDigest,
         trialSnapshotId: `${gameId}@${reference.draftRevision}:${projection.selectedSourceDigest}:chapter:${shaText(chapterId)}` },
       world: { id: `${gameId}-world`, revision: projection.selectedSourceDigest, width: compiled.width, height: compiled.height, tileSize: 16 },
-      chapters: [chapterId], visualAssets, minimap, portraits: [],
+      chapters: [chapterId], visualAssets, minimap, portraits: trialPortraits(chapterState),
       minimapAssets: entries.filter(entry => entry.assetId.startsWith('minimap')), assets: entries.filter(entry => !entry.assetId.startsWith('minimap')) };
-    const chapterState = this.#checkChapterState(projection, chapterId);
     // Q69 batch 8b start gate: reject the start when any chapter asset reference misses the staged library (422, before insert).
     const derived = Object.freeze([['manifest', Buffer.from(JSON.stringify(manifest))], ['chapter', Buffer.from(JSON.stringify(chapterState))], ...Object.entries(payloads).map(([assetId, data]) => [assetId, Buffer.from(data)])]
       .map(([assetId, bytes]) => Object.freeze({ assetId, sha256: shaBytes(bytes), byteLength: bytes.length, bytes })));
@@ -225,92 +222,21 @@ export class TrialSessions {
       binding: Object.freeze({ trialId: bound.trialId, ownerId: bound.ownerId, gameId: bound.gameId, draftRevision: bound.draftRevision, chapterId: bound.chapterId, snapshotId: bound.snapshotId, snapshotDigest: bound.snapshotDigest, manifestDigest: bound.manifestDigest, authEpoch: bound.authEpoch }) });
   }
   asset(tokenHash, trialId, assetId) {
-    if (typeof assetId !== 'string' || !/^[A-Za-z]{1,32}$/.test(assetId)) { fail(422, 'TRIAL_ASSET_ID'); }
+    if (typeof assetId !== 'string' || !/^[A-Za-z0-9]{1,32}$/.test(assetId)) { fail(422, 'TRIAL_ASSET_ID'); }
     this.authorize(tokenHash, trialId);
     if (SERVED_ASSETS.includes(assetId)) {
       const served = this.#serveAsset(trialId, assetId);
       if (!served) { fail(404, 'TRIAL_ASSET_NOT_FOUND'); }
       return Object.freeze({ ...served, mime: SERVED_MIME[assetId] });
     }
-    // Uploaded portraits (事项④ Web 产品决定): any non-derived id present in the table, mime sniffed at serve time so no schema migration is needed.
+    // 共用画像（B 決策）：非 derived id 一律走 manifest，mime 固定 PNG，无字节落库。
     if (DERIVED_ASSETS.includes(assetId)) { fail(404, 'TRIAL_ASSET_NOT_FOUND'); }
-    const uploaded = this.#serveAsset(trialId, assetId);
-    if (!uploaded) { fail(404, 'TRIAL_ASSET_NOT_FOUND'); }
-    const mime = sniffPortraitMime(uploaded.bytes);
-    if (!mime) { fail(503, 'TRIAL_ASSET_CORRUPT'); }
-    return Object.freeze({ ...uploaded, mime });
-  }
-  #checkPortraitUpload(tokenHash, trialId, assetId, bytes, crop) {
-    if (typeof assetId !== 'string' || !/^[A-Za-z]{1,32}$/.test(assetId) || DERIVED_ASSETS.includes(assetId)) { fail(422, 'TRIAL_PORTRAIT_ID'); }
-    if (!(bytes instanceof Uint8Array) || bytes.length === 0 || bytes.length > PORTRAIT_MAX_BYTES) { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
-    const mime = sniffPortraitMime(bytes);
-    if (!mime) { fail(422, 'TRIAL_PORTRAIT_TYPE'); }
-    if (crop !== undefined && crop !== null) {
-      try { checkCropShape(crop); }
-      catch (error) { if (!(error instanceof PortraitCropError)) { throw error; } fail(422, 'TRIAL_PORTRAIT_CROP'); }
-    }
-    this.authorize(tokenHash, trialId);
-    let stored = Buffer.from(bytes);
-    if (mime === 'image/png') {
-      try {
-        // Existing PNG adapter: dimensions/pixel budget before inflation, exact
-        // CRC/chunk/zlib/end checks. Without a crop the geometry is preserved;
-        // only RGBA pixels persist either way.
-        const decoded = decodePNG(stored);
-        stored = this.#finishPortraitPixels(decoded, crop);
-      } catch (error) {
-        if (!(error instanceof PNGError)) { throw error; }
-        fail(422, 'TRIAL_PORTRAIT_PNG_INVALID');
-      }
-    } else {
-      try {
-        const decoded = decodeTrialPortraitJPEG(stored);
-        stored = this.#finishPortraitPixels(decoded, crop);
-      } catch (error) {
-        if (!(error instanceof PortraitJPEGError)) { throw error; }
-        fail(422, 'TRIAL_PORTRAIT_JPEG_INVALID');
-      }
-    }
-    // Raw uploads previously bounded stored assets to 100KiB as well. Preserve
-    // that storage budget: source-compliant images can grow after normalization.
-    // A distinct error does not pretend the source exceeded its input limit.
-    if (stored.length > PORTRAIT_MAX_BYTES) { fail(422, 'TRIAL_PORTRAIT_OUTPUT_BYTES'); }
-    return { mime: 'image/png', sha256: shaBytes(stored), bytes: stored };
-  }
-  // Crop applies after decode inside existing pixel budgets, so the rectangle
-  // is rechecked here against decoded geometry; the early structural check
-  // above only rejects malformed rectangles before authorization.
-  #finishPortraitPixels(decoded, crop) {
-    if (crop === undefined || crop === null) { return encodePNG(decoded.pixels, decoded.width, decoded.height); }
     try {
-      const cut = cropSquareTo128(decoded.pixels, decoded.width, decoded.height, crop);
-      return encodePNG(cut.pixels, cut.width, cut.height);
-    } catch (error) {
-      if (!(error instanceof PortraitCropError)) { throw error; }
-      fail(422, 'TRIAL_PORTRAIT_CROP');
-    }
+      const entry = new GamePortraits().get(assetId);
+      return Object.freeze({ assetId: entry.assetId, sha256: entry.sha256, byteLength: entry.byteLength, mime: entry.mime, url: `kao/${entry.assetId}.png` });
+    } catch { fail(404, 'TRIAL_ASSET_NOT_FOUND'); }
   }
-  uploadPreview(tokenHash, trialId, assetId, bytes, crop) {
-    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes, crop);
-    return Object.freeze({ assetId, mime: checked.mime, sha256: checked.sha256, byteLength: checked.bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
-  }
-  uploadCommit(tokenHash, trialId, assetId, bytes, expected, crop) {
-    const checked = this.#checkPortraitUpload(tokenHash, trialId, assetId, bytes, crop);
-    if (this.#assetRow(trialId, assetId)) { fail(409, 'TRIAL_PORTRAIT_EXISTS'); }
-    const entry = Object.freeze({ assetId, mime: checked.mime, sha256: checked.sha256, byteLength: checked.bytes.length, url: `/api/trials/${trialId}/assets/${assetId}` });
-    // Fail before INSERT/manifest mutation, even for callers without an outer
-    // transaction. Public Root still owns the SQL transaction for actual writes.
-    if (!expected || expected.assetId !== entry.assetId || expected.mime !== entry.mime || expected.sha256 !== entry.sha256 || expected.byteLength !== entry.byteLength) { fail(409, 'TRIAL_CHANGED'); }
-    const manifestRow = this.#assetRow(trialId, 'manifest');
-    if (!manifestRow) { fail(503, 'TRIAL_DERIVED_MISSING'); }
-    let manifest; try { manifest = JSON.parse(Buffer.from(manifestRow.bytes).toString('utf8')); } catch { fail(503, 'TRIAL_DERIVED_MISSING'); }
-    if (!manifest || !Array.isArray(manifest.portraits)) { fail(503, 'TRIAL_DERIVED_MISSING'); }
-    manifest.portraits.push(entry);
-    const manifestBytes = Buffer.from(JSON.stringify(manifest));
-    this.#sql.exec('INSERT INTO trial_assets VALUES(?,?,?,?,?)', trialId, assetId, checked.sha256, checked.bytes.length, checked.bytes);
-    this.#sql.exec('UPDATE trial_assets SET sha256=?, byte_length=?, bytes=? WHERE trial_id=? AND asset_id=?', shaBytes(manifestBytes), manifestBytes.length, manifestBytes, trialId, 'manifest');
-    return entry;
-  }
+  // 共用画像预填（B 決策）：issue 时按章武将收录 manifest 条目，无上传。
   endPreview(tokenHash, trialId) {
     const { row } = this.#bound(tokenHash, trialId);
     return this.#dto(row.state === 'active' ? { ...row, state: 'ended', end_reason: 'explicit' } : row);

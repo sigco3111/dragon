@@ -137,17 +137,10 @@ await fails('unknown asset 404', async () => trials.asset('h1', issued.trial.tri
 await fails('bad chapter 422', async () => trials.issue('h1', GAME, '1', ''), 'TRIAL_CHAPTER');
 await fails('unknown trial 401', async () => trials.status('h1', randomUUID()), 'TRIAL_INVALID');
 
-// 4. Portrait upload inside the trial (real PNG path).
-const pixels = new Uint8Array(128 * 128 * 4);
-for (let i = 0; i < pixels.length; i += 4) { pixels[i] = 10; pixels[i + 1] = 200; pixels[i + 2] = 90; pixels[i + 3] = 255; }
-const png = new Uint8Array(Buffer.from(encodePNG(pixels, 128, 128)));
-const preview = trials.uploadPreview('h1', issued.trial.trialId, 'scout', png, null);
-check('portrait preview', preview.mime === 'image/png' && preview.url.endsWith('/assets/scout'));
-const committed = trials.uploadCommit('h1', issued.trial.trialId, 'scout', png, preview, null);
-check('portrait commit', committed.sha256 === preview.sha256);
-const served = trials.asset('h1', issued.trial.trialId, 'scout');
-check('portrait serve', served.mime === 'image/png' && served.sha256 === preview.sha256);
-await fails('portrait dup 409', async () => trials.uploadCommit('h1', issued.trial.trialId, 'scout', png, preview, null), 'TRIAL_PORTRAIT_EXISTS');
+// 4. Portrait from shared manifest (B, no upload): manifest id resolves with kao URL.
+const served = trials.asset('h1', issued.trial.trialId, '0');
+check('portrait serve', served.mime === 'image/png' && served.url === 'kao/0.png' && served.sha256.length === 64);
+await fails('portrait unknown 404', async () => trials.asset('h1', issued.trial.trialId, 'no-such-id'), 'TRIAL_ASSET_NOT_FOUND');
 
 // 5. End + epoch revocation.
 const pv = trials.endPreview('h1', issued.trial.trialId);

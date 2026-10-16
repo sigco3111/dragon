@@ -21,7 +21,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import { stageInstalledEditorSource } from './editor_stage_source.mjs';
 import { stageInstalledAvailableLibrary } from './editor_stage_library.mjs';
-import { encodePNG, decodePNG } from '../server/pngio.js';
+import { encodePNG } from '../server/pngio.js';
 const round = process.argv[2];
 assert.match(round ?? '', /^[1-9][0-9]{0,2}$/); assert.equal(process.argv.length, 3);
 const base = '.dragon-analysis/editor-phase/trial-session-r1'; mkdirSync(base, { recursive: true });
@@ -101,7 +101,7 @@ try {
   assert.equal(st1.state, 'ended'); assert.equal(st1.endReason, 'session-revoked');
   check('revoked-status-ended');
   await okErr('owner-pack-after-revoke', `/api/trials/${t1.trialId}/pack`, undefined, A, 401, 'TRIAL_INVALID');
-  await okErr('owner-upload-after-revoke', `/api/trials/${t1.trialId}/portraits`, { assetId: 'DeadOne', dataBase64: small(1).bytes.toString('base64') }, A, 401, 'TRIAL_INVALID');
+  await okErr('owner-upload-after-revoke', `/api/trials/${t1.trialId}/portraits`, { assetId: 'DeadOne', dataBase64: small(1).bytes.toString('base64') }, A, 404, 'NOT_FOUND');
   await ok('real-trial-end-t1', `/api/trials/${t1.trialId}/end`, {}, A);
   // G2: rotate kills A; dead cookie hits worker-level 401 even on a live trial,
   // live C cannot drive the pre-rotate trial (401 + close on the #bound path).
@@ -122,16 +122,15 @@ try {
   check('post-rotate-revoked-status-ended');
   await ok('real-trial-end-t2b', `/api/trials/${t2b.trialId}/end`, {}, C);
   // G3: ended trial fails closed on every route; second end replays the final.
+  // G3 (B): upload route retired → 404 regardless of session; manifest portraits prefilled from chapter generals.
   const t3 = await issue('real-trial-issue-t3', C);
-  const one = small(9);
-  const up1 = parse((await ok('real-upload-t3', `/api/trials/${t3.trialId}/portraits`, { assetId: 'SoloOne', dataBase64: one.bytes.toString('base64') }, C)).bytes.toString('utf8'));
-  assert.equal(up1.mime, 'image/png');
-  check('t3-upload-ok');
+  await okErr('upload-route-gone', `/api/trials/${t3.trialId}/portraits`, { assetId: 'SoloOne', dataBase64: 'AA==' }, C, 404, 'NOT_FOUND');
+  check('t3-upload-404');
   const end1 = parse((await ok('real-trial-end-t3', `/api/trials/${t3.trialId}/end`, {}, C)).bytes.toString('utf8'));
   assert.equal(end1.state, 'ended'); assert.equal(end1.endReason, 'explicit');
   check('t3-ended-explicit');
   await okErr('ended-pack', `/api/trials/${t3.trialId}/pack`, undefined, C, 401, 'TRIAL_INVALID');
-  await okErr('ended-upload', `/api/trials/${t3.trialId}/portraits`, { assetId: 'SoloTwo', dataBase64: one.bytes.toString('base64') }, C, 401, 'TRIAL_INVALID');
+  await okErr('ended-upload-gone', `/api/trials/${t3.trialId}/portraits`, { assetId: 'SoloTwo', dataBase64: 'AA==' }, C, 404, 'NOT_FOUND');
   // Serve authorizes before storage: ended trials 401 here; the asset-table wipe
   // on close is defense-in-depth and not separately observable through the API.
   await okErr('ended-serve-gated', `/api/trials/${t3.trialId}/assets/SoloOne`, undefined, C, 401, 'TRIAL_INVALID');
@@ -141,38 +140,17 @@ try {
   const end2 = parse((await ok('second-end-replays-final', `/api/trials/${t3.trialId}/end`, {}, C)).bytes.toString('utf8'));
   assert.deepEqual({ state: end2.state, endReason: end2.endReason, trialId: end2.trialId }, { state: 'ended', endReason: 'explicit', trialId: t3.trialId });
   check('second-end-identical-final');
-  // G4: parallel uploads serialize; replay and duplicate guards hold.
+  // G4 (B): manifest portraits prefilled from chapter generals (shared kao manifest); serve resolves manifest entries with kao URLs, no bytes stored.
   const t4 = await issue('real-trial-issue-t4', C);
-  const names = ['CcOne', 'CcTwo', 'CcThree', 'CcFour'];
-  const fixtures = names.map((name, i) => ({ name, ...small(20 + i) }));
-  const keyOf = name => `session-g4-${name}`;
-  const launched = await Promise.all(fixtures.map(f => req(`/api/trials/${t4.trialId}/portraits`, { assetId: f.name, dataBase64: f.bytes.toString('base64') }, C, { 'Idempotency-Key': keyOf(f.name) })));
-  assert.ok(launched.every(r => r.status === 200), launched.map(r => r.status).join(','));
-  check('parallel-uploads-all-200');
-  const created = launched.map(r => parse(r.bytes.toString('utf8')));
   const pack4 = parse((await ok('real-pack-manifest-t4', `/api/trials/${t4.trialId}/pack`, undefined, C)).bytes.toString('utf8'));
-  assert.equal(pack4.manifest.portraits.length, 4);
-  for (const entry of created) { assert.deepEqual(pack4.manifest.portraits.find(row => row.assetId === entry.assetId), entry); }
-  check('manifest-holds-four-rows');
-  for (const [i, f] of fixtures.entries()) {
-    const served = await ok(`real-serve-${f.name}`, `/api/trials/${t4.trialId}/assets/${f.name}`, undefined, C);
-    assert.equal(served.shaHeader, created[i].sha256);
-    const decoded = decodePNG(served.bytes);
-    assert.equal(decoded.width, 32); assert.equal(decoded.height, 32);
-    assert.ok(Buffer.from(decoded.pixels).equals(Buffer.from(f.pixels)), `pixels-${f.name}`);
+  assert.ok(pack4.manifest.portraits.length > 0);
+  for (const entry of pack4.manifest.portraits) {
+    assert.equal(entry.mime, 'image/png');
+    assert.equal(entry.url, `kao/${entry.assetId}.png`);
+    const served = parse((await ok(`real-serve-${entry.assetId}`, `/api/trials/${t4.trialId}/assets/${entry.assetId}`, undefined, C)).bytes.toString('utf8'));
+    assert.equal(served.sha256, entry.sha256);
   }
-  check('parallel-rows-served-exact');
-  const replay = await req(`/api/trials/${t4.trialId}/portraits`, { assetId: 'CcOne', dataBase64: fixtures[0].bytes.toString('base64') }, C, { 'Idempotency-Key': keyOf('CcOne') });
-  assert.equal(replay.status, 200);
-  assert.deepEqual(parse(replay.bytes.toString('utf8')), created[0]);
-  check('same-key-replay-identical');
-  const pack4b = parse((await ok('pack-after-replay', `/api/trials/${t4.trialId}/pack`, undefined, C)).bytes.toString('utf8'));
-  assert.equal(pack4b.manifest.portraits.length, 4);
-  check('replay-adds-no-row');
-  await okErr('duplicate-asset-new-key', `/api/trials/${t4.trialId}/portraits`, { assetId: 'CcOne', dataBase64: fixtures[0].bytes.toString('base64') }, C, 409, 'TRIAL_PORTRAIT_EXISTS');
-  const pack4c = parse((await ok('pack-after-duplicate', `/api/trials/${t4.trialId}/pack`, undefined, C)).bytes.toString('utf8'));
-  assert.equal(pack4c.manifest.portraits.length, 4);
-  check('duplicate-adds-no-row');
+  check('manifest-prefill-kao-served');
   await ok('real-trial-end-t4', `/api/trials/${t4.trialId}/end`, {}, C);
   for (const name of inputs) { assert.equal(sha(readFileSync(name)), pins[name], name); }
   writeFileSync(`${out}/receipt.json`, JSON.stringify({ checks, pins, gameId: copied.gameId, trials: [t1.trialId, t2.trialId, t2b.trialId, t3.trialId, t4.trialId], limits: 'Node-driven real workerd only: no browser, no game-side transfer/publish UI, no absolute-deadline timing; pixels Node-exact (codec already Pillow-proved in A/C/E). Q70/Q71 whole-matrix closure not claimed.' }, null, 2), { flag: 'wx' });

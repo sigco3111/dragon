@@ -551,16 +551,18 @@ export class EditorMetadata extends DurableObject {
     if (url.search) { fail(422, 'TRIAL_QUERY'); }
     this.touch(tokenHash, policy);
     const served = this.trialSessions.asset(tokenHash, trialAssetPath[1], trialAssetPath[2]);
+    // 共用画像（B）：无字节落库，返回 kao 引用描述，客户端经 R2 取数。
+    if (!served.bytes) { return new Response(JSON.stringify(served), { headers: { ...headers, 'Content-Type': 'application/json', 'X-Content-SHA256': served.sha256 } }); }
     return new Response(served.bytes, { headers: { ...headers, 'Content-Type': served.mime, 'X-Content-SHA256': served.sha256 } });
   }
   async #postManagement(rt) {
     const { tokenHash, user, policy, url, value, managementPath } = rt;
     if (url.search) { fail(422, 'MANAGEMENT_QUERY'); }
-    // §4.1 creator listing: list/unlist own games (admin: any), no restriction
-    // change. Admin unlist keeps the existing restrict flow below.
+    // 上架专属管理员（用户决策①A，2026-10-15）：作者自助上架已关闭。
     if (managementPath[2] === 'listing') {
       if (!value || (value.action !== 'list' && value.action !== 'unlist')) { fail(422, 'MANAGEMENT_ACTION'); }
       if (user.role === 'admin' && value.action === 'unlist') { return this.#postAdminUnlist(rt); }
+      if (user.role !== 'admin') { fail(403, 'ADMIN_REQUIRED'); }
       fields(value, ['action', 'expectedRowRevision']);
       this.touch(tokenHash, policy);
       // D-上架提交：flag 翻转＋公告/registry 同一事务，失败一起回滚。
@@ -747,27 +749,6 @@ export class EditorMetadata extends DurableObject {
     if (!committed) { const replayed = await this.replay(op, policy); result = { body: replayed.body }; }
     return response(result.body, 200);
   }
-  async #postTrialPortrait(rt) {
-    const { request, tokenHash, user, policy, url, value, trialPortraitPath } = rt;
-    if (!trialPortraitPath) { return null; }
-    if (!this.trialSessions) { fail(503, 'TRIAL_NOT_CONFIGURED'); }
-    if (url.search) { fail(422, 'TRIAL_QUERY'); }
-    // Legacy clients send exactly assetId+dataBase64; crop is an opt-in third
-    // key so the strict exact-shape gate keeps rejecting unknown fields.
-    if (Object.hasOwn(value ?? {}, 'crop')) { fields(value, ['assetId', 'dataBase64', 'crop']); }
-    else { fields(value, ['assetId', 'dataBase64']); }
-    if (typeof value.dataBase64 !== 'string' || value.dataBase64.length === 0 || value.dataBase64.length > 140000) { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
-    let bytes; try { bytes = Buffer.from(value.dataBase64, 'base64'); } catch { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
-    if (bytes.length === 0) { fail(422, 'TRIAL_PORTRAIT_BYTES'); }
-    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'auth');
-    const op = await this.operation(request, value, user.id, user.epoch, policy), old = await this.replay(op, policy);
-    if (old) { return response(old.body, 200); }
-    let result = { body: this.trialSessions.uploadPreview(tokenHash, trialPortraitPath[1], value.assetId, bytes, value.crop) };
-    const sealed = await seal(result, policy.secret, op.aad);
-    const committed = this.ctx.storage.transactionSync(() => { if (!this.canCommit(op)) { return false; } const current = this.principal(tokenHash); if (current.epoch !== user.epoch) { fail(401, 'SESSION_INVALID'); } result = { body: this.trialSessions.uploadCommit(tokenHash, trialPortraitPath[1], value.assetId, bytes, result.body, value.crop) }; this.touch(tokenHash, policy); this.remember(op, sealed, policy); return true; });
-    if (!committed) { const replayed = await this.replay(op, policy); result = { body: replayed.body }; }
-    return response(result.body, 200);
-  }
   async #buildPasswordMutation(user, value, policy) {
     fields(value, ['oldPassword', 'newPassword']); password(value.newPassword);
     if (value.newPassword === value.oldPassword || value.newPassword === policy.defaultPassword) { fail(422, 'NEW_PASSWORD_REQUIRED'); }
@@ -856,11 +837,10 @@ export class EditorMetadata extends DurableObject {
     const stagePath = this.stageApi?.match(path);
     const trialStartPath = /^\/api\/games\/([a-f0-9-]{36})\/trials$/.exec(path);
     const trialPath = /^\/api\/trials\/([a-f0-9-]{36})(?:\/(status|end|pack))?$/.exec(path);
-    const trialAssetPath = /^\/api\/trials\/([a-f0-9-]{36})\/assets\/([A-Za-z]{1,32})$/.exec(path);
-    const trialPortraitPath = /^\/api\/trials\/([a-f0-9-]{36})\/portraits$/.exec(path);
+    const trialAssetPath = /^\/api\/trials\/([a-f0-9-]{36})\/assets\/([A-Za-z0-9]{1,32})$/.exec(path);
     const draftPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/draft(?:\/(save|operations\/([A-Za-z0-9_-]{16,128})))?$/.exec(path);
     const releasesPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/releases$/.exec(path);
-    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, portraitPath, copyPath, authorCopyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, trialPortraitPath, draftPath, releasesPath, topologyPath };
+    const rt = { request, policy, url, path, method, tokenHash, user, csrf, managementQuery, managementPath, deletionPath, portraitPath, copyPath, authorCopyPath, stageAssetsPath, libraryPath, stagePath, trialStartPath, trialPath, trialAssetPath, draftPath, releasesPath, topologyPath };
     if (method === 'GET') {
       const hit = (await this.#getTrialRoutes(rt)) ?? (await this.#getPrimaryRoutes(rt)) ?? (await this.#getDeletion(rt)) ?? (await this.#getPortraits(rt)) ?? (await this.#getTopology(rt)) ?? (await this.#getCollectionRoutes(rt)) ?? (await this.#getRecordRoutes(rt));
       if (hit) { return hit; }
@@ -869,7 +849,7 @@ export class EditorMetadata extends DurableObject {
     if (method !== 'POST') { fail(404, 'NOT_FOUND'); }
     if (!equal(request.headers.get('X-CSRF-Token'), csrf)) { fail(403, 'CSRF_REJECTED'); }
     const value = await body(request);
-    return (await this.#postEntryRoutes({ ...rt, value })) ?? (await this.#postTopology({ ...rt, value })) ?? (await this.#postTrialStart({ ...rt, value })) ?? (await this.#postTrialEnd({ ...rt, value })) ?? (await this.#postTrialPortrait({ ...rt, value })) ?? (await this.#postPublishRoutes({ ...rt, value })) ?? (await this.#postAuthMutation({ ...rt, value }));
+    return (await this.#postEntryRoutes({ ...rt, value })) ?? (await this.#postTopology({ ...rt, value })) ?? (await this.#postTrialStart({ ...rt, value })) ?? (await this.#postTrialEnd({ ...rt, value })) ?? (await this.#postPublishRoutes({ ...rt, value })) ?? (await this.#postAuthMutation({ ...rt, value }));
   }
   #checkContentKeyNamespaces(actor, key, namespace) {
     for (const [table, kind, actorColumn] of [['operations', 'auth', 'actor'], ['source_operations', 'source', 'actor'], ['content_reservations', 'copy', 'actor'], ['copy_http_commands', 'command', 'actor'], ['draft_requests', 'draft', 'actor'], ['compile_operations', 'compile', 'actor_id'], ['stage_http_commands', 'stage-command', 'actor']]) {
