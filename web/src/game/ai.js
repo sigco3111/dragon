@@ -869,7 +869,8 @@ export function tickStrategicCity(app, cityIndex, onRequestComplete = null) {
   const rng = app.originalRng ?? app.activeBattleRng;
   // 405D先消费候选选择RNG；4073之后才判断弱城、冷却和玩家分支。
   const rawChoice = (rng?.nextByte?.() ?? 0) & 3;
-  // 此取模只认证1..3候选/明确哨兵；四候选填满的原始栈边界仍未知。
+  // 此取模只原证认证1..3候选/明确哨兵；四候选低0选第4条是
+  // 已批准Web差异CITY-4064-WEB-1（行军§3.15.6），不是原版栈结果。
   // 完整差异及来源：docs/re-notes-npc-strategy.md §6，不能视作全AI等价。
   const target = candidates[((rawChoice || 0x100) - 1) % candidates.length];
   if (localStrength <= 1) {

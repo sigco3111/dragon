@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { startBrowserTestServer } from "./browser_test_server.mjs";
+import { startBrowserTestServer, mockBuiltinOnlyCatalog } from "./browser_test_server.mjs";
 
 import { OriginalBattleRng } from "../web/src/game/battle/originalrng.js";
 
@@ -18,6 +19,7 @@ try {
     viewport: { width: 1024, height: 768 },
     deviceScaleFactor: 2,
   });
+  await mockBuiltinOnlyCatalog(context, `http://127.0.0.1:${port}`);
   // EC82 reads local RTC only once before KI.EXE's title flow. Fix browser
   // wall time so this product-lifecycle assertion is deterministic.
   const seedTime = new Date(2000, 0, 1, 13, 45, 9).getTime();
@@ -138,11 +140,13 @@ try {
       backing: [canvas.width, canvas.height],
       dpr: devicePixelRatio,
       tick: app.clock.strategicTickSerial,
+      steps: app.clock.SPEEDS,
       rngStreamReused: app.originalRng === window.__clockVerifyStartupRng,
     };
   });
   assert.deepEqual(initial.backing, [2048, 1536]);
   assert.equal(initial.dpr, 2);
+  assert.deepEqual(initial.steps, [30, 17.5, 10, 5, 1.5625]);
   assert.equal(
     initial.rngStreamReused,
     true,
@@ -339,8 +343,56 @@ try {
   assert.deepEqual(resized.writes, { width: 1, height: 1 });
   assert.deepEqual(errors, []);
 
+  // Fresh realm imports the actual generated Trial bundle, not /web sources.
+  // This is clock/bundle evidence, not a backend authentication or full Trial UI test.
+  let bundle;
+  try {
+    bundle = JSON.parse(readFileSync(new URL("../server/public/trialweb.txt", import.meta.url), "utf8"));
+  } catch (cause) {
+    throw new Error("Cannot read generated Trial bundle", { cause });
+  }
+  const trialContext = await browser.newContext();
+  const origin = `http://127.0.0.1:${port}`;
+  await trialContext.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    assert.equal(url.origin, origin);
+    if (url.pathname === "/__speed__/index.html") {
+      return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Trial clock fixture</title>" });
+    }
+    const path = url.pathname.replace("/__speed__/", "");
+    assert.ok(["src/game/clock.js", "src/editor/trialruleboundaries.js"].includes(path));
+    const packed = bundle.files.find((file) => file.path === path);
+    return route.fulfill({ contentType: "text/javascript", body: packed.text });
+  });
+  await trialContext.addInitScript(() => {
+    Object.defineProperty(globalThis, "indexedDB", { get() { throw new Error("Trial clock must not access storage"); } });
+  });
+  const trialPage = await trialContext.newPage();
+  trialPage.on("pageerror", (error) => errors.push(String(error)));
+  trialPage.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  trialPage.on("requestfailed", (request) => errors.push(request.url()));
+  await trialPage.goto(`${origin}/__speed__/index.html`);
+  const trialEvidence = await trialPage.evaluate(async () => {
+    const { TrialStrategicClock } = await import("./src/editor/trialruleboundaries.js");
+    const { STRATEGIC_SPEEDS, MAX_TICKS_PER_FRAME } = await import("./src/game/clock.js");
+    const counts = [];
+    for (let speed = 0; speed < 5; speed++) {
+      const clock = new TrialStrategicClock({ startYear: 196, startMonth: 1, gate: { canAdvanceRules: true, rulePermit: {} } });
+      clock.strategicSpeed = speed;
+      for (let frame = 0; frame < 600; frame++) clock.advanceFrame(1000 / 60);
+      counts.push(clock.strategicTickSerial);
+    }
+    return { steps: STRATEGIC_SPEEDS, cap: MAX_TICKS_PER_FRAME, counts };
+  });
+  assert.deepEqual(trialEvidence.steps, initial.steps);
+  assert.equal(trialEvidence.cap, 12);
+  for (let speed = 0; speed < 5; speed++) {
+    assert.ok(Math.abs(trialEvidence.counts[speed] - 10000 / initial.steps[speed]) < 1.001);
+  }
+  assert.deepEqual(errors, []);
+  await trialContext.close();
   process.stdout.write(
-    "clock browser OK: DPR resize, pointer RAF coalescing, and 1s map-pointer hold\n",
+    "clock browser OK: player App + generated Trial clock, DPR resize, pointer RAF coalescing, and 1s map-pointer hold\n",
   );
 } finally {
   await browser?.close();

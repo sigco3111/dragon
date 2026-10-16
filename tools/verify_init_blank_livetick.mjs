@@ -27,8 +27,10 @@ const graph = {
   height: 256,
   nodes: Array.from({ length: 192 }, (_, id) => ({
     id,
-    x: id % 384,
-    y: 1,
+    // Interior synthetic nodes: fresh 8A1E requires canonical y>=2 and
+    // corner space. This tests blank live ticks, not segment aliases.
+    x: 4 + (id % 32) * 10,
+    y: 4 + Math.floor(id / 32) * 10,
     edgeSlots: [0, 0, 0, 0],
   })),
   edges: [],
@@ -159,7 +161,7 @@ app.clock.strategicSpeed = 4;
 // 40 days through the genuine calendar (9 sub-ticks/hour x 24h).
 const TICKS = 40 * 24 * 9;
 for (let i = 0; i < TICKS; i++) {
-  app.clock.advance(3.125);
+  app.clock.advance(app.clock.currentStep);
   if (app._strategicBattleFailure || app.clock.hold) {
     const err = app._strategicBattleFailure?.error;
     tlog(`blank tick stopped at ${app.clock.year}/${app.clock.month}/${app.clock.day}: ${err?.message ?? err}`);

@@ -32,6 +32,21 @@ const contentTypes = {
   ".wasm": "application/wasm",
 };
 
+// Explicit opt-in fixture for built-in-only engine tests. Do not forward the
+// title's catalog/announcement probes to a developer's running editor (8322).
+// No production API behavior or generic /api allowlist is changed.
+export async function mockBuiltinOnlyCatalog(context, origin) {
+  for (const [path, body] of [
+    ["/api/published-games", { games: [] }],
+    ["/api/announcements", { announcements: [] }],
+  ]) {
+    await context.route(`${origin}${path}`, (route) => {
+      if (route.request().method() !== "GET") return route.abort();
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
+  }
+}
+
 export async function startBrowserTestServer() {
   const root = await realpath(
     fileURLToPath(new URL("../web/", import.meta.url)),

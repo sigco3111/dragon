@@ -49,7 +49,9 @@ bytes(0x4099, "22c07502b001368a0db5008ad08ab45808e8a800");
 // candidates falls off into ss:[bp+0x10] = pushed old-BP. BP/DI/DX/CX at the
 // 1CD0 je-1D0B entry are leftovers of the main-loop input/timer/UI calls
 // (1C22 push cx/dx around E453; 1BF9/1BFD load dx/bx from [988E]/[9890]), so
-// the walked bytes are frame-dynamic; classification = permanent fail-closed.
+// the walked bytes are frame-dynamic. Historical Web fail-closed is superseded
+// only for four/low0 by approved CITY-4064-WEB-1 (march notes §3.15.6).
+// These raw pins certify DOS instructions, NOT that Web policy.
 bytes(0x3f74, "065053515257558" + "3ec108bec8cd08ec08bfdb90800b8fffffcf3ab");
 bytes(0x3fcc, "565581c65c08b104");
 bytes(0x4023, "75af5d5ec3");

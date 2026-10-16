@@ -6,7 +6,7 @@
 // PLAYWRIGHT_MODULE="$(npm root -g)/@playwright/cli/node_modules/playwright" \
 //   node tools/verify_battle_browser_acceptance.mjs [artifact-directory]
 import assert from "node:assert/strict";
-import { startBrowserTestServer } from "./browser_test_server.mjs";
+import { startBrowserTestServer, mockBuiltinOnlyCatalog } from "./browser_test_server.mjs";
 import { createHash } from "node:crypto";
 import {
   mkdir,
@@ -106,6 +106,8 @@ try {
     requests.add(url.pathname);
     return route.continue();
   });
+
+  await mockBuiltinOnlyCatalog(context, origin);
 
   // The clock/RAF regression is a browser helper, not a standalone Node test.
   // Run it in this acceptance's isolated profile and ephemeral local server so
@@ -1653,7 +1655,7 @@ try {
   });
   assert.deepEqual(
     speedMatrix.map((row) => row.strategicStepMs),
-    [60, 35, 20, 10, 3.125],
+    [30, 17.5, 10, 5, 1.5625],
     "strategic speed retains its independent Web clock behavior",
   );
   for (const row of speedMatrix) {

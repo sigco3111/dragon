@@ -1,12 +1,63 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { TrialStrategicClock } from "../web/src/editor/trialruleboundaries.js";
 
 const { Clock, STRATEGIC_SPEEDS, MAX_TICKS_PER_FRAME } = await import("../web/src/game/clock.js");
 
 assert.deepEqual(
   STRATEGIC_SPEEDS,
-  [60, 35, 20, 10, 3.125],
-  "本轮战略五档墙钟间隔减半，普通档每主更新20ms",
+  [30, 17.5, 10, 5, 1.5625],
+  "本轮战略五档墙钟间隔再次减半，普通档每主更新10ms",
 );
+assert.equal(MAX_TICKS_PER_FRAME, 12);
+
+// Both entry points must consume the same source, including the generated
+// server trial bundle. Read only these explicit source/bundle paths; no saves.
+let bundle;
+try {
+  bundle = JSON.parse(readFileSync(new URL("../server/public/trialweb.txt", import.meta.url), "utf8"));
+} catch (cause) {
+  throw new Error("Cannot read generated Trial bundle", { cause });
+}
+for (const path of ["src/game/clock.js", "src/editor/trialruleboundaries.js"]) {
+  const source = readFileSync(new URL(`../web/${path}`, import.meta.url));
+  const packed = bundle.files.find((file) => file.path === path);
+  assert.equal(packed.text, source.toString("utf8"), `${path}: trial bundle current`);
+  assert.equal(packed.byteLength, source.length);
+  assert.equal(packed.sha256, createHash("sha256").update(source).digest("hex"));
+}
+
+// Simulated 60Hz: each speed delivers twice the old wall-clock throughput
+// (within one fractional update), without a six-step ceiling at top speed.
+for (const speed of [0, 1, 2, 3, 4]) {
+  const options = { startYear: 196, startMonth: 1 };
+  const base = new Clock(options);
+  const trial = new TrialStrategicClock({
+    ...options, gate: { canAdvanceRules: true, rulePermit: {} },
+  });
+  const old = new Clock(options);
+  old.SPEEDS = [60, 35, 20, 10, 3.125];
+  for (const c of [base, trial, old]) c.strategicSpeed = speed;
+  for (let frame = 0; frame < 600; frame++) {
+    base.advanceFrame(1000 / 60);
+    trial.advanceFrame(1000 / 60);
+    old.advanceFrame(1000 / 60);
+  }
+  const expected = 10000 / STRATEGIC_SPEEDS[speed];
+  assert.ok(Math.abs(base.strategicTickSerial - expected) < 1.001);
+  assert.ok(Math.abs(base.strategicTickSerial - old.strategicTickSerial * 2) <= 1);
+  assert.equal(trial.strategicTickSerial, base.strategicTickSerial);
+  assert.deepEqual(trial.serialize(), base.serialize());
+  assert.equal(trial.sub, base.sub);
+  assert.equal(trial.hour, base.hour);
+  // Strategic speed does not change the calendar per completed update.
+  const singleStep = new Clock(options);
+  for (let i = 0; i < base.strategicTickSerial; i++) singleStep.advance(singleStep.currentStep);
+  assert.deepEqual(singleStep.serialize(), base.serialize());
+  assert.equal(singleStep.sub, base.sub);
+  assert.equal(singleStep.hour, base.hour);
+}
 
 let days = 0;
 const clock = new Clock({

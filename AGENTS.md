@@ -8,9 +8,9 @@
 - 原生JavaScript ES Modules + Canvas 2D重写1995 DOS《臥龍傳》，无模拟器、框架、构建步骤或npm运行时依赖；完整`web/`可由静态HTTP服务独立运行。
 - 仓库`E:/Dragon/web-port`；原程序`E:/Dragon/Dragon/`；官方基准`E:/Dragon/原版/`；`上/中/下/后/`为改版库。自动化禁止访问真实`SAVE.DAT`、用户存档/profile；测试用内存、mock或新隔离profile。
 - **现行规则主干**：fresh与restore使用v2原生道路/固定表，生产v1路径已删除，不相容槽禁用。原生接线及门后续段已有各自限定域证据，但不据此宣称完整战役或所有原机制均已认证。未知消费点继续fail-closed，保已提交前缀、hold/禁存。
-- **当前主线**：仓库版本`0.1.5`（`VERSION`／本地Git标签`v0.1.5`）；不据历史journal或本地remote-tracking ref宣称实时远端发布状态。发布号由`VERSION`维护，独立规则基线仍为`web-0.1.1`。存储/内容扩展、地图分段脏层、灾害只读播放器、据点/军团锚点、战术对白折行、G1F评分刷新与普通军师新局初始化已落地。
+- **当前主线**：仓库版本`0.1.7`（`VERSION`；发布历史见`CHANGELOG.md`）；不据历史journal或本地remote-tracking ref宣称实时远端发布状态。发布号由`VERSION`维护，独立规则基线仍为`web-0.1.1`。存储/内容扩展、地图分段脏层、灾害只读播放器、据点/军团锚点、战术对白折行、G1F评分刷新与普通军师新局初始化已落地。E-01 编辑器后端 schema 基线为 **47 表／94 对象／318 列**（22 DDL 源，`content_distribution_outbox` 为第 47 表；冻结见 `server/deletiondefinitions.js`＋`deletionschema.js`，生成器在 `.dragon-analysis/editor-phase/backend-deletion-definitions-r2/regenerate.mjs`）。
 - **工作方向**：在单一规则/AI/地图引擎上推进已批准的Web工程与表现任务，不以“全逆向完成”为工程重构前提；性能先测量再切片。编辑器与当前游戏统一地图迁移遵循第2.1–2.3节；超原容量、任意道路/城池移动及完整组件分层不能因已有设计而视为已实现或已授权。
-- **编辑器任务顺序（用户决定）**：**先完成编辑器开发，再说部署**。逐项清单与状态见[编辑器开发待办](docs/editor-dev-todo.md)。部署线（VPS/Cloudflare拆分、sidecar上线、解码隔离、分发、读取端）挂起。编辑器后端现仍为Worker/DO/R2，VPS正式Node入口未建。
+- **编辑器任务顺序（用户决定）**：**先完成编辑器开发，再说部署**。逐项清单与状态见[编辑器开发待办](docs/editor-dev-todo.md)。部署拆分已确认并部分实施：VPS（权威 Node＋SQLite）／Cloudflare（玩家程序＋R2 `dragon` 桶只读投影）职责见[平台拆分](docs/editor-vps-cloudflare-plan.md)；画像禁上传、共用库一对一（`web/kao` 621 PNG＋`manifest.js`，R2 `kao/` 已同步）；发布上架分离（上架仅管理员）、单版本替换、作者自建、公告后端、发布 UI（A2）均已落地；V3 publisher（`vps/publish_to_r2.mjs`）＋V4 读取端（`reader/worker.js`）＋分发账本 Outbox 已实现，Outbox 持久排空与读取端部署待 V5。编辑器后端现仍为Worker/DO/R2，VPS正式Node入口未建。
 - 原机制只依据原指令/原数据/受控原运行态，区分实锤、推断、未知。Web产品差异单列；不凭现代码、测试或体验补公式。容量仍为原运行域，不自动授权超过192据点或改变AI/调度。
 - 保留共享脏改；commit、push分别需要明确授权，不调整全局配置、信任或权限来绕过工具限制。发布目标须显式指定：`github`与Gitea镜像`origin`不是同一目标，不能因默认remote误推。
 - 只纳入产品代码、测试、迁移及必要文档；本地代理状态、缓存、临时报告/截图、运行产物不入版本库，也不擅自清理。仓库外SKILL不强行复制进仓库。
@@ -86,7 +86,8 @@
 - 玩家游戏界面无关闭按钮、羽扇唯一交互开关、右键逐层退回、子菜单地图锁、地图空白左键无功能，详见[全局约定](../AGENTS.md)和[军师UI技能](../.agents/skills/re-ui-advisor-menu/SKILL.md)。强制多步对话右键无效；普通提示可右键/3秒关闭并执行后继。
 - 新游戏及从标题读档后默认展开军师一级菜单、势力信息面板、小地图；军师子项未选中，不额外锁地图/hold；原按钮仍可收起。
 - 菜单/模态/场景/战斗/装配/鼠标hold取并集，不改速度模拟暂停。地图鼠标移动即暂停，连续静止1秒释放自己的hold；输入锁与物理区域识别分开。
-- 战略五档60/35/20/10/3.125ms，每RAF最多6次完整更新、每步检查hold；战术最多一个完整帧，不补后台债务。战略与表现时钟不能互相代替。
+- 战略五档30/17.5/10/5/1.5625ms，每RAF最多12次完整更新、每步检查hold；战术最多一个完整帧，不补后台债务。战略与表现时钟不能互相代替。
+- 据点AI四候选且405D随机低两位0时，选择第4候选、不额外耗RNG；这是用户批准的Web差异CITY-4064-WEB-1，不模拟原版动态外栈读取，也不放宽其它fail-closed边界，见[行军§3.15.6](docs/re-notes-march-pathfinding.md#3156-p394064-外栈读取闭合为永久工程边界)。
 - 行军按8×movePeriod插值；城标/军团共用原图块中心(16x+8,16y+8)，不补偿到道路视觉中线，证据见[图块锚点](docs/re-notes-map-marker-anchor.md)。显示段按X优先定向、结束才采用下一方向/驻守帧；绘制不改路线/RNG。六队全骑周期2、其余3的规则不变。接战30ms换帧、60ms发声，每段连续共享接触最多五响；详情见[行军表现](docs/march-presentation-fixes.md)。
 - 云雨直接使用原完整八帧PNG，不画渐变云或额外雨丝；独立表现时间100ms换帧、平滑位移，**随战略计时暂停/恢复**：speed<=0或任何hold时位置和雨丝均冻结，后台/场景退出亦冻结。可见慢帧限量推进，不整帧丢弃至永久停动画；细节见[表现合同](docs/presentation-modernization.md)。
 - Canvas backing store仅尺寸/DPR变化时重建；地图分段缓存只跳过栅格化，不跳过GameBar布局/消息drain；连续移动或超容量回退直绘。灾害播放器只读原槽/frame，无新时钟或延寿。详见[表现合同](docs/presentation-modernization.md)。
@@ -104,9 +105,10 @@
 - 战争关系、势力目标、军团命令分开；玩家未完命令优先，委任不能覆盖。消息返回有续段/付款/互俘边界，不假回滚。见[外交技能](../.agents/skills/re-domestic-diplomacy/SKILL.md)、[消息ABI](docs/re-notes-strategic-message-abi.md)。
 - 存档恢复须贯穿传递road/movement/terrain/cityCache能力，不能靠重新合成掩盖漏传。JSON会丢undefined、非有限数变null，structuredClone不替代真实JSON往返。地址不等于SAVE偏移，内部十人单位不等于显示人数，MMAP透明用独立mask，索引0可是不透明黑。见[数据技能](../.agents/skills/re-data-formats/SKILL.md)。
 - BGM FLAC来自软件OPL3，不是实机录音；无损不保证无缝或低解码内存。部署/版权见[README](README.md)，旧日志不证明再分发许可或远端状态。
-- 编辑器后端（Trial/发布/草稿）坑点：`roadgraph`门面在试玩壳恒null，world查询走`scenarioNativeRoadContext`；trial web路由对query 422（唯一白名单`?v=original-sprites-1`）；试玩画布`#cv`初始300×150须等width≥1000；`server/worker.js`的POST分发器**无条件分发必自守**（调用方守或自守二选一）；`before.json`风格证据pin有inputs/imports双桶，改同一文件须两桶都换hash；scope内derive/run/audit/postdoc均once-only（EEXIST），重跑前移现场不覆盖。
+- 编辑器后端（Trial/发布/草稿）坑点：`roadgraph`门面在试玩壳恒null，world查询走`scenarioNativeRoadContext`；trial web路由对query 422（唯一白名单`?v=original-sprites-1`）；试玩画布`#cv`初始300×150须等width≥1000；`server/worker.js`的POST分发器**无条件分发必自守**（调用方守或自守二选一）；`before.json`风格证据pin有inputs/imports双桶，改同一文件须两桶都换hash；scope内derive/run/audit/postdoc均once-only（EEXIST），重跑前移现场不覆盖。writes 门 pause/release 历史教训：单槽 release 会被重叠 put 冲掉致首 waiter 永挂，fixture 须多 waiter（`gate.releaseAll` 必须挂 gate 对象上，原型方法看不见构造器闭包）；修法沉淀在 `docs/fixture-patches/` 可重放 patch（`.dragon-analysis/` 被忽略，不随 commit 旅行）。
+- R2/部署坑点：S3 SigV4 必须保留 canonical query string 这一行（无查询参数时为空行，不能漏行）；桶保持私有、无公开域，凭据只放仓库外 env 文件，绝不入库；`web/kao` 数字档 0..149 连续，`trialassetpaths.js` 硬编码循环与 available-library 指纹绑定，改前先核指纹影响；edit＋`git checkout` 循环会把 worktree 改成 CRLF 而 manifest 期望 LF——转回 LF 解（`git diff` 无内容差为准）。重 lane 502 先看是代理 502（workerd 无响应、DO stub `fetch failed`）还是产品 500（`INTERNAL_ERROR`），前者多为环境/CPU 负载（单 copies-run 可烧 120s），后者才是产品 bug。
 - 编辑器后端稳定事实：Trial链路＝工作台选章→`POST /api/games/:id/trials`（issue/commit两阶段）→壳`/api/trial/web/?trial=<uuid>`（cookie Path=/api）→束内`servertrialapp.js` boot；私有资源统一只读＝束＋`trialRegistryBytes`两注册表角色；`trial_assets`派生表结束/fence级联删；两级门（保存门必填、active门全字段＋交叉＋计数，城192/将128锁）；发布pin现仍用草稿revision，**不代表正式序号/公告合同**。
-- **E-01冻结schema门（35表/243列/70对象）与`worker.js`实际DDL存在已知漂移**：冻结清单`users`8列，而运行时声明12列（profile字段批次加的）。该门自那时起未在当前SHA真跑过。先实跑看真实结果，不得先改期望（详见journal）。
+- **E-01冻结schema门（47表/94对象/318列，22源）**：以 `server/deletiondefinitions.js`＋`deletionschema.js` 为冻结权威（生成器见上），keys（UNIQUE 索引，含 PK autoindex）数与 `deletionuniquerows.js`／`deletionindexprojections.js`／`deletionvalidatedfreeze.js` 三处字面量一致。重定基流程：补生成器 DDL 覆盖→重跑生成→复制 session 产物（留备份）→逐 lane 改期望计数→重刷 pin→重跑重封存；**不可批量祝福**。计数断言须同时扫逗号形（`tables,47`）与冒号形字面量（`uniqueConstraintsVerified:`）。lane 的 `before.json` pin 有 inputs/imports 双桶，改同一文件须两桶都换 hash；绝不删除 pin 键；lane 自带计数断言刷新前后核对。
 - 原证总入口：[AI全链](docs/re-notes-ai-chain.md)、[行军](docs/re-notes-march-pathfinding.md)、[去向](docs/re-notes-legion-fate.md)、[财政](docs/re-notes-ai-fiscal.md)、[外交](docs/re-notes-ai-diplomacy.md)。文档中的旧批次、历史v1说明不代替当前代码及原始证据。
 
 ## 5. 常用命令与验证
@@ -139,6 +141,7 @@ git diff --check
 
 - 编辑器后端：`node tools/editor_server.mjs --serve --port 8322`（本地开发后端）；`node tools/editor_server.mjs`（自检，含头像回归＋发布段）；`node tools/start_editor_backend.mjs`驱动的lane用于真实workerd/SQLite/R2；改`web/src`后必重卷Trial束 `node tools/build_trial_web_bundle.mjs`。
 - VPS端口本地等价验证（V1切片，`vps/`＋`tools/verify_vps_*.mjs`）：SQLite端口、认证HTTP、文件桶、草稿存盘、任务、头像、Trial、发布包、拓扑意向、正式序号。跑法 `node tools/verify_vps_<name>.mjs`。
+- 画像库／R2／发布／读取端：`node tools/verify_kao_library.mjs`（621 文件＋manifest 自核）；`node tools/verify_r2_sign.mjs`（签名冻结向量）；`node tools/verify_publish_to_r2.mjs`（23 项干跑，无网络）；`node tools/verify_distribution_outbox.mjs`（10 项）；`node tools/verify_reader.mjs`（miniflare 直驱，25 项）；`node tools/verify_distribution_schema.mjs`（全新Root实际DDL，不依赖历史fixture）；`node tools/verify_player_announcements.mjs`（12 项模型）。真桶操作只用 `test/` 前缀并事后删净：`node vps/publish_to_r2.mjs --db <sqlite> --env <envfile> [--prefix test/<id>/] [--game <id>]`、`--drain` 排空原型（不能与`--game`合用；旧版／未上架记录保留pending并拒绝，不冒充新版本确认）。V5持久payload、上下架全事件、崩溃恢复及读取端资源签名准入尚缺，不能直接生产部署；发布审阅见`docs/release-v0.1.7.md`。
 - 证据链scope内：`node <scope>/derive.mjs` → `prepare-guards.mjs` → `run.mjs` → `audit.mjs` → `post-document.mjs`；失败现场移`attemptN-*`保留后重跑，不覆盖。
 - 全部变更检查实际diff、支持文件的主动LSP、`lens_diagnostics mode=all`、`git diff --check`。unavailable/inconclusive或空缓存不代表clean；工具自动格式化后核字节漂移。
 - 纯文档检查链接、职责/规则一致性及元数据，不跑无关游戏回归。规则/数据/工具跑focused；共享调度/RNG/存档/跨模块状态改变须完整安全回归。UI用新profile核流程及console/page/request错误；保存额外测守卫、往返、事务失败。

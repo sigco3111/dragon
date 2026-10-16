@@ -494,7 +494,7 @@ app.clock = new clockMod.Clock({ startYear: 196, startMonth: 1, startDay: 1,
   onHour: () => { ai.tickStrategicWarEvents(app); ai.tickFactionStrategicState(app); } });
 app.clock.strategicSpeed = 4;
 for (let d = 0; d < 10; d++) for (let t = 0; t < 24 * 9; t++) {
-  app.clock.advance(3.125);
+  app.clock.advance(app.clock.currentStep);
   if (app.clock.hold || app._strategicBattleFailure) throw new Error("trial tick failed");
 }
 window.__trial = { done: true, date: [app.clock.year, app.clock.month, app.clock.day],

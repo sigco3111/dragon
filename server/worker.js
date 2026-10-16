@@ -23,6 +23,7 @@ import { TrialSessions } from './trials.js';
 import { PublishedGames } from './published.js';
 import { AnnouncementStore } from './announcements.js';
 import { ReleaseLedger } from './releases.js';
+import { DistributionOutbox } from './distribution.js';
 import { PublishedPacks, RESERVED_ASSET_IDS } from './playpacks.js';
 import { GamePortraits } from './portraits.js';
 import { DraftTopology } from './topology.js';
@@ -132,6 +133,8 @@ export class EditorMetadata extends DurableObject {
     this.releases = new ReleaseLedger({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games });
     // D组公告 (Q31–Q36, §8.3): unique(gameId,releaseId) rows + registry revision.
     this.announcements = new AnnouncementStore({ storage: ctx.storage });
+    // 分发账本 Outbox（V5 前置）：发布事务内 enqueue，同原子。
+    this.distribution = new DistributionOutbox({ storage: ctx.storage });
     // 共用画像庫（B 決策）：manifest 唯讀，無 SQL 表、無上傳管線。
     this.portraits = new GamePortraits({ reservedIds: RESERVED_ASSET_IDS });
     // B-1/Q14 draft topology intents (moves + rebuild records live outside
@@ -348,6 +351,8 @@ export class EditorMetadata extends DurableObject {
       const issued = this.releases.issueInTxn(tokenHash, gameId, ref2.draftRevision, ref2.sourceDigest);
       const pin = this.publishedGames.publishInTxn(tokenHash, { gameId, name, revision: ref2.draftRevision, sourceDigest: ref2.sourceDigest, chapters: captured.game.chapterOrder, ordinal: issued.ordinal });
       this.releases.pruneExceptInTxn(tokenHash, gameId, issued.releaseId);
+      // Outbox：发号/pin/剪枝同事务入列，崩溃后 publisher 重放（幂等）。
+      this.distribution.enqueueInTxn({ gameId, ordinal: issued.ordinal, releaseId: issued.releaseId });
       // D组公告：单版本替换删旧序号公告行；已上架则公告当前版本（Q31），
       // 未上架只定版不公开。同一事务内提交或一起回滚。
       this.announcements.pruneExceptInTxn(gameId, issued.releaseId);

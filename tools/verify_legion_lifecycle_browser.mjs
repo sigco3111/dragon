@@ -1,7 +1,7 @@
 // Real main/StartMenu/IndexedDB lifecycle, in a NEW browser context and a
 // static web-only server. No original saves, user profile, or save API.
 import assert from "node:assert/strict";
-import { startBrowserTestServer } from "./browser_test_server.mjs";
+import { startBrowserTestServer, mockBuiltinOnlyCatalog } from "./browser_test_server.mjs";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { chromium } = require(
@@ -44,6 +44,7 @@ try {
     }
     return route.continue();
   });
+  await mockBuiltinOnlyCatalog(context, origin);
   await page.goto(`${origin}/index.html`);
   await page.locator("#skip-button").click();
   await page.waitForFunction(() => !!window.__app?.startMenu?._onClick);

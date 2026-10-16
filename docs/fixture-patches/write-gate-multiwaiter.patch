@@ -1,0 +1,27 @@
+diff --git a/.dragon-analysis/editor-phase/backend-private-write-journal-session-r1/fixture-worker.js b/.dragon-analysis/editor-phase/backend-private-write-journal-session-r1/fixture-worker.js
+--- a/.dragon-analysis/editor-phase/backend-private-write-journal-session-r1/fixture-worker.js
++++ b/.dragon-analysis/editor-phase/backend-private-write-journal-session-r1/fixture-worker.js
+@@ -3,8 +3,12 @@ import worker, { CommandFixture } from '../backend-command-targets-session-r1/fi
+ import { config, body, sha, mac, equal, fail } from '../../../server/security.js';
+ export class WriteFixture extends CommandFixture {
+  constructor(ctx,env) {
+-  const gate={kind:null,waiting:false,release:null,calls:0,failAfter:false},native=env.EDITOR_BLOBS;
+-  const pause=()=>new Promise(done=>{gate.waiting=true;gate.release=()=>{gate.waiting=false;gate.release=null;gate.kind=null;done();};});
++  const gate={kind:null,waiting:false,waiters:[],calls:0,failAfter:false},native=env.EDITOR_BLOBS;
++  const pause=()=>new Promise(done=>{gate.waiting=true;gate.waiters.push(done);});
++  // Overlapping private puts each arm their own waiter (single-slot release
++  // used to orphan the first waiter: hang + wedged dispose, see deadlock item).
++  const releaseAll=()=>{const pending=gate.waiters.splice(0);gate.waiting=false;gate.kind=null;for(const done of pending)done();};
++  gate.releaseAll=releaseAll;
+   const bucket={get:(...a)=>native.get(...a),list:(...a)=>native.list(...a),delete:(...a)=>native.delete(...a),put:async(key,...a)=>{const privateKey=typeof key==='string'&&key.startsWith('private/');if(privateKey){gate.calls++;if(gate.kind==='before')await pause();}const r=await native.put(key,...a);if(privateKey&&gate.kind==='after')await pause();if(privateKey&&gate.failAfter){gate.failAfter=false;throw new Error('owned unknown write outcome after actual native commit');}return r;}};
+   super(ctx,{...env,EDITOR_BLOBS:bucket});this.writeGate=gate;
+  }
+@@ -16,7 +20,7 @@ export class WriteFixture extends CommandFixture {
+   if(v.action==='put')result=await this.blobs.putImmutable(hash,{gameId:v.gameId,bytes:new Uint8Array([v.marker,97,108,45])});
+   else if(v.action==='stats')result={rows:this.sql.exec('SELECT * FROM content_private_writes WHERE game_id=? ORDER BY operation_id',v.gameId).toArray(),waiting:this.writeGate.waiting,calls:this.writeGate.calls};
+   else if(v.action==='pause'){if(!['before','after'].includes(v.kind)||this.writeGate.waiting)fail(422,'TEST_GATE');this.writeGate.kind=v.kind;result={fixtureOnly:true};}
+-  else if(v.action==='release'){this.writeGate.release?.();result={fixtureOnly:true};}
++  else if(v.action==='release'){this.writeGate.releaseAll();result={fixtureOnly:true};}
+   else if(v.action==='corrupt'){this.sql.exec('UPDATE content_private_writes SET sha256=? WHERE operation_id=?',v.sha256,v.id);result={fixtureOnly:true};}
+   else if(v.action==='fail-after'){this.writeGate.failAfter=true;result={fixtureOnly:true};}
+   else if(v.action==='fault'){const name=v.kind==='insert'?'owned_write_insert':'owned_write_ack',event=v.kind==='insert'?'INSERT':'UPDATE';if(v.enabled)this.sql.exec('CREATE TRIGGER '+name+' BEFORE '+event+" ON content_private_writes BEGIN SELECT RAISE(ABORT,'owned write journal failure'); END");else this.sql.exec('DROP TRIGGER '+name);result={fixtureOnly:true};}

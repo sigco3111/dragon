@@ -397,7 +397,7 @@ Web 根因已确定为 `snapshotScenarioAssembly → readSavedAssembly/admitSave
 
 **3FA9/4028顺序**：先CH=0，C1B=0立即RET，不读F19或邻接。否则读当前owner/F19，逐C1C..1F遇FF即停；同属跳过，中立不读外交，不加威胁；非中立关系raw>=80跳过，其余在当前工作项写FE并CH=byte(CH+邻C18)。若邻owner==F19（包括18中立），在同位置写`[邻城,owner,u8(cache+1),FF]`并前移4B；FE可被下一候选覆盖，不能重排集合。扫描中缺字段保cache等前缀但不提前提交C14；真RET才3F92写C14。4028先attr&3F；首FF清冷却并返回，FE置80，有效候选置C0。C18<1先请求再40B3写F16，早于候选RNG门；>=1才进4057。
 
-**4057/40C9/4155**：首>=FE直接RET；否则一次canonical RNG取低2位，按原byte DEC计数，低0数第256项，不是r%n。1..3项在哨兵处回工作表头；四项时低1..3可正常命中，低0在4064首次读取`SS:[BP+10h]`停止，保已耗RNG/C14/attr/cache，不伪造第五哨兵或mod4。外栈为oldBP/oldDI/oldDX/oldCX/oldBX/oldAX/oldES/returnIP，真实调用现场未闭合。
+**4057/40C9/4155**：首>=FE直接RET；否则一次canonical RNG取低2位，按原byte DEC计数，低0数第256项，不是r%n。1..3项在哨兵处回工作表头；四项时低1..3可正常命中；原版低0越界读取外栈，其动态来源已在§3.15.6分类。Web此前在首次`SS:[BP+10h]`读停止；后继用户批准CITY-4064-WEB-1仅该分支选择第4候选，不额外耗RNG，完整产品差异唯一维护于§3.15.6，不认证原版mod4。
 
 命中后C18<=1：读取`u8(C14+2)-C18`，借位/零直接RET；正数但玩家所属也直接RET（已消费选择RNG）。其它调用40C9：冷却非零真RET；玩家径40D7已按[消息ABI§17](re-notes-strategic-message-abi.md#17-p3288105e80传递树写集审计与规则闭包)闭合：CDE/8810消息为纯显示+输入等待，Web模态关闭后经completePlayerReinforcementRequest延后执行40F6 1字节RNG→414F冷却=0x18+(AL&0xF)（不经NPC径30夹顶）→40B3 recordRequest。AI进4575：signed16资金高word<=160额度5，否则额度=highByte(u16(highWord<<3))；减具名F14借位/零才真CF1。不足额或固定0..126将逐读owner、匹配后status0、再全byte武力，最大仍0才真失败返回；没有active门、缺将不是无候选。初批有候选在45EC→6E8F停；该历史边界已由[§3.15](#native-formation-callers)成功编成/partial资格失败和原冷却接线替代。真失败/冷却RET之后40B3仍写当前owner的F16。
 
@@ -409,7 +409,7 @@ C18>1：4155以DL=1、DH=C18−1从2240逐40h扫描，先L0E再status>=80，不�
 
 **2459天气尾（边界已推进）**：32固定16B槽顺序、status/timer/interval/dirty逐写规则不变；旧“后16到247C→248A停止、0 RNG”边界已由[§3.14.1](#native-weather-movement)的真实248A/24FF移动与每朵到期云2 RNG接线取代。前16定点对象仍不调用248A、0 RNG且不改frame；缺记录/字段仍在实际读取处停止。完整月度边界写者与日期/月界仍未因此闭合。
 
-**验证边界**：`verify_native_city.mjs`以synthetic明确输入/正式prepare、真实city→16槽→weather→Clock sub<8及JSON冷恢复为控制；1..3候选全低2位、四候选越栈、额度/127将、逐读失败、预算回绕、灾害写序、32槽与游标提交均为可失败断言。脚本字节RNG只用于片段控制，实际tick/恢复用OriginalBattleRng；不把同一JS实现当独立CPU oracle。neutral成功控制显式0B=2→1，不是异属驻军到达291A的正常连续轨迹。初批编成/补员竞争停在6E8F门前；[§3.15](#native-formation-callers)已接限定三池成功/真实失败及竞争后继，仍非资金兵池所有消费者全闭合。完整回归/浏览器/LSP状态与私有mutant证据仅记批次journal，未闭合消息、外栈、捕获及月度天气写者/月界域仍是后续前置；固定槽残值限定所有权见§3.15。
+**验证边界**：`verify_native_city.mjs`以synthetic明确输入/正式prepare、真实city→16槽→weather→Clock sub<8及JSON冷恢复为控制；1..4候选全256随机byte（四候选低0按§3.15.6批准Web差异）、额度/127将、逐读失败、预算回绕、灾害写序、32槽与游标提交均为可失败断言。脚本字节RNG只用于片段控制，实际tick/恢复用OriginalBattleRng；不把同一JS实现当独立CPU oracle。neutral成功控制显式0B=2→1，不是异属驻军到达291A的正常连续轨迹。初批编成/补员竞争停在6E8F门前；[§3.15](#native-formation-callers)已接限定三池成功/真实失败及竞争后继，仍非资金兵池所有消费者全闭合。完整回归/浏览器/LSP状态与私有mutant证据仅记批次journal，未闭合消息、外栈、捕获及月度天气写者/月界域仍是后续前置；固定槽残值限定所有权见§3.15。
 
 <a id="native-weather-movement"></a>
 
@@ -549,7 +549,11 @@ snapshot候选不改live；只存表一次，不另存live/delayed规则副本�
 
 **外栈内容来源（实锤）**：`3F74` 依次 push es/ax/bx/cx/dx/di/bp 后 `sub sp,0x10; mov bp,sp`，故 `[bp+0x10]`=压栈 oldBP，`[bp+0x12/14/16/18/1A/1C]`=di/dx/cx/bx/ax/es。其中 bx=城市 X 低字节、ax=邻城 cache&0x7F、es=地图段基址（均为确定性状态值）；但 **bp/di/dx/cx 是 3EFD 未经初始化透传的 1CD0→1D0B 入口残余**——主循环 1C1F..1C65 每帧先跑 1F7F 输入、E453 计时（`1C22 push cx/dx / call E453 / pop`）、59A6/59B7/1E46/1F30/5C58 UI 分支，这些寄存器逐帧随用户输入与计时而变；再往上是返回地址（3F5A/1D16/1C65）与更老帧。al=0 的行走需 256 次有效字节读才终止（stride-4 深入约 1KB 栈），途经任何 ≥0xFE 字节都重置 di 但不重置 al，最终落点由动态栈内容决定。
 
-**结论与 Web 边界**：原版此路径为越界栈读，选中槽由运行时动态栈字节决定，输入依赖、静态不可复现；与 3094 未初始化 RAM 同类。Web 在 `di>=16`（即首次 `ss:[bp+0x10]` 读）永久 fail-closed（`stop("SS:[BP+10h] at 4064")`，原有行为保留），不按经验补「选第 4 候选」或「视为随机」。N=4 可达性不可静态排除（边城四邻皆属目标势力即可构造），故保持停点而非删除。C08 账本「4064 外栈读取」项就此闭合为已分类边界；剩余 C08 缺口为 4155 无界槽扫/cache 一致性、43D3 线性别名全域、7FB4 立即命令与槽到期两入口。
+**原版结论与历史 Web 边界**：原版此路径为越界栈读，选中槽由运行时动态栈字节决定，输入依赖、静态不可复现；与3094未初始化RAM同类。N=4可达性不可静态排除（边城四邻皆属目标势力即可构造）。P39当时将Web在`di>=16`首次`ss:[bp+0x10]`读停止归类为永久fail-closed；此分类是历史实现政策，已被下述明确产品决定取代，原版证据结论不变。C08其余4155/43D3/7FB4边界仍按各专项来源，不随本例外放行。
+
+**CITY-4064-WEB-1（已批准 Web 产品决定，非原版机制）**：来源为用户报告重置版吕布归天/刘勋/最高战略速度在196年5月11日显示`Uncovered SS:[BP+10h] at 4064`；助手明确提出“仅四候选且随机低两位0时选第4候选、不额外耗随机数”，用户回复“同意，继续”。截图只用于定位，不是原规则证据。实施边界：共同`runOriginalCityMilitary`在一次405D取样后，仅`bp===16 && al===0`将计数置4，继续原DEC循环命中最后一条有效候选；不增哨兵、不补栈、不重新抽签、不改变其它候选数或随机值。原低1/2/3分别选第1/2/3条，低0按此Web例外选第4条，按候选构建顺序而非城市编号。4073弱城/玩家/增援以及4099→4155出击的条件、原有RNG消费、写回和后续治理/调度保持。玩家与编辑器试玩共用源码，生成Trial束同步重建。其它失败仍保前缀、hold和禁存，不全局吞异常。
+
+**本例外回归范围**：`verify_native_city.mjs`以1..4候选×全部256随机byte检查选择/两次RNG（405D和既有416E）及目标/命令写集；弱玩家城canonical RNG仍只耗405D一次；Clock与TrialStrategicClock通过真实aiTick的城市→16槽→天气续行，与选中相同目标的低1原有分支对照后继状态/RNG次数。测试日期同截图但场景是明确合成fixture，不是用户同局/同RNG复现，也不宣称整个战役已认证。
 
 **验证与剩余工作**：`verify_native_formation.mjs`的静态手算golden覆盖真实城市→创建→当前/跨批slot→后续47BB、旧兵守恒、一次成功后partial失败、state9池竞争、type4、active同slot/F14/03、实际消费点失败/hold/禁存、JSON冷再入及sidecar不反盖。既有native测试显式增加表/样式输入，旧461D全停断言推进到实际缺池4735；不是生产填洞。三旧v1测试及父追加批准同文件phase/BP夹具修正只锁已证输入/后继，不改v1生产来兼容耗尽pointIndex/旧cooldown。私有mutant、完整回归、浏览器、主动诊断与review的精确批次状态记journal/交付报告；focused不等于全AI、native启用或全战役证书。
 
@@ -575,7 +579,7 @@ Web 吻合核对：`gamebar.assignMarchOrder` 写集逐指令等价（setLegionD
 
 6E8F 体复用本节已闭合 `createOriginalLegion`（6EA0 同号槽、6EC9 六队候选、6F26 绑定/F14/占格INC、461D/6FD2、C4/CLC，+0x14=idx*8 差异仍按 §3.15 既有待修项保留，不在本轮扩大）。CF 分支（某队三候选池均不足 50）在 6A03 可达态下不可能：DL 门（69D2 池24位和）与 6EC9 读同一 F+4/6/8 字节，87FF/3B08 不碰池、模态 hold 无 tick 穿插；每行候选覆盖全部三类，故 CF 蕴含池和<400（末队<150+250），与 DL 通过（和高字≠0 或 和≥600）矛盾。CF 分支仅作忠实/fail-safe 保留（部分写保留、无清位、无 5E80、静默尾声、无信赖变动）。全链 0 RNG。699E DL 门（69B4–69EC）沿用既有 `canDeploy`，BH≥0x80 跳过与池高字语义差异记未知不修（v1 既有行为，非提交体边界）。
 
-Web 接线：`originalformation.js` 新增 `commitOriginalMonarchDeploy`（0..126 门+君主记录门→createOriginalLegion→CF 直返→`&0xFB`+rebind）；`scenariomonarchdeploy.js` 新增 `performScenarioMonarchDeployCommit`（`scenarioNativeRoadContext` 空即 fail-closed，路 context 缺失不能半执行占格 INC）；`gamebar.js` 出陣定时器 native 分支调用提交（CF→静默尾声，成功→refreshInfo 作 5E80 投影+既有成功尾），v1 分支逐行不动（含 -200 预备池与 6×1000 固定编成）。`delegated` 镜像由既有 lazy 同步（读时从 bit2 回写），不另写。专项 `tools/verify_native_monarch_deploy.mjs` 6 项（成功全写集+C0/非委任、wrapper 同槽绑定、CF 部分写无计数、复用跳 F14、索引门、context 空门）。C08 编成驻防派令至此各项均有结论（4064 外栈读永久 fail-closed、4155 有界、43D3 别名、7FB4 两入口、6E8F 提交）；路线图剩余转 C03 调度与 C10–C12。
+Web 接线：`originalformation.js` 新增 `commitOriginalMonarchDeploy`（0..126 门+君主记录门→createOriginalLegion→CF 直返→`&0xFB`+rebind）；`scenariomonarchdeploy.js` 新增 `performScenarioMonarchDeployCommit`（`scenarioNativeRoadContext` 空即 fail-closed，路 context 缺失不能半执行占格 INC）；`gamebar.js` 出陣定时器 native 分支调用提交（CF→静默尾声，成功→refreshInfo 作 5E80 投影+既有成功尾），v1 分支逐行不动（含 -200 预备池与 6×1000 固定编成）。`delegated` 镜像由既有 lazy 同步（读时从 bit2 回写），不另写。专项 `tools/verify_native_monarch_deploy.mjs` 6 项（成功全写集+C0/非委任、wrapper 同槽绑定、CF 部分写无计数、复用跳 F14、索引门、context 空门）。C08 编成驻防派令至此各项均有结论（4064 原版外栈读已分类（后继Web例外见§3.15.6）、4155 有界、43D3 别名、7FB4 两入口、6E8F 提交）；路线图剩余转 C03 调度与 C10–C12。
 
 #### 3.15.10 P44：槽到期分派 25C1→2662 全分支核对（零生产改动）
 

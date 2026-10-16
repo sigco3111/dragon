@@ -205,14 +205,12 @@ export function runOriginalCityMilitary(sc, context, city, rng) {
   if (work[0] >= 254) return "returned";
   let al = random(rng, "405D") & 3,
     di = 0;
+  // Approved Web deviation (CITY-4064-WEB-1; march notes §3.15.6): only
+  // four candidates + low0 selects the fourth candidate. DOS instead reads
+  // dynamic outer-stack bytes here; this is not an original-rule claim.
+  // Reuse the one 405D draw; retain the DEC loop and all downstream calls.
+  if (bp === 16 && al === 0) al = 4;
   for (;;) {
-    // P39 closure (march §3.15): with four candidates the 16-byte local frame
-    // has no 0xFFFF terminator, so al==0 falls off into ss:[bp+0x10] = pushed
-    // old-BP; BP/DI/DX/CX there are frame-dynamic leftovers of the main-loop
-    // input/timer/UI calls (1C22/1BF9 pins in verify_strategic_city_ai_raw),
-    // so the original OOB walk's outcome is input-dependent and cannot be
-    // reproduced statically. Permanent fail-closed boundary, same class as
-    // the 3094 uninitialized-RAM read.
     if (di >= 16) stop("SS:[BP+10h] at 4064");
     if (work[di] >= 254) {
       di = 0;

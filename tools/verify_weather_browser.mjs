@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { startBrowserTestServer } from "./browser_test_server.mjs";
+import { startBrowserTestServer, mockBuiltinOnlyCatalog } from "./browser_test_server.mjs";
 
 const require = createRequire(import.meta.url);
 const playwrightPath =
@@ -16,6 +16,7 @@ try {
   const context = await browser.newContext({
     viewport: { width: 1024, height: 768 },
   });
+  await mockBuiltinOnlyCatalog(context, `http://127.0.0.1:${port}`);
   // Weather-only fixture: an already-seen opening in this new isolated context.
   // Do not start/cancel an unrelated MP3 download or suppress request failures.
   await context.addInitScript((origin) => {

@@ -1,5 +1,6 @@
 // I/O: synthetic content/graph only, four allowlisted fetch mocks; no disk or server.
 // Static KI instruction controls, NOT independent CPU execution. See march §3.14.
+// Four-candidate low0 expectations are approved Web policy, not DOS equivalence (§3.15.6).
 import assert from "node:assert/strict";
 import test from "node:test";
 import { attachSyntheticNativeFactionSource } from "./native_faction_fixture.mjs";
@@ -25,6 +26,7 @@ import {
 } from "../web/src/game/ai.js";
 import { OriginalBattleRng } from "../web/src/game/battle/originalrng.js";
 import { Clock } from "../web/src/game/clock.js";
+import { TrialStrategicClock } from "../web/src/editor/trialruleboundaries.js";
 import {
   governOriginalCity,
   damageOriginalCity,
@@ -445,17 +447,81 @@ test("4057 one-to-three candidate cyclic DEC selection: low0 means 256, not r%n"
       assert.equal(f.A.moveDelay, 1);
     }
 });
-test("four candidates low1..3 return; low0 stops first outer-stack read after one RNG and attr/cache commit", async () => {
+test("four candidates weak player city: all low bits return after one RNG and attr/cache commit", async () => {
   for (let r = 0; r < 4; r++) {
     const f = await fixture();
     neighbours(f, [1, 2, 3, 4]);
     f.context.movement.writeByte(240, 67, 1);
     f.app.originalRng = seedFor(r);
-    if (r === 0) assert.throws(() => military(f), /SS:\[BP\+10h\] at 4064/);
-    else assert.equal(military(f), "returned");
+    assert.equal(military(f), "returned");
     assert.equal(f.app.originalRng.calls, 1);
     assert.equal(city(f).attr, 0xc0);
     assert.equal(f.context.cityCache.readByte(66), 1);
+  }
+});
+test("CITY-4064-WEB-1: all 256 RNG bytes, fourth ordered candidate only for four/low0; dispatch consumes no extra RNG", async () => {
+  for (let n = 1; n <= 4; n++) {
+    const f = await fixture();
+    const entries = [4, 1, 3, 2].slice(0, n); // Order, not city ID, defines fourth.
+    neighbours(f, entries);
+    f.context.movement.writeByte(240, 67, 2);
+    for (let roll = 0; roll < 256; roll++) {
+      f.A.status = 0xc4;
+      f.A.commandState = 7;
+      f.A.targetCity = 66;
+      f.app.originalRng = bytes(roll, 64);
+      assert.equal(military(f), "returned");
+      const low = roll & 3;
+      const choice = n === 4 && low === 0 ? 3 : ((low || 256) - 1) % n;
+      assert.equal(f.A.targetCity, entries[choice], `n=${n}, roll=${roll}`);
+      assert.equal(f.A.commandState, 0);
+      assert.equal(f.app.originalRng.calls, 2, "405D plus existing 416E only");
+      assert.equal(f.A.targetNode, 66);
+      assert.equal(f.A.status, 0xc4);
+      assert.equal(f.A.moveDelay, 1);
+      assert.equal(city(f)._aiCooldown, 0);
+    }
+  }
+});
+test("CITY-4064-WEB-1: player and Trial clocks continue actual city/slot/weather pump without failure hold", async () => {
+  for (const ClockType of [Clock, TrialStrategicClock]) {
+    const results = [];
+    // Original in-bounds low1 control selects the same target as Web low0.
+    for (const low of [0, 1]) {
+      const f = await fixture();
+      neighbours(f, low === 0 ? [1, 2, 3, 4] : [4, 2, 3, 1]);
+      f.context.movement.writeByte(240, 67, 2);
+      f.A.status = 0xc4;
+      f.A.commandState = 7;
+      f.A.moveDelay = 2;
+      f.sc._cityTickCursor = 66;
+      f.sc._legionBatchCursor = 0;
+      f.app.originalRng = bytes(low, 64, ...Array(16).fill(255));
+      const clock = new ClockType({
+        startYear: 196, startMonth: 5, startDay: 11,
+        gate: { canAdvanceRules: true, rulePermit: {} },
+        onStrategicTick(c) {
+          assert.equal(aiTick(f.app, {
+            cityIndex: f.sc._cityTickCursor,
+            legionBatchStart: f.sc._legionBatchCursor,
+            hour: c.hour, runFactionTick: false,
+          }), "returned");
+        },
+      });
+      f.app.clock = clock;
+      clock.strategicSpeed = 4;
+      clock.advanceFrame(clock.currentStep);
+      assert.equal(clock.hold, false);
+      assert.equal(clock.sub, 1);
+      assert.equal(f.A.targetCity, 4);
+      assert.equal(f.A.commandState, 0);
+      assert.equal(f.A.moveDelay, 1);
+      assert.equal(f.sc._cityTickCursor, 67);
+      assert.equal(f.sc._legionBatchCursor, 16);
+      assert.ok(!f.app._strategicBattleFailure);
+      results.push({ rngCalls: f.app.originalRng.calls, legion: json(f.A), date: clock.serialize() });
+    }
+    assert.deepEqual(results[0], results[1], "same downstream state and RNG consumption as in-bounds choice");
   }
 });
 test("407A u8 threat+2 borrow/zero exits AI before player/request reads", async () => {
