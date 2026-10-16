@@ -31,10 +31,9 @@ const apiDetail = {
 const portraitsOf = [{ assetId: 'guan', mime: 'image/png', width: 128, height: 128, byteLength: 100, inUse: false }];
 function setup({ failSave = null, failDelete = null, prompts = [] } = {}) {
   const nodes = {};
-  for (const id of ['generals-editor', 'generals-games', 'generals-inspect', 'generals-refresh', 'generals-chapters', 'generals-message', 'portrait-library', 'portrait-list', 'portrait-file', 'portrait-x', 'portrait-y', 'portrait-side', 'portrait-confirm', 'portrait-upload', 'portrait-id', 'portrait-preview', 'portrait-crop-status']) {
+  for (const id of ['generals-editor', 'generals-games', 'generals-inspect', 'generals-refresh', 'generals-chapters', 'generals-message', 'portrait-library', 'portrait-list', 'portrait-pick']) {
     nodes[id] = new Element();
   }
-  nodes['portrait-preview'].getContext = () => ({ clearRect: () => {}, drawImage: () => {} });
   const calls = [];
   globalThis.document = {
     querySelector: q => nodes[q.slice(1)] ?? null,
@@ -102,8 +101,9 @@ const findButton = (root, label) => {
   check('prompt cancel no POST', true);
 }
 {
-  const { nodes, api } = setup({ failDelete: '使用中須先解綁。' });
-  const portraits = [{ assetId: 'guan', mime: 'image/png', width: 128, height: 128, byteLength: 100, inUse: true }];
+  // B 決策：共用庫唯讀，無刪除鍵；綁定經下拉選值。
+  const { nodes, api } = setup();
+  const portraits = [{ assetId: 'guan', mime: 'image/png', byteLength: 100, inUse: true }];
   const api2 = async (path, value, options) => {
     if (path.endsWith('/portraits') && value === undefined) return { portraits };
     return api(path, value, options);
@@ -112,11 +112,8 @@ const findButton = (root, label) => {
   ui.setIdentity(admin);
   await nodes['generals-refresh'].onclick();
   await nodes['portrait-list'].onclick();
-  const delBtn = findButton(nodes['portrait-library'], '刪除');
-  let threw = false;
-  try { await delBtn.onclick(); } catch { threw = true; }
-  check('delete failure message', nodes['generals-message'].textContent.includes('刪除失敗') && nodes['generals-message'].textContent.includes('使用中'));
-  check('delete failure propagates', threw === true);
+  check('no delete button', findButton(nodes['portrait-library'], '刪除') === null);
+  check('picker populated', nodes['portrait-pick'].children.length === 1 && nodes['portrait-pick'].children[0].value === 'guan');
 }
 
 console.log(`passed ${passed} checks`);

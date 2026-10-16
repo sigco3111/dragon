@@ -42,7 +42,7 @@ async function login(account){
 async function observed(input,session){
  const x=(await action({action:'observe',input},session)).result;
  assert.deepEqual(Object.keys(x).sort(),['gameId','rowRevision','schemaDigest','tablesVerified','indexesVerified','foreignKeyDeclarationsVerified','definitionsVerified','rowIntegrityVerified','nativeDrainVerified','deleteAllowed','mode'].sort());
- assert.equal(x.gameId,input.gameId);assert.equal(x.rowRevision,input.expectedRowRevision);assert.match(x.schemaDigest,/^[a-f0-9]{64}$/);assert.equal(x.tablesVerified,47);assert.equal(x.definitionsVerified,true);assert.equal(x.rowIntegrityVerified,false);assert.equal(x.nativeDrainVerified,false);assert.equal(x.deleteAllowed,false);assert.equal(x.mode,'CURRENT_DECLARED_SQL_DEFINITIONS_ONLY_LEGACY_UNKNOWN');
+ assert.equal(x.gameId,input.gameId);assert.equal(x.rowRevision,input.expectedRowRevision);assert.match(x.schemaDigest,/^[a-f0-9]{64}$/);assert.equal(x.tablesVerified,46);assert.equal(x.definitionsVerified,true);assert.equal(x.rowIntegrityVerified,false);assert.equal(x.nativeDrainVerified,false);assert.equal(x.deleteAllowed,false);assert.equal(x.mode,'CURRENT_DECLARED_SQL_DEFINITIONS_ONLY_LEGACY_UNKNOWN');
  observations.push(x);return x;
 }
 try{

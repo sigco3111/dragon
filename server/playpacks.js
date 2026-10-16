@@ -71,23 +71,22 @@ export class PublishedPacks {
   }
   // Freeze the proof-compiled snapshot the publish route already ran. Heavy
   // reads (catalog) stay outside the write transaction, as in trial issue.
-  // Game portrait library freeze (§4.3 B4e): bytes re-verified (sha over
-  // stored bytes must match the row), mime allowlisted, ids already
-  // reserved-collision-free at upload. Missing reader = no portraits.
-  #freezePortraits(gameId) {
+  // 共用画像庫凍結（B 決策）：只收錄本包實際使用的 ID（數字 byte＋portraitKey），
+  // 無位元組；玩家經 R2 `kao/<id>.png` 取數，sha256 在 manifest 供核對。
+  #freezePortraits(states) {
     if (!this.#portraits) { return []; }
-    const rows = this.#portraits.forPublish(gameId);
+    const ids = [];
+    for (const state of Object.values(states)) {
+      for (const general of state?.generals ?? []) {
+        if (Number.isSafeInteger(general?.portrait)) { ids.push(String(general.portrait)); }
+        if (typeof general?.portraitKey === 'string') { ids.push(general.portraitKey); }
+      }
+    }
+    const rows = this.#portraits.forPublish(ids);
     if (!Array.isArray(rows)) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
-    const seen = new Set();
     return rows.map(row => {
-      if (!row || typeof row.assetId !== 'string' || !/^[A-Za-z]{1,32}$/.test(row.assetId) || seen.has(row.assetId) || ASSET_IDS.includes(row.assetId)) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
-      seen.add(row.assetId);
-      // Workerd SQLite returns BLOB columns as ArrayBuffer; node:sqlite gives Buffer. Accept both.
-      let bytes = null;
-      if (row.bytes instanceof Uint8Array) bytes = Buffer.from(row.bytes);
-      else if (row.bytes instanceof ArrayBuffer) bytes = Buffer.from(row.bytes);
-      if (!bytes || bytes.length < 1 || bytes.length !== row.byteLength || shaBytes(bytes) !== row.sha256 || !digest(row.sha256) || (row.mime !== 'image/png' && row.mime !== 'image/jpeg')) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
-      return Object.freeze({ assetId: row.assetId, mime: row.mime, sha256: row.sha256, byteLength: row.byteLength, bytes });
+      if (!row || typeof row.assetId !== 'string' || ASSET_IDS.includes(row.assetId)) { fail(500, 'PLAY_PORTRAIT_CORRUPT'); }
+      return row;
     });
   }
   async buildAndStore(tokenHash, { game, reference, compiled }) {
@@ -120,8 +119,8 @@ export class PublishedPacks {
       if (!(bytes instanceof Uint8Array) || bytes.length < 1) { fail(422, 'PLAY_SNAPSHOT'); }
     }
     const visuals = await this.#visuals(tokenHash, reference.gameId);
-    const portraits = this.#freezePortraits(reference.gameId);
-    const portraitEntries = portraits.map(row => Object.freeze({ assetId: row.assetId, sha256: row.sha256, byteLength: row.byteLength, role: 'game-portrait', url: assetURL(reference.gameId, reference.draftRevision, reference.sourceDigest, row.assetId), mime: row.mime }));
+    const portraits = this.#freezePortraits(states);
+    const portraitEntries = portraits.map(row => Object.freeze({ assetId: row.assetId, sha256: row.sha256, byteLength: row.byteLength, role: 'game-portrait', url: `kao/${row.assetId}.png`, mime: row.mime }));
     const entries = Object.entries(payloads).map(([assetId, data]) => Object.freeze({ assetId, sha256: shaBytes(data), byteLength: data.length, role: ASSET_ROLE[assetId], url: assetURL(reference.gameId, reference.draftRevision, reference.sourceDigest, assetId) }));
     const manifest = Object.freeze({
       schemaVersion: 1, compilerRevision: TRIAL_COMPILER_REVISION, buildFormat: 'studio-app-2',
@@ -144,9 +143,7 @@ export class PublishedPacks {
         const data = payloads[entry.assetId];
         this.#sql.exec('INSERT INTO published_pack_assets VALUES(?,?,?,?,?)', reference.gameId, entry.assetId, entry.sha256, entry.byteLength, Buffer.from(data));
       }
-      for (const row of portraits) {
-        this.#sql.exec('INSERT INTO published_pack_assets VALUES(?,?,?,?,?)', reference.gameId, row.assetId, row.sha256, row.byteLength, Buffer.from(row.bytes));
-      }
+      // 画像位元組住 R2 `kao/`，pack 只記 ID＋SHA（B 決策），此處不寫 pack_assets。
     });
     return manifest;
   }

@@ -1,14 +1,13 @@
-// Generals (§4.3 B4c1+B4e): chapter general name/hao edit + portrait bind/clear +
-// delete-blocker report + game portrait library (upload 128×128 square-crop
-// preview with author-confirmed crop, list, delete with in-use guard).
+// Generals (§4.3 B4c1, B 決策): chapter general name/hao edit + portrait bind/clear +
+// delete-blocker report + shared portrait library picker (web/kao manifest,
+// read-only list, no upload/delete).
 // Web product §4.3 / 2026-10-09: JPG/PNG source ≤100KiB, arbitrary source
 // dimensions; normalized output is 128×128, not a DOS mechanism.
 // Person add/delete is 128-locked;
 // the blocker list is the deliverable.
 export function installGenerals({ api, authority, work, isBusy }) {
   const q = (id) => document.querySelector('#' + id);
-  let identity = null, games = [], selected = null, detail = null;
-  let portraitGeneration = 0, preview = null, confirmedGeneration = null;
+  let identity = null, games = [], selected = null, detail = null, library = [];
   const allowed = () => Boolean(identity?.user) && !identity.user.mustChangePassword;
   const message = (text) => { q('generals-message').textContent = text; };
   function render() {
@@ -50,9 +49,8 @@ export function installGenerals({ api, authority, work, isBusy }) {
         portrait.onclick = () => work(async () => {
           let key = null;
           if (!general.portraitKey) {
-            key = prompt('頭像編號（1..32 英文字母，取消請按 Esc）：');
-            if (key === null || key.trim() === '') return;
-            key = key.trim();
+            key = q('portrait-pick').value || null;
+            if (!key) { message('請先在頭像資源庫下拉選擇。'); return; }
           }
           await saveEdits(gameOf(), [{ op: 'portrait', chapterId, generalIdx: general.idx, portraitKey: key }]);
         });
@@ -94,7 +92,7 @@ export function installGenerals({ api, authority, work, isBusy }) {
     if (!allowed()) throw new Error('請先登入。');
     const result = await api('/api/games');
     if (!Array.isArray(result.games)) throw new Error('遊戲清單回應無效。');
-    resetPortrait();
+    resetPicker();
     games = result.games; selected = games[0]?.gameId ?? null; detail = null; render();
     if (selected) await inspect();
   }
@@ -103,7 +101,7 @@ export function installGenerals({ api, authority, work, isBusy }) {
     selected = game.gameId;
     detail = await api('/api/games/' + encodeURIComponent(game.gameId) + '/draft?revision=' + encodeURIComponent(game.draftRevision));
     render();
-    message('武將增刪鎖定 128 密排；改名／字與頭像綁定經草稿保存寫入。頭像上傳進本遊戲資源庫，發布時凍結進包。');
+    message('武將增刪鎖定 128 密排；改名／字與頭像綁定經草稿保存寫入。頭像取自共用庫（620）。');
   }
   function factionPanel(entry) {
     const chapterId = entry.chapterId;
@@ -157,148 +155,42 @@ export function installGenerals({ api, authority, work, isBusy }) {
     }
     return box;
   }
-  // Browser preview is not server-side image safety validation (§6 remains open).
+  // 共用庫下拉（B 決策）：唯讀 manifest，無上傳／刪除。
   function renderPortraitControls() {
-    const ready = Boolean(preview?.ready) && allowed() && preview.gameId === selected && preview.identity === identity;
-    for (const id of ['portrait-x', 'portrait-y', 'portrait-side', 'portrait-confirm']) q(id).disabled = isBusy() || !ready;
-    q('portrait-upload').disabled = isBusy() || !ready || confirmedGeneration !== portraitGeneration;
-    // Library rows can be created during work(); the shell's initial control snapshot cannot re-enable them.
-    for (const button of q('portrait-library').querySelectorAll('button')) button.disabled = isBusy();
+    q('portrait-pick').disabled = isBusy() || library.length === 0;
   }
-  function resetPortrait(clearFile = true) {
-    portraitGeneration += 1;
-    confirmedGeneration = null;
-    if (preview?.url) URL.revokeObjectURL(preview.url);
-    if (preview?.image) { preview.image.onload = null; preview.image.onerror = null; }
-    preview = null;
-    if (clearFile) q('portrait-file').value = '';
-    q('portrait-preview').getContext('2d').clearRect(0, 0, 128, 128);
-    q('portrait-crop-status').textContent = '請先選圖。';
+  function resetPicker() {
+    library = [];
+    q('portrait-pick').replaceChildren();
+    q('portrait-library').replaceChildren();
     renderPortraitControls();
   }
-  function currentPreview(value) {
-    return preview === value && allowed() && value.identity === identity && value.gameId === selected && q('portrait-file').files?.[0] === value.file;
-  }
-  function drawCrop() {
-    if (!preview?.ready || !currentPreview(preview)) return;
-    const width = preview.image.naturalWidth, height = preview.image.naturalHeight;
-    const side = Number(q('portrait-side').value);
-    if (!Number.isInteger(side) || side < 1 || side > Math.min(width, height)) return;
-    q('portrait-x').max = String(width - side); q('portrait-y').max = String(height - side);
-    const x = Math.min(Number(q('portrait-x').value), width - side);
-    const y = Math.min(Number(q('portrait-y').value), height - side);
-    if (![x, y].every((value) => Number.isInteger(value) && value >= 0)) return;
-    q('portrait-x').value = String(x); q('portrait-y').value = String(y);
-    portraitGeneration += 1;
-    confirmedGeneration = null;
-    const context = q('portrait-preview').getContext('2d');
-    context.clearRect(0, 0, 128, 128);
-    context.drawImage(preview.image, x, y, side, side, 0, 0, 128, 128);
-    q('portrait-crop-status').textContent = `原圖 ${width}×${height}；裁剪 (${x}, ${y}) ${side}×${side}，請確認預覽。`;
-    renderPortraitControls();
-  }
-  function previewPortrait() {
-    const file = q('portrait-file').files?.[0];
-    // Keep the selected File while resetting the previous generation.
-    resetPortrait(false);
-    if (!file) return;
-    if (!allowed() || !selected) { message('請先登入並選擇遊戲。'); return; }
-    if (!['image/png', 'image/jpeg'].includes(file.type) || file.size < 1 || file.size > 100 * 1024) { message('原圖須為 JPG/PNG，且為 1..100KiB；尚未解碼或上傳。'); return; }
-    const generation = portraitGeneration;
-    const image = new Image(), url = URL.createObjectURL(file);
-    const value = { file, image, url, identity, gameId: selected, ready: false };
-    preview = value;
-    q('portrait-crop-status').textContent = '圖片讀取中…';
-    image.onload = () => {
-      URL.revokeObjectURL(url); value.url = null;
-      if (generation !== portraitGeneration || !currentPreview(value)) return;
-      const width = image.naturalWidth, height = image.naturalHeight;
-      if (width < 1 || height < 1) { message('圖片尺寸無效。'); return; }
-      const side = Math.min(width, height);
-      q('portrait-side').max = String(side); q('portrait-side').value = String(side);
-      q('portrait-x').max = String(width - side); q('portrait-y').max = String(height - side);
-      q('portrait-x').value = String(Math.floor((width - side) / 2)); q('portrait-y').value = String(Math.floor((height - side) / 2));
-      value.ready = true;
-      drawCrop();
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url); value.url = null;
-      if (generation !== portraitGeneration || !currentPreview(value)) return;
-      message('圖片讀取失敗，僅 PNG/JPEG。');
-      q('portrait-crop-status').textContent = '讀取失敗，請重新選圖。';
-      renderPortraitControls();
-    };
-    image.src = url;
-  }
-  function base64(bytes) { let text = ''; for (let at = 0; at < bytes.length; at += 8192) { text += String.fromCharCode(...bytes.subarray(at, at + 8192)); } return btoa(text); }
   async function listPortraits() {
     const game = gameOf();
     const owner = identity;
     const result = await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits');
     if (!allowed() || identity !== owner || selected !== game.gameId) return;
+    library = Array.isArray(result.portraits) ? result.portraits : [];
     q('portrait-library').replaceChildren();
-    for (const entry of result.portraits ?? []) {
+    q('portrait-pick').replaceChildren();
+    for (const entry of library) {
       const row = document.createElement('div'), label = document.createElement('p');
-      label.textContent = `${entry.assetId}／${entry.mime}／${entry.width}×${entry.height}／${entry.byteLength}B／${entry.inUse ? '使用中（須先解綁）' : '未使用'}`;
+      label.textContent = `${entry.assetId}／${entry.mime}／${entry.byteLength}B／${entry.inUse ? '使用中' : '未使用'}`;
       row.append(label);
-      const del = document.createElement('button');
-      del.type = 'button'; del.textContent = '刪除';
-      del.disabled = isBusy();
-      del.onclick = () => work(async () => {
-        try {
-          await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits/' + encodeURIComponent(entry.assetId), {}, { key: crypto.randomUUID() });
-        } catch (error) {
-          message('刪除失敗：' + (error instanceof Error ? error.message : String(error)) + '；使用中須先解綁。');
-          throw error;
-        }
-        await listPortraits();
-      });
-      row.append(del);
       q('portrait-library').append(row);
+      const opt = document.createElement('option');
+      opt.value = entry.assetId; opt.textContent = entry.assetId;
+      q('portrait-pick').append(opt);
     }
-    message(`資源庫 ${result.portraits?.length ?? 0} 張。`);
+    renderPortraitControls();
+    message(`共用庫 ${library.length} 張（唯讀）。`);
   }
   q('generals-games').onchange = () => {
     selected = q('generals-games').value; detail = null;
-    resetPortrait(); q('portrait-library').replaceChildren(); render();
+    resetPicker(); render();
   };
-  q('portrait-file').onchange = previewPortrait;
-  for (const id of ['portrait-x', 'portrait-y', 'portrait-side']) q(id).oninput = drawCrop;
-  q('portrait-confirm').onclick = () => {
-    if (!preview?.ready || !currentPreview(preview) || isBusy()) return;
-    confirmedGeneration = portraitGeneration;
-    q('portrait-crop-status').textContent += ' 已確認。';
-    renderPortraitControls();
-  };
-  q('portrait-upload').onclick = () => work(async () => {
-    const value = preview, generation = portraitGeneration;
-    const assertPreview = () => {
-      if (!value?.ready || !currentPreview(value) || generation !== portraitGeneration || confirmedGeneration !== generation) throw new Error('請選圖、等待預覽就緒並確認裁剪；上下文變更後須重新選圖。');
-    };
-    assertPreview();
-    const game = gameOf();
-    const assetId = (q('portrait-id').value ?? '').trim();
-    if (!/^[A-Za-z]{1,32}$/.test(assetId)) throw new Error('編號須為 1..32 個英文字母。');
-    const blob = await new Promise((resolve) => q('portrait-preview').toBlob(resolve, 'image/png'));
-    assertPreview();
-    if (!blob || blob.size < 1 || blob.size > 100 * 1024) throw new Error('規範 PNG 為空或超出100KiB，請調整裁剪。');
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    assertPreview();
-    const dataBase64 = base64(bytes);
-    try {
-      await api('/api/games/' + encodeURIComponent(game.gameId) + '/portraits', { assetId, dataBase64 }, { key: crypto.randomUUID() });
-    } catch (error) {
-      message('上傳失敗：' + (error instanceof Error ? error.message : String(error)) + '；已確認裁剪保留，可重試。');
-      throw error;
-    }
-    if (!currentPreview(value) || generation !== portraitGeneration) return;
-    confirmedGeneration = null;
-    renderPortraitControls();
-    message(`已上傳 ${assetId}（128×128 PNG）。`);
-    await listPortraits();
-  });
   q('portrait-list').onclick = () => work(listPortraits);
   q('generals-refresh').onclick = () => work(refresh);
   q('generals-inspect').onclick = () => work(inspect);
-  return Object.freeze({ render, setIdentity(value) { const changed = identity !== value; identity = value; if (!allowed()) { games = []; selected = null; detail = null; } if (changed || !allowed()) { resetPortrait(); q('portrait-library').replaceChildren(); } render(); }, canLeave() { return true; } });
+  return Object.freeze({ render, setIdentity(value) { const changed = identity !== value; identity = value; if (!allowed()) { games = []; selected = null; detail = null; } if (changed || !allowed()) { resetPicker(); } render(); }, canLeave() { return true; } });
 }

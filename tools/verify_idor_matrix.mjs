@@ -86,7 +86,7 @@ storage.transactionSync(() => {
 const drafts = new PrivateDrafts({ storage, principal, games, blobs, definition: () => ({ registryId: REG, profileRevision: FIXED_COPY_PROFILE, definitionDigest: DEF }), operationGuard: () => {} });
 const snap1 = await games.prepareSnapshot('ha', { gameId: GAME, draftRevision: '1', metadata: { ...game.metadata }, source: { sha256: gRoot.sha256, byteLength: gRoot.byteLength }, allocation });
 games.transaction('ha', { key: 'idor-create-00000001', method: 'create', target: 'new', digest: 'd'.repeat(64) }, api => api.create(allocation, snap1));
-const portraits = new GamePortraits({ storage, principal, reservedIds: [] });
+const portraits = new GamePortraits({ reservedIds: [] });
 const jobs = new CompileJobs({ storage, principal, metadata: games,
   verifyCheckpoint: async ({ digest }) => ({ digest }), compilerRevision: 'c1', profileRevision: 'p1' });
 const policy = installedSourcePolicy(readFileSync('server/pinned/world-manifest.txt'), readFileSync('server/pinned/entity-manifest.txt'));
@@ -97,8 +97,7 @@ const input1 = { metadata: { ...game.metadata }, resourceEdits: [], chapterEdits
 await sameCode('snapshot cross==unknown', () => games.snapshotReference('hb', GAME, '1'), () => games.snapshotReference('hb', UNKNOWN, '1'));
 await sameCode('draft read cross==unknown', () => drafts.read('hb', GAME, '1'), () => drafts.read('hb', UNKNOWN, '1'));
 await sameCode('draft save cross==unknown', () => drafts.save('hb', GAME, '1', 'idor-k1-0000000001', 'e'.repeat(64), input1), () => drafts.save('hb', UNKNOWN, '1', 'idor-k1-0000000002', 'e'.repeat(64), input1));
-await sameCode('portrait upload cross==unknown', () => portraits.upload('hb', GAME, 'x', new Uint8Array([1])), () => portraits.upload('hb', UNKNOWN, 'x', new Uint8Array([1])));
-await sameCode('portrait list cross==unknown', () => portraits.list('hb', GAME), () => portraits.list('hb', UNKNOWN));
+await sameCode('portrait get unknown==bad-id', () => portraits.get('no-such-id'), () => portraits.get('also-missing'));
 await sameCode('blob authority cross==unknown', () => games.blobAuthority('hb', { gameId: GAME, allocation: {} }), () => games.blobAuthority('hb', { gameId: UNKNOWN, allocation: {} }));
 await sameCode('job enqueue cross==unknown', () => jobs.enqueue('hb', { key: 'idor-k2-0000000001', gameId: GAME, draftRevision: '1', scope: 'all' }), () => jobs.enqueue('hb', { key: 'idor-k2-0000000002', gameId: UNKNOWN, draftRevision: '1', scope: 'all' }));
 await sameCode('trial auth known==unknown', () => trials.authorize('ha', randomUUID()), () => trials.authorize('ha', UNKNOWN));

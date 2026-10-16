@@ -1,4 +1,4 @@
-// Web authoring writer only: bind or clear an uploaded portrait asset id on one chapter
+// Web authoring writer only: bind or clear a shared-library portrait id on one chapter
 // general (事项④ Web 产品决定，用户裁决 2026-10-09，非原版机制). The numeric portrait
 // byte is never touched (kao fallback intact); portraitKey is additive metadata resolved
 // at trial boot, so the Q69 asset gate keeps checking bytes and seals stay valid.
@@ -10,7 +10,7 @@ export function setGeneralPortrait(game, chapterId, generalIdx, portraitKey) {
   if (!Array.isArray(state?.generals)) { throw new TypeError("缺少武將來源"); }
   const slot = state.generals.findIndex((g) => g?.idx === generalIdx);
   if (slot < 0) { throw new RangeError("武將槽不符"); }
-  if (portraitKey !== null && (typeof portraitKey !== "string" || !/^[A-Za-z]{1,32}$/.test(portraitKey))) { throw new TypeError("頭像編號須為 1..32 個英文字母"); }
+  if (portraitKey !== null && (typeof portraitKey !== "string" || !/^[A-Za-z0-9]{1,32}$/.test(portraitKey))) { throw new TypeError("頭像編號須為共用庫 ID（數字／p＋數字／1..32 英數字）"); }
   const record = state.generals[slot];
   if ((record.portraitKey ?? null) === portraitKey) { return game; }
   const next = structuredClone(game), target = next.chapters[chapterId].state.generals[slot];

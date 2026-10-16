@@ -17,7 +17,6 @@ const { installedSourcePolicy } = await import('../server/sourcecatalogpolicy.js
 const { PublishedGames } = await import('../server/published.js');
 const { PublishedPacks, RESERVED_ASSET_IDS } = await import('../server/playpacks.js');
 const { GamePortraits } = await import('../server/portraits.js');
-const { encodePNG } = await import('../server/pngio.js');
 const { encodeSourceChunks, canonicalSourceTokens } = await import('../web/src/content/authoring/sourcejson.js');
 const { compileTrialSource } = await import('../web/src/content/authoring/trialcompile.js');
 const { HttpError, fail } = await import('../server/security.js');
@@ -113,20 +112,18 @@ const snap1 = await games.prepareSnapshot('h1', { gameId: GAME, draftRevision: '
 games.transaction('h1', { key: 's10-create-00000001', method: 'create', target: 'new', digest: 'd'.repeat(64) }, api => api.create(allocation, snap1));
 await drafts.save('h1', GAME, '1', 's10-save-0000000001', 'e'.repeat(64), { metadata: { ...game.metadata }, resourceEdits: [], chapterEdits: [] });
 
-// 3. Portrait + freeze + pin + serve.
-const portraits = new GamePortraits({ storage, principal, reservedIds: RESERVED_ASSET_IDS });
-const pixels = new Uint8Array(128 * 128 * 4).fill(128);
-const up = portraits.upload('h1', GAME, 'elder', new Uint8Array(Buffer.from(encodePNG(pixels, 128, 128))));
-check('portrait staged', up.mime === 'image/png');
+// 3. Portrait (shared library, B) + freeze + pin + serve.
+const portraits = new GamePortraits({ reservedIds: RESERVED_ASSET_IDS });
+check('portrait manifest', portraits.list().length === 620 && portraits.get('0').mime === 'image/png');
 const packs = new PublishedPacks({ storage, principal, catalog, portraits });
 const registry = new PublishedGames({ storage, principal });
 const compiled = compileTrialSource(game, bytes => createHash('sha256').update(bytes).digest('hex'));
 const reference = games.snapshotReference('h1', GAME, '1');
 await fails('author freeze 403 (observed)', async () => packs.buildAndStore('h1', { game, reference, compiled }), 'FULL_COPY_SOURCE_ADMIN_REQUIRED');
 const manifest = await packs.buildAndStore('ha', { game, reference, compiled });
-check('freeze manifest', manifest.chapters.length === 20 && manifest.portraits.length === 1 && manifest.identity.sourceDigest === sourceDigest);
-const pin = registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '1', sourceDigest, chapters: [...game.chapterOrder] });
-check('pin', pin.revision === '1' && typeof pin.publishedAt === 'string');
+check('freeze manifest', manifest.chapters.length === 20 && manifest.portraits.every(p => p.url.startsWith('kao/')) && manifest.identity.sourceDigest === sourceDigest);
+const pin = registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '1', sourceDigest, chapters: [...game.chapterOrder], ordinal: '1.0' });
+check('pin', pin.revision === '1' && typeof pin.publishedAt === 'string' && pin.ordinal === '1.0');
 check('registry list', registry.list().some(p => p.gameId === GAME));
 const pack = packs.pack(GAME);
 check('pack default chapter', pack.chapterId === game.chapterOrder[0] && pack.manifest.identity.draftRevision === '1');
@@ -135,12 +132,11 @@ const terrain = packs.asset(GAME, '1', sourceDigest, 'terrain');
 check('asset terrain', terrain.bytes.length > 0 && terrain.mime === 'application/octet-stream');
 const mini = packs.asset(GAME, '1', sourceDigest, 'minimapBase');
 check('asset minimap mime', mini.mime === 'image/png');
-const pe = packs.asset(GAME, '1', sourceDigest, 'elder');
-check('portrait served', pe.mime === 'image/png' && pe.sha256 === up.sha256);
+await fails('portrait not embedded', async () => packs.asset(GAME, '1', sourceDigest, 'elder'), 'PLAY_ASSET');
 await fails('old rev 409', async () => packs.pack(GAME, '0'), 'PLAY_SNAPSHOT_CHANGED');
 await fails('digest mismatch 409', async () => packs.asset(GAME, '1', 'f'.repeat(64), 'terrain'), 'PLAY_SNAPSHOT_CHANGED');
 await fails('cross-owner unpublish 403', async () => registry.unpublish('h2', GAME), 'PUBLISH_OWNER');
-await fails('bad name 422', async () => registry.publish('h1', { gameId: GAME, name: '   ', revision: '1', sourceDigest, chapters: ['c'] }), 'PUBLISH_NAME');
+await fails('bad name 422', async () => registry.publish('h1', { gameId: GAME, name: '   ', revision: '1', sourceDigest, chapters: ['c'], ordinal: '1.0' }), 'PUBLISH_NAME');
 
 // 4. Republish replaces; unpublish/retire close reads.
 const read1 = await drafts.read('h1', GAME, '1');
@@ -150,7 +146,7 @@ const game2 = (await drafts.captureForCompile('h1', GAME, '2')).game;
 const compiled2 = compileTrialSource(game2, bytes => createHash('sha256').update(bytes).digest('hex'));
 const ref2 = games.snapshotReference('h1', GAME, '2');
 await packs.buildAndStore('ha', { game: game2, reference: ref2, compiled: compiled2 });
-registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '2', sourceDigest: ref2.sourceDigest, chapters: [...game2.chapterOrder] });
+registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '2', sourceDigest: ref2.sourceDigest, chapters: [...game2.chapterOrder], ordinal: '1.1' });
 check('republish rev2', packs.pack(GAME).manifest.identity.draftRevision === '2');
 await fails('stale rev gone 409', async () => packs.pack(GAME, '1'), 'PLAY_SNAPSHOT_CHANGED');
 check('unpublish missing idempotent', registry.unpublish('h1', 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa').unpublished === true);
@@ -162,8 +158,10 @@ await fails('builtin pack 404', async () => packs.pack('wolong-builtin'), 'PLAY_
 
 // 5. Corruption fail-closed (terminal states on purpose).
 storage.sql.exec("UPDATE published_games SET pin_json='{' WHERE game_id=?", GAME);
-registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '2', sourceDigest: ref2.sourceDigest, chapters: [...game2.chapterOrder] });
+registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '2', sourceDigest: ref2.sourceDigest, chapters: [...game2.chapterOrder], ordinal: '1.1' });
 storage.sql.exec("UPDATE published_games SET pin_json='{' WHERE game_id=?", GAME);
+// Q25: list() 只读 listed=1，先上架再验 corrupt pin。
+storage.sql.exec('UPDATE content_games SET listed=1 WHERE game_id=?', GAME);
 await fails('corrupt pin 500', async () => registry.list(), 'PUBLISH_CORRUPT');
 storage.sql.exec('DELETE FROM published_games WHERE game_id=?', GAME);
 

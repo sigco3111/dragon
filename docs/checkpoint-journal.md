@@ -94,7 +94,10 @@
 - **独立 epic**：G 组物理删除完成态、E 剩余浏览器 lane。
 - **部署线（挂起）**：sidecar 上线、V2 解码隔离、V3 分发、V4 读取端、V5 切换。
 
-## 下一步（按推荐顺序）
+- `kao/` 首传完成（2026-10-15）：620/620（分两轮，幂等续传，0 失败），R2 回列 `kao/` 620 keys 核对一致；每对象存 `sha256` metadata。后续发版只增不改。
+- V3 R2 授权已通（2026-10-15）：`dragon` 桶官方 SDK ListObjects 200（空桶）；手写 SigV4 三次 403 系我方脚本 bug，已弃用，改走官方 SDK（诊断脚本在仓库外 `/tmp/s3check`，不污染项目）。凭据只在 `C:\Users\fczll\.config\dragon-publisher.env`，绝不入库。
+- 画像库盘点完成：`tools/verify_kao_library.mjs` 绿（620 文件＝数字 0..148 连续＋p 文件 471，11.2MB，全 PNG、字节互异）；R2 key 原样 `kao/<filename>`，SHA 存对象 metadata 供核对；按游戏打包取用子集（数字档供 `kao/${byte}.png`，p 档供 portraitKey）。
+- V决策（用户拍板）：①V2简化——禁上传、画像库一对一（`web/kao` 620 PNG/13MB），发包记ID同步复制打包，解码隔离需求消失（退役：portraits上传链/`game_portraits`/相关lane，删表单独立E-01波）；②V3用现成 `dragon` 桶（R2布局见todo：kao/artifacts/projections/control四区，桶私有）；③V4读R2素材＋原建议；④V5全开发完再做。待用户给R2读写授权（Account ID＋scoped API token，经env文件，不入库）。
 
 0. 待用户决策（阻塞 Q25 实现、Q26、发布 UI-A2）：① 发布是否即公开，还是上架（listed）才进玩家目录（现状 `worker.js:243` 列全部 pin；改动影响玩家可见语义）；② 指定正式 release 语义（回指旧 ordinal？pin 与 current_release_id 关联？）；③ Q26 普通创建路由产品分叉（最小模板内容 N6＋模板画像身份＋玩家同名显示）；④ 发布 UI-A2 范围确认。
 
@@ -129,6 +132,8 @@
 ## 本轮工作区状态
 
 > E-01 47 波（2026-10-15）：generator 加第 21 源 announcements → 47 表／94 对象／317 列（diff 逐项确认：仅 +2 表）；keys 46→47（registry 为 INTEGER PK 无 autoindex，ann 仅 UNIQUE 建 1 索引）＋uniquerows／indexprojections／validatedfreeze 同步；knownTables 漏加 2 公告表致 inventory 全线 503（r11/r12 复现，已补，scopedTables 不动）；16 lane＋3 runner 45→47／46→47（74＋3 处，bulk 脚本计数＋diff 复核）；70 套件 pin 两轮（1212＋inventory 52）；重跑绿 7/7（unique r2／fk r3／index r2／name r4／sql_check r4／definitions r8／columns r13）；oxlint 模板字面量🔴为例外记账（历史写法，不批量重排封存证据）。
+> E-01 46 波（画像退役 B 決策，2026-10-15）：`game_portraits` 表删除 → generator 46 表／92 对象／309 列；keys 47→46（inventory knownTables／uniquerows／indexprojections／validatedfreeze 字面量 47→46 三处漏网已补）；session 产物从 r2 复制（expected.json＋columns/draft-freeze ddl-origin，各留 r1-47 备份）；16 lane＋runner 69 处 47→46（bulk 计数）；重跑绿 7/7（unique r3／index r3／fk r3／name r4／sql_check r4／definitions r11／columns r17）。教訓：①columns fixture 须显式构造 DraftFreeze（否则后端 44 表）；②trialassetpaths.js 换行符：worktree CRLF vs manifest 期望 LF（edit＋checkout 循环引入），转回 LF 解，`git diff` 无内容差。③`web/kao/149.png` 工作树误删已从 HEAD 恢复（来源不明已记账；若有意删除请明示）；trialassetpaths 硬编码循环已验证与 150 数字档一致，manifest 派生改法已回滚（避免 available-library 指纹跨 epic）。
+> 画像上传链退役落地（B 決策，2026-10-15）：`portraits.js` 改 manifest 唯读（无表／无上传／无解码）；worker 删上传／删除路由（list→共用 621，id 正则放宽数字）；`playpacks.#freezePortraits` 只收录用 ID（数字 byte＋portraitKey，哨兵 255 跳过、未知 fail-closed），pack 记 `kao/<id>.png`＋SHA 不嵌字节；`general.txt` 上传机具→下拉选择器＋唯读列表；`generalportrait.js` 校验放宽数字；9 个上传 lane 删除；idor／publish_pack（20 项）／shell（68 项）／generals（6 项）lane 已改绿。残留：Trial 上传口（`trials.js`＋trial portrait lane）未动，单独立项；其余重 lane（sql-freeze／bound／validated／waits／reference／management）46 化静态已改待跑，draft-freeze／private-ns 仍 blocked-on-env。
 
 > 例外记账（2026-10-15）：pi-lens oxlint「模板字面量优先于字符串拼接」🔴 覆盖全部 lane／生成文件，系历史既有写法（本轮只改其中数字不断句式）；批量重排将造成封存证据字节漂移，故不改， evidence discipline 优先。
 

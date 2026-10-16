@@ -132,8 +132,8 @@ export class EditorMetadata extends DurableObject {
     this.releases = new ReleaseLedger({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games });
     // D组公告 (Q31–Q36, §8.3): unique(gameId,releaseId) rows + registry revision.
     this.announcements = new AnnouncementStore({ storage: ctx.storage });
-    // §4.3 game portrait library (owner-only, 128×128); pure SQLite, no blob dependency.
-    this.portraits = new GamePortraits({ storage: ctx.storage, principal: hash => this.principal(hash), reservedIds: RESERVED_ASSET_IDS });
+    // 共用画像庫（B 決策）：manifest 唯讀，無 SQL 表、無上傳管線。
+    this.portraits = new GamePortraits({ reservedIds: RESERVED_ASSET_IDS });
     // B-1/Q14 draft topology intents (moves + rebuild records live outside
     // the canonical game object; any pending move blocks save/publish).
     this.topology = new DraftTopology({ storage: ctx.storage, principal: hash => this.principal(hash), games: this.games });
@@ -606,9 +606,7 @@ export class EditorMetadata extends DurableObject {
     this.touch(tokenHash, policy);
     return response(this.deletionFence.query(tokenHash, deletionPath[3]));
   }
-  // §4.3 game portrait library: owner-only upload/list/delete. Delete
-  // refuses keys bound in the current draft (older revisions fall back to
-  // kao by design); bytes rechecked (mime/dimensions/sha) at every layer.
+  // 共用画像庫（B 決策）：owner 唯讀 manifest＋草稿在用標記；禁上傳／刪除。
   async #portraitUsedKeys(tokenHash, gameId) {
     if (!this.privateDrafts) { return []; }
     try {
@@ -631,11 +629,9 @@ export class EditorMetadata extends DurableObject {
     this.touch(tokenHash, policy);
     this.games.assertNotDeleting(portraitPath[1]);
     if (portraitPath[2]) {
-      const row = this.portraits.list(tokenHash, portraitPath[1]).find(entry => entry.assetId === portraitPath[2]);
-      if (!row) { fail(404, 'PORTRAIT_NOT_FOUND'); }
-      return response(row);
+      return response(this.portraits.get(portraitPath[2]));
     }
-    const list = this.portraits.list(tokenHash, portraitPath[1]);
+    const list = this.portraits.list();
     const used = await this.#portraitUsedKeys(tokenHash, portraitPath[1]);
     return response({ gameId: portraitPath[1], portraits: list.map(entry => ({ ...entry, inUse: used.includes(entry.assetId) })) });
   }
@@ -677,28 +673,6 @@ export class EditorMetadata extends DurableObject {
     fields(value, ['roadId', 'geometry', 'travelKind']);
     return response(this.topology.rebuild(tokenHash, game, value));
   }
-  async #postPortraitUpload(rt) {
-    const { request, tokenHash, user, policy, url, value, portraitPath } = rt;
-    if (url.search) { fail(422, 'PORTRAIT_QUERY'); }
-    fields(value, ['assetId', 'dataBase64']);
-    if (typeof value.dataBase64 !== 'string' || value.dataBase64.length === 0 || value.dataBase64.length > 140000) { fail(422, 'PORTRAIT_BYTES'); }
-    let bytes;
-    try { bytes = Buffer.from(value.dataBase64, 'base64'); } catch { fail(422, 'PORTRAIT_BYTES'); }
-    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'portrait');
-    this.games.assertNotDeleting(portraitPath[1]);
-    this.touch(tokenHash, policy);
-    return response(this.portraits.upload(tokenHash, portraitPath[1], value.assetId, bytes), 201);
-  }
-  async #postPortraitDelete(rt) {
-    const { request, tokenHash, user, policy, url, value, portraitPath } = rt;
-    if (url.search) { fail(422, 'PORTRAIT_QUERY'); }
-    fields(value, []);
-    this.contentKey(user.id, request.headers.get('Idempotency-Key'), 'portrait');
-    this.games.assertNotDeleting(portraitPath[1]);
-    this.touch(tokenHash, policy);
-    const used = await this.#portraitUsedKeys(tokenHash, portraitPath[1]);
-    return response(this.portraits.remove(tokenHash, portraitPath[1], portraitPath[2], used));
-  }
   async #postDraftSave(rt) {
     const { request, tokenHash, user, policy, value, draftPath } = rt;
     if (!this.privateDrafts) { fail(503, 'DRAFT_NOT_CONFIGURED'); }
@@ -715,11 +689,9 @@ export class EditorMetadata extends DurableObject {
     return response({ ...(await this.availableLibrary.install(tokenHash, staged.registryId, staged.root, request.headers.get('Idempotency-Key'))), mode: 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE', unresolvedReferences: 20 });
   }
   async #postEntryRoutes(rt) {
-    const { request, tokenHash, user, policy, url, path, value, managementPath, deletionPath, portraitPath, stagePath, copyPath, authorCopyPath, draftPath } = rt;
+    const { request, tokenHash, user, policy, url, path, value, managementPath, deletionPath, stagePath, copyPath, authorCopyPath, draftPath } = rt;
     if (managementPath) { return this.#postManagement(rt); }
     if (deletionPath) { return this.#postDeletion(rt); }
-    if (portraitPath && !portraitPath[2]) { return this.#postPortraitUpload(rt); }
-    if (portraitPath?.[2]) { return this.#postPortraitDelete(rt); }
     if (stagePath) {
       if (url.search) { fail(422, 'STAGE_QUERY'); }
       const result = await this.stageApi.write(tokenHash, stagePath, value, request.headers.get('Idempotency-Key'), request.headers.get('If-Match')); this.stageApi.assertCurrent(tokenHash, stagePath, result); return response(result, stagePath.id ? 200 : 202);
@@ -875,7 +847,7 @@ export class EditorMetadata extends DurableObject {
     const managementQuery = /^\/api\/admin\/games\/([a-f0-9-]{36}|wolong-builtin)\/management-operations\/([A-Za-z0-9_-]{16,128})$/.exec(path);
     const managementPath = /^\/api\/games\/([a-f0-9-]{36}|wolong-builtin)\/(listing|restriction\/clear)$/.exec(path);
     const deletionPath = /^\/api\/games\/([a-f0-9-]{36})\/deletion(-operations\/([A-Za-z0-9_-]{16,128}))?$/.exec(path);
-    const portraitPath = /^\/api\/games\/([a-f0-9-]{36})\/portraits(?:\/([A-Za-z]{1,32}))?$/.exec(path);
+    const portraitPath = /^\/api\/games\/([a-f0-9-]{36})\/portraits(?:\/([A-Za-z0-9]{1,32}))?$/.exec(path);
     const topologyPath = /^\/api\/games\/([a-f0-9-]{36})\/topology(?:\/(move|rebuild)(?:\/(clear))?)?$/.exec(path);
     const copyPath = /^\/api\/admin\/copies\/([A-Za-z0-9_-]{16,128})(?:\/(run|cancel))?$/.exec(path);
     const authorCopyPath = /^\/api\/games\/create\/([A-Za-z0-9_-]{16,128})(?:\/(run|cancel))?$/.exec(path);
