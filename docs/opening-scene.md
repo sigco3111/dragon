@@ -23,6 +23,7 @@
 - 首次进入当前标签页播放开场；“三国制霸之计”副标题完全显现后，才放行现有首个“是否新游戏”弹窗。门控直接绑定副标题透明度达到1（当前时间轴第22秒），替代旧15秒门控。
 - 提前跳到最后，先显示完整副标题并立即放行弹窗；弹窗已出现后跳过不影响当前弹窗/选择。
 - 弹窗保持原Canvas 640×400及现有大小、居中、金框/云纹、鼠标/右键与自定义军师输入。不随背景设计坐标缩放。
+- 自定义军师确认后，名与号保持显示并变为只读，等待区域显示“正在載入遊戲，請稍候…”及不定进度条；没有可靠总量时不伪造百分比。等待期间不能重复确认或取消已开始的装配，窗口缩放继续对齐；进入游戏或启动失败退出时清理输入层。此为Web加载表现，不改变军师初始化规则。
 - 背景重启按钮清除会话标记并整页reload；即使已在弹窗/加载中也从头开始。音乐按钮只控制开场音乐。
 - 普通刷新、结束游戏后的reload进入终场静态人物、不自动播放音乐。游戏内读档经现有 `returnToTitle(1)` 进入终场并显示存档弹窗；取消后仍沿用既有回退流程。
 - 网页无法可靠区分普通reload与Ctrl+F5。用户接受 `sessionStorage['wolong.intro.seen.v1']` 替代：同一标签页刷新不重播，明确“重新开始”按钮才重置。浏览器复制标签页可能继承sessionStorage；存储不可用时降级为首次访问行为。
@@ -58,6 +59,7 @@
 
 - `node tools/verify_opening_loading_browser.mjs`：受控分段下载、超过4秒保持起点、缓存写入门控、缓存完整SHA-256、真实严格自动播放策略与点击/键盘启动、缓存命中时禁止音乐网络、普通刷新、未知总长、缓存权限/配额失败、减少动画、下载失败及Blob销毁。
 - `node tools/verify_opening_browser.mjs`：临时端口与全新浏览器上下文，副标题完全显现/22秒门控、旧15秒仍无弹窗、早/晚跳过、音乐隔离、自定义军师、进入游戏、隔离存档往返、刷新/重启，以及9组窗口尺寸下的左上覆盖、不缩小、无滚动条、弹窗原尺寸居中。
+- `node tools/verify_startmenu_loading_browser.mjs`：全新隔离浏览器，暂停真实App资源加载边界，核确认后名号只读保留、不定进度、重复点击／右键不重启、缩放及真实进入游戏后的清理；不操作用户存档。
 - `node tools/verify_title_deferred_map.mjs`、`node tools/verify_start_flow.mjs`、`node tools/verify_startmenu_empty_slot.mjs`。
 - `node tools/verify_music_runtime.mjs`、`node tools/verify_music_browser.mjs`。
 - `node tools/verify_standalone_web_browser.mjs`：复制静态发行目录、延迟世界加载与单实例；包括第二页阻塞、持锁时重载、关闭持锁页后接管，所有页面均观察错误。

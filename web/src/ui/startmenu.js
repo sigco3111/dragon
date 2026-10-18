@@ -108,6 +108,8 @@ export class StartMenu {
         initialAction,
       );
     } finally {
+      this._advisorLoadingCleanup?.();
+      this._advisorLoadingCleanup = null;
       this.publicCatalog.node.hidden = true;
       this.cv.style.display = "none";
       for (const el of hidden) el.style.display = "";
@@ -348,6 +350,7 @@ export class StartMenu {
     let pt = cur.portrait ?? 145; // 預設頭像 (0x5221 預設 145 號儒士頭像)
     let errorMsg = null;
     let hoverAct = null;
+    let isDone = false;
 
     // 字符等效寬度計算: 全角字符 (漢字、日文假名、韓文諺文等) 佔 2, 半角英數佔 1
     const clampVisualWidth = (str, maxUnits = 6) => {
@@ -411,7 +414,20 @@ export class StartMenu {
 
     const nameInput = createInput("最多3字");
     const haoInput = createInput("最多3字");
-    overlay.append(nameInput, haoInput);
+    const loading = document.createElement("div");
+    loading.hidden = true;
+    loading.setAttribute("role", "status");
+    Object.assign(loading.style, {
+      position: "absolute", background: "#000", color: "#ecd088",
+      textAlign: "center", boxSizing: "border-box",
+    });
+    const loadingText = document.createElement("div");
+    loadingText.textContent = "正在載入遊戲，請稍候…";
+    const progress = document.createElement("progress");
+    progress.setAttribute("aria-label", "遊戲載入中");
+    progress.style.width = "90%"; // Indeterminate: no invented percentage.
+    loading.append(loadingText, progress);
+    overlay.append(nameInput, haoInput, loading);
     document.body.append(overlay);
 
     const syncPositions = () => {
@@ -433,11 +449,13 @@ export class StartMenu {
       };
       positionInput(nameInput, px + 144, py + 48, 84, 26);
       positionInput(haoInput, px + 240, py + 48, 84, 26);
+      positionInput(loading, px + 16, py + 100, 304, 68);
+      loading.style.lineHeight = `${28 * scaleY}px`;
     };
 
     window.addEventListener("resize", syncPositions);
     syncPositions();
-    setTimeout(() => nameInput.focus(), 50);
+    setTimeout(() => { if (!isDone) nameInput.focus(); }, 50);
 
     // 交互區域定義
     const navBtns = [
@@ -451,6 +469,7 @@ export class StartMenu {
 
     const draw = async () => {
       const img = await this._kao(pt);
+      if (isDone) return; // A late portrait must not repaint after submission/exit.
       const ctx = this.ctx;
       ctx.clearRect(0, 0, 640, 400);
 
@@ -509,16 +528,17 @@ export class StartMenu {
     };
 
     return new Promise((resolve) => {
-      let isDone = false;
-      const cleanup = () => {
-        if (isDone) return;
-        isDone = true;
+      const removeOverlay = () => {
         window.removeEventListener("resize", syncPositions);
         overlay.remove();
+      };
+      const cleanup = () => {
+        isDone = true;
         this._unbind();
       };
 
       const submit = () => {
+        if (isDone) return;
         const nameVal = nameInput.value.trim();
         const haoVal = haoInput.value.trim();
         if (!nameVal) {
@@ -533,7 +553,15 @@ export class StartMenu {
           haoInput.focus();
           return;
         }
+        nameInput.value = nameVal;
+        haoInput.value = haoVal;
+        nameInput.readOnly = haoInput.readOnly = true;
+        nameInput.blur(); haoInput.blur();
+        nameInput.style.pointerEvents = haoInput.style.pointerEvents = "none";
+        loading.hidden = false;
+        overlay.setAttribute("aria-busy", "true");
         cleanup();
+        this._advisorLoadingCleanup = removeOverlay;
         resolve({
           name: nameVal,
           hao: haoVal,
@@ -542,7 +570,9 @@ export class StartMenu {
       };
 
       const cancel = () => {
+        if (isDone) return;
         cleanup();
+        removeOverlay();
         resolve(undefined);
       };
 
