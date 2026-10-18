@@ -1,6 +1,6 @@
 // Public title presentation only. The reader owns validation; this view never
 // admits a session, reads storage, navigates, or turns a missing row into deletion.
-const BUILTIN = Object.freeze({ kind: 'builtin', gameId: 'wolong-builtin', name: '臥龍傳·制霸天下' });
+const BUILTIN = Object.freeze({ kind: 'builtin', gameId: 'wolong-builtin', name: '卧龙传·三国制霸之计（内置）' });
 export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   if (typeof selectionVisible !== 'boolean' || !root?.ownerDocument || typeof root.append !== 'function' || typeof reader?.registry !== 'function')
     throw new TypeError('catalog root and validated player reader required');
@@ -20,7 +20,7 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   function options() {
     select.replaceChildren();
     for (const entry of [BUILTIN, ...entries.values()]) {
-      const option = make('option', entry.kind === 'builtin' ? entry.name : `${entry.name} ${entry.ordinal}`);
+      const option = make('option', entry.kind === 'builtin' ? entry.name : `${entry.name}（自建） ${entry.ordinal}`);
       option.value = entry.gameId; select.append(option);
     }
     select.value = entries.has(wanted) ? wanted : BUILTIN.gameId;
