@@ -2,7 +2,7 @@
 
 范围：用户要求根据当前仓库结构排查 GitHub 推送后 Workers 部署失败，并回看相对旧游戏的改动。基线为旧 GitHub main `c9ce065`，本次发布为 `42f0f365825484ae9a1f3c14370d444562615596`。本批只修已复现的静态打包边界；未提交、推送、修改云配置、重部署、读写真实存档或写入 R2。持续部署说明维护于[deployment.md](deployment.md)，本页记录限定批次证据。
 
-> 后继说明：本文资源准入缺口描述的是 WORKERS-DEPLOY-1 当时状态。用户随后选择A，已补本地签名／固定资源角色通道、退役泛 key 读取；完整前端／持久分发／云接线仍未完成，现状统一见[R2接线](r2-player-connection.md)。本页历史云证据没有重新刷新。
+> 后继说明：本文资源准入缺口描述的是 WORKERS-DEPLOY-1 当时状态。用户随后选择A，已补本地签名／固定资源角色通道、退役泛 key 读取；完整前端／持久分发／云接线仍未完成，现状统一见[R2接线](r2-player-connection.md)。以下§1–5仍为历史证据；后继自动部署设置与真实失败日志复核见§6。
 
 ## 1. 实际部署状态与证据边界
 
@@ -56,3 +56,14 @@ Error: Exceeds 25 MiB: content/builtin/compiled/map-2-19e2b03991ee4cf77c58ba44ef
 1. 取得 Cloudflare 该次真实失败日志，核控制台的仓库根、分支与部署命令；未据本地干跑声称自动部署已恢复。
 2. 后续提交、推送需明确授权；通过现有 GitHub→Workers 链路重新核构建记录与线上提交，不用手动部署冒自动部署验证。
 3. 若要求此次上线同时支持 R2 自建游戏，须完成客户端接口／URL映射、公开读取Worker及binding、资源准入／状态门、正式产物闭包与分发恢复，并实测独立存档和下架／删除边界。不能直接部署当前 `reader/worker.js` 或把编辑器私有后台暴露到玩家域。
+
+## 6. 后继自动部署配置复核（WORKERS-AUTO-1）
+
+用户要求优先保证游戏端Workers自动部署。本批不扩大游戏功能、不新增辅助测试或部署框架。
+
+- GitHub实时查询仍为`42f0f365`的同一个失败check。本地检查点`d2acb08`尚未推送。现有Wrangler OAuth只读API返回401／10000；没有提升权限，改用用户已登录的Cloudflare控制台。
+- **已取得真实云日志**：上述构建使用Wrangler **4.151.1**，实际执行`[custom build] node tools/prepare_deploy.mjs`，明确因`map-2-19e2b039…/game-source.json`超过25 MiB失败。由此闭合§1当时未取得云日志的缺口；不是认证、克隆失败，也不能归因为未执行钩子。
+- 控制台原设置：GitHub仓库正确、`main`、根`/`、构建命令空、部署`npx wrangler@4 deploy`。仅改为显式构建`node tools/prepare_deploy.mjs`及部署`npx wrangler@4.96.0 deploy --config wrangler.jsonc`；保存后重新导航设置页，读回两项新值及根目录。没有点击重试／新部署，没有改令牌权限、域名或生产绑定。
+- 将当前工作区的1552个Git跟踪输入（明确限定web／reader／vps及根配置、打包器）复制到自有临时目录，隔离HOME／APPDATA和临时路径，不读凭据、不碰共享dist。已安装Wrangler4.96.0的普通干跑及`WORKERS_CI=1`下显式打包再干跑均成功。发行清单1391项／约150.07 MiB，Worker约43.99 KiB；输出明确包含R2／ASSETS绑定。仅本地模拟CI，**不是Cloudflare远端构建成功**。
+- 静态清单SHA `dd811271f906a67b89d3678d810bb41b8c569881fe02d5f9a4ba067a2f836f3c`；证据在`.dragon-analysis/release-readiness/workers-auto-r1/`。本次没有改产品代码或删除运行文件，没有安装依赖。
+- 自动部署最终验收仍须以符合发布条件的GitHub提交触发新的成功check、部署SHA和实际站点检查为准；目前生产仍为旧静态Worker，不能把保存构建配置或本地干跑描述为新玩家端已上线。维护中的执行命令见[部署指南](deployment.md#workers-static-assets本站当前链路)。

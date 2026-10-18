@@ -4,7 +4,7 @@
 
 当前生产项目是 **Workers Static Assets `dragon`**，由 GitHub `main` 触发自动部署；不是 Pages，也不是编辑器后台 `dragon-editor`。部署到原域名根目录，保留目录结构和文件大小写、HTTPS 与 IndexedDB origin。不要上传仓库根目录、原版程序、真实存档或本机配置。
 
-内置游戏仍从静态发行包读取编译后的运行数据，不依赖编辑器服务或 R2 成功；标题新增的目录／公告请求失败时降级为内置游戏。自建游戏的目录、正式包及 R2 取数则需要独立的只读服务，**不能据内置能运行声称新游戏分发已接通**。当前客户端旧 `/api/*` 接口与 `reader/worker.js` 的 `/play-api/v1/*` 尚未完整对接。后继用户选择A已补签名固定资源门并退役泛 key 读取，但持久分发、完整资源闭包和前端仍未闭合，不能直接改为生产 Worker 入口。现状见[R2接线](r2-player-connection.md)，静态部署批次证据见[部署审计](workers-deployment-audit.md)。
+内置游戏仍从静态发行包读取编译后的运行数据，不依赖编辑器服务或 R2 成功；标题新增的目录／公告请求失败时降级为内置游戏。自建游戏的目录、正式包及 R2 取数则需要独立的只读服务，**不能据内置能运行声称新游戏分发已接通**。当前仓库已通过`reader/site.js`接入`/play-api/v1/*`、程序资源与正式入口，旧标题接口已退役；不等于这些改动已上线。最新产品决定为新版上线即作废旧版，旧选择A已撤销。完整新政策联合验证、旧数据回收及生产配置仍须完成。现状见[R2接线](r2-player-connection.md)，静态部署批次证据见[部署审计](workers-deployment-audit.md)。
 
 后继用户确认编辑器／私有后端部署VPS，正式自建游戏数据分发至Cloudflare；内置静态部署及游戏origin保持。自建数据目录／固定版本／资产增加只读发布取数能力，不意味着把编辑器、图片解码或玩家存档部署到Cloudflare。具体[适配／同步／读取端方案](editor-vps-cloudflare-plan.md)的后继决定见[开发待办 H 节](editor-dev-todo.md#h-用户已决策2026-10-14)：`dragon` 私有 R2 桶及共用画像首传已有记录，publisher／reader 已有本地原型，但生产接线与 V5 尚未闭合。不把本页静态上线检查当作 VPS／R2 分发链验收。
 
@@ -31,7 +31,7 @@
 
 ## Workers Static Assets（本站当前链路）
 
-使用 `wrangler.jsonc` 纯静态资源配置，不部署游戏后端。默认项目名是 `dragon`；首次发布前确认账号下没有会被覆盖的同名项目。
+根`wrangler.jsonc`发布`reader/site.js`只读Worker和`dist/`静态资源，绑定`ASSETS`及私有R2桶`dragon`；不部署编辑器后端。现有生产项目名为`dragon`，保持既有域名及浏览器存档origin。
 
 ```bash
 npx wrangler@4 login
@@ -42,9 +42,15 @@ npx wrangler@4 deploy
 
 Wrangler 自动执行配置中的复制命令。账号有多个时，用本机环境变量 `CLOUDFLARE_ACCOUNT_ID` 指定正确账号；不要在仓库写凭据。
 
-Workers Git 自动部署设置应明确为：GitHub `tianyi092-jcza/dragon`、生产分支 `main`、根目录为仓库根（不是 `web/`、`server/` 或 `reader/`）；部署命令建议显式指定 `npx wrangler@4 deploy --config wrangler.jsonc`。该命令会执行配置里的 `node tools/prepare_deploy.mjs`，静态目录为 `dist/`；控制台无需再重复指定复制命令。Node.js 推荐22或更新的受支持版本。
+Workers Git 自动部署设置：GitHub `tianyi092-jcza/dragon`、生产分支`main`、仓库根目录`/`（不是`web/`、`server/`或`reader/`）。本次已在真实控制台保存并刷新核实：
 
-根配置仅发布 `web/` 的静态发行包；`server/wrangler.jsonc` 是编辑器开发后端，`vps/` 是另一部署目标，`reader/worker.js` 当前只是尚未生产准入的读取原型。不要让自动发现或控制台根目录选到它们，不要为了本次静态打包失败添加编辑器 DO／私有桶绑定。
+- 构建命令：`node tools/prepare_deploy.mjs`
+- 部署命令：`npx wrangler@4.96.0 deploy --config wrangler.jsonc`
+- 输出由根配置指定为`dist/`；保留现有构建令牌及监视路径，不另加GitHub Actions或并行部署链。
+
+Wrangler版本固定为本次实际验证的版本，升级后应先干跑。Node.js使用22或更新的受支持版本。[Workers Builds官方配置说明](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)不保证执行Wrangler自定义构建钩子，因此显式配置构建步骤；本次取得的旧云日志及本地Wrangler仍实际执行了钩子，可能重复打包，但不依赖该隐式行为。
+
+`server/wrangler.jsonc`是编辑器开发后端，`vps/`是另一部署目标，不能让自动发现或控制台根目录选到它们。根配置只含玩家只读绑定，不添加编辑器DO／私有草稿桶。`PLAYER_ADMISSION_KEYS`属于运行时secret，不提交Git，也不能用仅构建期可见的变量代替；程序归档登记及VPS分发还须另行完成。
 
 控制台实际设置、构建日志及部署提交 SHA 仍须逐次核验。`node --test tools/verify_prepare_deploy.mjs` 可做无网络打包回归；`wrangler deploy --dry-run` 只验本地配置与发行包，不证明云端令牌、Git 集成或 R2 运行链成功。Pages 与 Workers 二选一即可，不必为同一站点同时创建两套生产项目。
 
@@ -77,11 +83,10 @@ Workers Git 自动部署设置应明确为：GitHub `tianyi092-jcza/dragon`、�
 
 ## 双仓库同步
 
-保留 Gitea `origin`，GitHub 使用独立远程名 `github`。两次推送相互独立，任一失败都必须单独报告；不要用强制推送覆盖远端新增提交。
+保留 Gitea `origin`，GitHub 使用独立远程名 `github`。本站自动部署仅监听GitHub，本轮不得推Gitea；不要用强制推送覆盖远端新增提交。
 
 ```bash
 git remote -v
-git push origin main
 git push github main
 ```
 

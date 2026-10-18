@@ -49,7 +49,7 @@ try{
  assert.equal(await page.evaluate(()=>window.__restore.gets.includes(10)),false);checks++;
  await page.locator('[data-unavailable-slot="10"]').hover();await page.locator('[data-unavailable-slot="10"]').click();
  assert.equal(await page.evaluate(()=>window.__restore.settled||window.__restore.gets.includes(10)),false);assert.deepEqual(await page.evaluate(()=>window.__restore.before()),before);checks++;
- await root.getByRole('button',{name:'不可用存檔說明',exact:true}).click();assert.match(await root.textContent(),/不會刪除任何存檔/);
+ await root.getByRole('button',{name:'不可用存檔說明',exact:true}).click();assert.match(await root.textContent(),/將保留且不載入/);
  assert.equal(await root.locator('[data-save-slot]').count(),0);await root.click({button:'right'});
  assert.equal(await row.count(),1);assert.deepEqual(await page.evaluate(()=>window.__restore.before()),before);checks++;
  await page.screenshot({path:join(artifact,'choices.png')});
@@ -81,9 +81,14 @@ try{
  await reset();await mount();await root.focus();await page.keyboard.press('Shift+Tab');assert.equal(await page.evaluate(()=>document.activeElement.textContent),'重新檢查');
  await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.dataset.saveSlot),'0');checks++;
  await root.click({button:'right'});await page.waitForFunction(()=>window.__restore.settled);assert.equal(await page.evaluate(()=>window.__restore.chosen),null);checks++;
+ await reset();await page.evaluate(()=>{window.__restore.advance();window.__restore.statusFailure=true;window.__restore.mount();});
+ await root.getByRole('button',{name:'重試',exact:true}).waitFor();assert.equal((await page.evaluate(()=>window.__restore.before())).length,1);checks++;
+ await page.evaluate(()=>{window.__restore.statusFailure=false;});await root.getByRole('button',{name:'重試',exact:true}).click();
+ await root.getByRole('button',{name:'重新檢查',exact:true}).waitFor();assert.match(await root.textContent(),/舊版存檔不能載入，已自動清除1個/);
+ assert.deepEqual(await page.evaluate(()=>window.__restore.before()),[]);assert.equal(await page.locator('[data-save-slot]').count(),0);checks++;
  assert.deepEqual(errors,[]);assert.deepEqual(failed,[]);assert.deepEqual(forbidden,[]);assert.ok(await page.evaluate(()=>window.__ownedDatabases.every(name=>name==='owned-formal-app')));checks++;
  for(const path of ['web/src/player/playerrestore.js','web/src/player/playerrepository.js'])sources[path]=sha(await readFile(path));
- await writeFile(join(artifact,'result.json'),JSON.stringify({checks,largeOrdinal,invalid,transferred,errors,failed,forbidden,sources,screenshotSHA:sha(await readFile(join(artifact,'choices.png'))),scope:'Actual complete Web snapshots/native owned IDB/real preflight and chooser; controlled reader ports, no signed admission, production bootstrap or deletion authorization.'},null,2));
+ await writeFile(join(artifact,'result.json'),JSON.stringify({checks,largeOrdinal,invalid,transferred,errors,failed,forbidden,sources,screenshotSHA:sha(await readFile(join(artifact,'choices.png'))),scope:'Actual complete Web snapshots/native owned IDB/real preflight and chooser; controlled reader ports, automatic old-save cleanup under controlled current-version status; no signed admission or production bootstrap.'},null,2));
  process.stdout.write(JSON.stringify({checks,artifact:relative('.',artifact)})+'\n');
 }catch(error){await writeFile(join(artifact,'failure.json'),JSON.stringify({error:String(error),errors,failed,forbidden},null,2));throw error;}
 finally{await browser?.close();await server.close();}

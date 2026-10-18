@@ -1,6 +1,6 @@
 // Formal-session presentation/lifetime owner, not a rule clock or Trial gate.
 // Navigation is an explicit host port; no storage or automatic re-admission.
-import { validateIdentity, isChapterId, isDigest } from './runtimecontract.js';
+import { validateIdentity, isChapterId, isDigest, isId, isOrdinal } from './runtimecontract.js';
 export function createPlayerSessionHost({ session, pack, root, navigate }) {
   if (typeof session?.status !== 'function' || typeof session?.state !== 'function' ||
       typeof session?.close !== 'function' || typeof pack?.close !== 'function' ||
@@ -23,25 +23,35 @@ export function createPlayerSessionHost({ session, pack, root, navigate }) {
   }
   async function checkStatus() {
     if (retired) return Object.freeze({ kind: 'retired' });
+    if (updated) return Object.freeze({ kind: 'updated' });
     if (pending) return pending;
     const work = (async () => {
       try {
         const latest = await session.status();
         if (retired) return Object.freeze({ kind: 'retired' });
         if (latest.gameId !== gameId || typeof latest.listed !== 'boolean') throw new TypeError('status game mismatch');
-        if (!latest.listed) return Object.freeze({ kind: 'unlisted', updated });
-        if (!/^1\.(0|[1-9][0-9]*)$/.test(latest.ordinal ?? '')) throw new TypeError('status ordinal missing');
-        validateIdentity(latest);
-        const newer = BigInt(latest.ordinal.slice(2)) > BigInt(ordinal.slice(2));
-        if (newer && latest.releaseId !== releaseId) {
+        const current = latest.listed ? latest : latest.currentRelease;
+        if (!current && !latest.listed) return Object.freeze({ kind: 'unlisted', updated });
+        if (!isOrdinal(current.ordinal) || !isId(current.releaseId)) throw new TypeError('status identity missing');
+        if (latest.listed) validateIdentity(latest);
+        const newer = BigInt(current.ordinal.slice(2)) > BigInt(ordinal.slice(2));
+        if (newer && current.releaseId !== releaseId) {
           updated = true; warning.hidden = false;
-          warning.textContent = '當前對局仍為舊版本，保存後將無法在新版讀取。';
+          warning.textContent = '遊戲版本已更新，舊版本已作廢，不能繼續或保存。';
+          // Retire ownership before returning to App's save/status guard. This
+          // never installs the new release into the old Scenario.
+          try { dispose(); } catch { /* onExit retries owned disposal. */ }
           return Object.freeze({ kind: 'updated' });
         }
-        if (latest.releaseId !== releaseId || latest.ordinal !== ordinal) throw new TypeError('status identity conflict');
-        return Object.freeze({ kind: 'current', updated });
+        if (current.releaseId !== releaseId || current.ordinal !== ordinal) throw new TypeError('status identity conflict');
+        return Object.freeze({ kind: latest.listed ? 'current' : 'unlisted', updated });
       } catch {
         if (retired) return Object.freeze({ kind: 'retired' });
+        if (session.state() === 'outdated') {
+          updated = true;
+          try { dispose(); } catch { /* onExit retries owned disposal. */ }
+          return Object.freeze({ kind: 'updated' });
+        }
         // Only the actual reader's terminal state proves deletion. A network
         // failure, missing resource or arbitrary status/error string does not.
         return Object.freeze({ kind: session.state() === 'deleted' ? 'deleted' : 'unavailable' });
@@ -54,8 +64,10 @@ export function createPlayerSessionHost({ session, pack, root, navigate }) {
     if (exit) return exit;
     retired = true;
     const deleted = session.state() === 'deleted';
+    if (session.state() === 'outdated') updated = true;
     let exitReason = 'unavailable';
     if (deleted) exitReason = 'deleted';
+    else if (updated) exitReason = 'updated';
     else if (reason === 'title') exitReason = 'title';
     const result = Object.freeze({ reason: exitReason, initialAction, gameId });
     // Construct the promise before any caller-controlled resource/navigation
@@ -66,6 +78,7 @@ export function createPlayerSessionHost({ session, pack, root, navigate }) {
     const confirm = document.createElement('button'), failure = document.createElement('p');
     dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', '遊戲結束');
     message.textContent = deleted ? '遊戲已刪除。確認後返回初始載入頁面，本機存檔保留。' : '遊戲無法繼續。確認後返回初始載入頁面，本機存檔保留。';
+    if (updated && !deleted) message.textContent = '遊戲版本已更新，舊版本已作廢，不能繼續或保存。確認後返回初始載入頁面。';
     confirm.type = 'button'; confirm.textContent = '確認'; failure.setAttribute('role', 'status');
     Object.assign(dialog.style, { position: 'fixed', inset: '25% 15%', zIndex: '10003', background: '#f0d090', color: '#201800', border: '4px solid #806020', padding: '24px' });
     dialog.append(message, confirm, failure);
@@ -90,7 +103,7 @@ export function createPlayerSessionHost({ session, pack, root, navigate }) {
     dialog.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); });
     for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'wheel']) dialog.addEventListener(type, event => event.stopPropagation());
     dialog.addEventListener('keydown', event => { event.stopPropagation(); if (event.key === 'Tab') { event.preventDefault(); confirm.focus(); } });
-    try { dispose(); } catch { /* Retry resource disposal on explicit confirmation. */ }
+    try { if (!disposed) dispose(); } catch { /* Retry resource disposal on explicit confirmation. */ }
     warning.hidden = true;
     if (result.reason === 'title') void finish();
     else { host.append(dialog); confirm.focus(); }

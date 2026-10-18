@@ -18,6 +18,6 @@ export function publication(version = 0, gameId = GAME, chapterIds = ['c1', 'c2'
   const built = buildRuntimeIndex(pin, release, pack, chapters, [asset]);
   return { runtimeVersion: 1, files: built.files, dependencies: built.dependencies, directory: [{ ...pin, releaseId }], releases: [{ ...release, runtime: built.reference }], gameStates: [{ gameId, listed: true }], announcements: [{ gameId, ordinal, name: pin.name, creatorAccount: 'fixture-author', publishedAt: pin.publishedAt, firstOnlineAt: pin.publishedAt }], gameIds: [gameId] };
 }
-export function unlisted(deleted = false) {
-  return { runtimeVersion: 1, files: [], dependencies: [], directory: [], releases: [], gameStates: [{ gameId: GAME, listed: false, ...(deleted ? { deleted: true } : {}) }], announcements: [], gameIds: [] };
+export function unlisted(deleted = false, current = null) {
+  return { runtimeVersion: 1, files: [], dependencies: [], directory: [], releases: [], gameStates: [{ gameId: GAME, listed: false, ...(deleted ? { deleted: true } : {}), ...(!deleted && current ? { currentRelease: { releaseId: current.releaseId, ordinal: current.ordinal } } : {}) }], announcements: [], gameIds: [] };
 }

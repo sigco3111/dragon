@@ -1,5 +1,6 @@
 // Fixed admitted environment -> existing opt-in game save store. No implicit
-// IndexedDB, migration, latest-version inference, deletion permission or App UI.
+// IndexedDB, migration, latest-version inference or App UI. A successful formal
+// save atomically discards this game's older release records (current policy).
 import { validateIdentity, isChapterId, isDigest } from './runtimecontract.js';
 import { saveInput, checkSaveToken, saveReleaseOrdinalFromVersion } from '../core/gamesavecodec.js';
 import { encodeSaveFile } from '../core/saveexchange.js';
@@ -51,7 +52,7 @@ export function createPlayerSaveStore({ environment, store }) {
       const token = expected === null ? null : checkSaveToken(expected, identity.gameId);
       if (token && token.slot !== input.slot) throw new TypeError('formal save token slot mismatch');
       await validate(input);
-      const saved = await store.put(input, token);
+      const saved = await store.put(input, token, { discardOlderReleases: true });
       // Once dispatched, the local transaction may commit even if the session
       // retires. Return its commit receipt, never claim the old record survived.
       // The owner must reject late live installation; this adapter installs none.

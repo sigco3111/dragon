@@ -27,14 +27,14 @@ try{
  const first=await client.admit({gameId:GAME,ordinal:'1.0',chapterId:chapter});
  assert.equal(parse((await first.read('manifest')).bytes).identity.sourceDigest,first.identity.sourceDigest);
  assert.equal(parse((await first.read('chapter:'+chapter)).bytes).fixture,'0:'+chapter);assert.deepEqual(Buffer.from((await first.read('asset:p0001')).bytes),TEMPLATE_PORTRAIT);checks++;
- await commit(v2);assert.equal((await first.status()).ordinal,'1.1');assert.equal(first.identity.ordinal,'1.0');assert.equal(parse((await first.read('chapter:'+chapter)).bytes).fixture,'0:'+chapter);
+ await commit(v2);assert.equal((await first.status()).ordinal,'1.1');assert.equal(first.identity.ordinal,'1.0');await assert.rejects(()=>first.read('chapter:'+chapter),e=>e.code==='RELEASE_CHANGED'&&e.status===409);assert.equal(first.state(),'outdated');
  await assert.rejects(()=>client.admit({gameId:GAME,ordinal:'1.0',chapterId:chapter}),e=>e.code==='RELEASE_CHANGED');checks++;
  const second=await client.admit({gameId:GAME,ordinal:'1.1',chapterId:chapter});assert.equal(parse((await second.read('chapter:'+chapter)).bytes).fixture,'1:'+chapter);checks++;
- await commit(unlisted());assert.equal((await first.status()).listed,false);assert.equal(parse((await first.read('chapter:'+chapter)).bytes).fixture,'0:'+chapter);
+ await commit(unlisted(false,v2.directory[0]));assert.deepEqual((await second.status()).currentRelease,{releaseId:'r1',ordinal:'1.1'});assert.equal(parse((await second.read('chapter:'+chapter)).bytes).fixture,'1:'+chapter);
  await assert.rejects(()=>client.admit({gameId:GAME,ordinal:'1.1',chapterId:chapter}),e=>e.code==='GAME_NOT_LISTED');assert.equal(admissions,4);checks++;
- const oldFile=v1.files.find(row=>row.key.endsWith('/chapters/'+chapter+'.json'));await bucket.delete(oldFile.key);
- await assert.rejects(()=>first.read('chapter:'+chapter),e=>e.code==='RUNTIME_UNAVAILABLE'&&e.status===503);assert.equal(first.state(),'active');await bucket.put(oldFile.key,oldFile.bytes,{httpMetadata:{contentType:oldFile.contentType}});assert.equal(parse((await first.read('chapter:'+chapter)).bytes).fixture,'0:'+chapter);checks++;
- await commit(unlisted(true));await assert.rejects(()=>first.read('manifest'),e=>e.code==='GAME_DELETED'&&e.status===410);assert.equal(first.state(),'deleted');const count=files;await assert.rejects(()=>first.read('manifest'),e=>e.code==='GAME_DELETED');assert.equal(files,count);assert.ok(await bucket.get(oldFile.key),'deletion fact does not prove physical purge');checks++;
- await assert.rejects(second.status,e=>e.code==='GAME_DELETED');assert.equal(second.state(),'deleted');assert.equal(admissions,4);assert.equal(outbound,0);checks++;
+ const oldFile=v2.files.find(row=>row.key.endsWith('/chapters/'+chapter+'.json'));await bucket.delete(oldFile.key);
+ await assert.rejects(()=>second.read('chapter:'+chapter),e=>e.code==='RUNTIME_UNAVAILABLE'&&e.status===503);assert.equal(second.state(),'active');await bucket.put(oldFile.key,oldFile.bytes,{httpMetadata:{contentType:oldFile.contentType}});assert.equal(parse((await second.read('chapter:'+chapter)).bytes).fixture,'1:'+chapter);checks++;
+ await commit(unlisted(true));await assert.rejects(()=>second.read('manifest'),e=>e.code==='GAME_DELETED'&&e.status===410);assert.equal(second.state(),'deleted');const count=files;await assert.rejects(()=>second.read('manifest'),e=>e.code==='GAME_DELETED');assert.equal(files,count);assert.ok(await bucket.get(oldFile.key),'deletion fact does not prove physical purge');checks++;
+ await assert.rejects(first.status,e=>e.code==='RELEASE_CHANGED');assert.equal(first.state(),'outdated');assert.equal(admissions,4);assert.equal(outbound,0);checks++;
  process.stdout.write(JSON.stringify({checks,admissions,files,outbound,scope:'Real owned workerd/R2; client runs in Node, opaque fixtures, no engine/browser/save proof'})+'\n');
 }finally{await mf?.dispose();rmSync(own,{recursive:true,force:true});}

@@ -67,23 +67,40 @@ export function createGameSaveStore({ gameId, databaseName, getIndexedDB, create
     const catalog = await transaction("readonly", (store, request, done) => request(store.get(catalogKey), value => done(saveCatalog(value, gameId))));
     return catalog.rows; // Summary only; not a validity/loadability certificate.
   }
-  async function put(value, expected = null) {
+  async function put(value, expected = null, { discardOlderReleases = false } = {}) {
+    if (typeof discardOlderReleases !== "boolean") throw new TypeError("explicit save cleanup policy required");
     const input = saveInput(value, gameId); // Capture caller-owned snapshot and expectation synchronously.
     const captured = expected === null ? null : checkSaveToken(expected, gameId);
     if (captured !== null && captured.slot !== input.slot) throw new TypeError("save token slot mismatch");
     if (captured !== null) await verifiedToken(captured);
     const before = await transaction("readonly", (store, request, done) => readPair(store, request, input.slot, done));
     const catalog = saveCatalog(before.catalog, gameId); compare(catalog, before.pair, input.slot, captured);
+    const obsolete = [];
+    if (discardOlderReleases) {
+      const ordinal = BigInt(input.releaseOrdinal);
+      if (catalog.rows.some(row => BigInt(row.releaseOrdinal) > ordinal || row.releaseId === input.releaseId && BigInt(row.releaseOrdinal) !== ordinal)) throw new GameSaveConflictError();
+      for (const row of catalog.rows.filter(row => row.slot !== input.slot && BigInt(row.releaseOrdinal) < ordinal)) {
+        const saved = await get(row.slot);
+        if (!saved || saveJSON(saveSummary(saved.record, saved.token.bodyDigest)) !== saveJSON(row)) throw new GameSaveConflictError();
+        obsolete.push(saved.token);
+      }
+    }
     if (catalog.nextWriteRevision === Number.MAX_SAFE_INTEGER) throw new RangeError("save revision exhausted");
     const record = { format: 3, ...input, recordId: captured?.recordId ?? saveIdentity(createRecordId()), writeRevision: catalog.nextWriteRevision };
     const bodyText = saveJSON(record), bodyDigest = await hashSaveText(bodyText), row = saveSummary(record, bodyDigest);
     const nextCatalog = { format: 3, gameId, nextWriteRevision: catalog.nextWriteRevision + 1,
-      rows: [...catalog.rows.filter(value => value.slot !== input.slot), row].sort((a, b) => a.slot - b.slot) };
+      rows: [...catalog.rows.filter(value => value.slot !== input.slot && !obsolete.some(token => token.slot === value.slot)), row].sort((a, b) => a.slot - b.slot) };
     saveCatalog(nextCatalog, gameId);
     return transaction("readwrite", (store, request, done) => readPair(store, request, input.slot, raw => {
       const current = saveCatalog(raw.catalog, gameId);
       if (saveJSON(current) !== saveJSON(catalog)) throw new GameSaveConflictError();
       compare(current, raw.pair, input.slot, captured);
+      // Validate each old body again inside this same transaction. Any failure
+      // aborts both the new save and every deletion, including later requests.
+      for (const token of obsolete) request(store.get(gameSaveKeys(gameId, token.slot).record), pair => {
+        compare(current, pair, token.slot, token);
+        request(store.delete(gameSaveKeys(gameId, token.slot).record));
+      });
       request(store.put({ bodyText, bodyDigest }, gameSaveKeys(gameId, input.slot).record)); request(store.put(nextCatalog, catalogKey));
       done({ record, token: saveToken(record, bodyText, bodyDigest) });
     }));

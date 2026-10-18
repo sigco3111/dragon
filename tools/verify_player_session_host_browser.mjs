@@ -49,10 +49,22 @@ try{
   assert.deepEqual(await page.evaluate(delta=>{const c=window.__host;c.throwStatus=false;c.reply={...c.identity,listed:true,...delta};return c.h.checkStatus();},delta),{kind:'unavailable'});
  }checks++;
  const updated=await page.evaluate(()=>{const c=window.__host;c.reply={...c.identity,listed:true,ordinal:'1.10000000000000000000000',releaseId:'cccccccc-cccc-4ccc-accc-cccccccccccc'};return c.h.checkStatus();});
- assert.deepEqual(updated,{kind:'updated'});assert.match(await page.getByRole('status').textContent(),/舊版本/);assert.equal(await page.evaluate(()=>window.__host.state),'active');checks++;
- assert.deepEqual(await page.evaluate(()=>{const c=window.__host;c.reply={gameId:c.identity.gameId,listed:false};return c.h.checkStatus();}),{kind:'unlisted',updated:true});
+ assert.deepEqual(updated,{kind:'updated'});assert.match(await page.getByRole('status').textContent(),/舊版本/);assert.equal(await page.evaluate(()=>window.__host.state),'closed');assert.equal(await page.evaluate(()=>window.__host.packCalls),1);checks++;
+ assert.deepEqual(await page.evaluate(()=>{const c=window.__host;c.reply={gameId:c.identity.gameId,listed:false};return c.h.checkStatus();}),{kind:'updated'});
  assert.equal(await page.evaluate(()=>window.__host.h.warning()),true);assert.equal(await page.getByRole('status').isVisible(),true);assert.equal(await page.evaluate(()=>window.__host.navigations.length),0);checks++;
  await page.evaluate(()=>{const c=window.__host;c.throwStatus=true;return c.h.checkStatus();});assert.equal(await page.evaluate(()=>window.__host.h.warning()),true);checks++;
+ await page.evaluate(()=>{const c=window.__host;c.exit=c.h.onExit({reason:'title'});});
+ assert.match(await page.getByRole('dialog').textContent(),/版本已更新/);assert.equal(await page.evaluate(()=>window.__host.navigations.length),0);
+ await page.getByRole('button',{name:'確認',exact:true}).click();assert.equal((await page.evaluate(()=>window.__host.exit)).reason,'updated');assert.equal(await page.evaluate(()=>window.__host.packCalls),1);checks++;
+ await setup();
+ assert.deepEqual(await page.evaluate(()=>{const c=window.__host;c.reply={gameId:c.identity.gameId,listed:false};return c.h.checkStatus();}),{kind:'unlisted',updated:false});assert.equal(await page.evaluate(()=>window.__host.state),'active');checks++;
+ assert.deepEqual(await page.evaluate(()=>{const c=window.__host;c.reply={gameId:c.identity.gameId,listed:false,currentRelease:{releaseId:'cccccccc-cccc-4ccc-accc-cccccccccccc',ordinal:'1.1'}};return c.h.checkStatus();}),{kind:'updated'});assert.equal(await page.evaluate(()=>window.__host.state),'closed');checks++;
+ await setup();
+ assert.deepEqual(await page.evaluate(()=>{const c=window.__host;c.state='outdated';c.throwStatus=true;return c.h.checkStatus();}),{kind:'updated'});assert.equal(await page.evaluate(()=>window.__host.packCalls),1);checks++;
+ await setup();
+ await page.evaluate(()=>{const c=window.__host;c.state='outdated';c.exit=c.h.onExit({reason:'unavailable'});});assert.match(await page.getByRole('dialog').textContent(),/版本已更新/);
+ await page.getByRole('button',{name:'確認',exact:true}).click();assert.equal((await page.evaluate(()=>window.__host.exit)).reason,'updated');checks++;
+ await setup();
  // A claimed deletion reason/error without the reader's terminal state is not proof.
  await page.evaluate(()=>{const c=window.__host;c.exit=c.h.onExit({reason:'deleted'});c.same=c.exit===c.h.onExit({reason:'title'});});
  const dialog=page.getByRole('dialog',{name:'遊戲結束'}),confirm=dialog.getByRole('button',{name:'確認',exact:true});

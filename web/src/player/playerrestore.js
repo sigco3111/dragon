@@ -1,15 +1,16 @@
-// Title-only restore chooser. No deletion, migration, App installation or navigation.
+// Title-only restore chooser. Confirmed older releases are cleared automatically;
+// unknown/corrupt records are not treated as version updates. No migration.
 import { loadPlayerChapters, admitPlayerChapter } from './playerchapters.js';
 import { loadPlayerPack } from './playerpack.js';
 import { createPlayerEnvironment } from './playerenvironment.js';
 import { createPlayerSaveStore } from './playersaves.js';
 import { capturePlayerSaveRepository } from './playerrepository.js';
-import { saveJSON, saveReleaseOrdinalFromVersion } from '../core/gamesavecodec.js';
+import { saveJSON, saveReleaseOrdinal, saveReleaseOrdinalFromVersion } from '../core/gamesavecodec.js';
 
 export function mountPlayerRestore({ root, reader, selection, store, compilerRevision, maxTotalBytes, readStatic }) {
   if (!root?.ownerDocument || typeof root.append !== 'function' ||
       typeof reader?.admit !== 'function' || typeof reader?.status !== 'function' ||
-      !selection || store?.gameId !== selection.gameId || ['list', 'get', 'put'].some(key => typeof store?.[key] !== 'function') ||
+      !selection || store?.gameId !== selection.gameId || ['list', 'get', 'put', 'compareDelete'].some(key => typeof store?.[key] !== 'function') ||
       typeof compilerRevision !== 'string' || !compilerRevision || !Number.isSafeInteger(maxTotalBytes) || maxTotalBytes < 1 || typeof readStatic !== 'function')
     throw new TypeError('restore root, reader, game store and explicit pack policy required');
   const selected = structuredClone(selection), document = root.ownerDocument;
@@ -19,7 +20,7 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
   Object.assign(host.style, { position: 'fixed', inset: '18% 12% 8%', zIndex: '9999', background: '#f0d090', color: '#201800', border: '4px solid #806020', padding: '16px', display: 'flex', flexDirection: 'column' });
   Object.assign(rows.style, { overflow: 'auto', minHeight: '0', display: 'grid', gap: '6px' });
   host.append(heading, message, rows, make('p', '右鍵返回')); root.append(host);
-  let epoch = 0, closed = false, phase = 'loading', preview, choices = [], resolve;
+  let epoch = 0, closed = false, phase = 'loading', preview, choices = [], resolve, cleared = 0;
   const owners = new Set(), result = new Promise(done => { resolve = done; });
   function current(ticket) { if (closed || epoch !== ticket) throw new DOMException('Restore choice superseded', 'AbortError'); }
   function release(owner) {
@@ -56,11 +57,11 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
   function failed(ticket) {
     if (closed || epoch !== ticket) return;
     phase = 'error'; heading.textContent = '讀檔暫不可用';
-    message.textContent = '資料、版本或存檔檢查未完成，沒有載入或刪除存檔。可重試；版本已變更時請返回重新選擇遊戲。';
+    message.textContent = `資料、版本或存檔檢查未完成，沒有載入存檔。${cleared ? `已清除${cleared}個確認過期的存檔。` : '沒有刪除存檔。'}可重試；版本已變更時請返回重新選擇遊戲。`;
     rows.replaceChildren(); button('重試', () => { void refresh(); });
   }
   function listing() {
-    phase = 'list'; heading.textContent = '讀取存檔'; message.textContent = `${preview.selection.name} ${preview.selection.ordinal}`; rows.replaceChildren();
+    phase = 'list'; heading.textContent = '讀取存檔'; message.textContent = `${preview.selection.name} ${preview.selection.ordinal}${cleared ? `：遊戲版本已更新，舊版存檔不能載入，已自動清除${cleared}個。` : ''}`; rows.replaceChildren();
     if (!choices.length) rows.append(make('p', '目前沒有本機存檔。'));
     for (const choice of choices) {
       if (choice.token) button(`槽${choice.slot + 1}　${choice.label}`, () => { void choose(choice); }, choice.slot);
@@ -69,7 +70,7 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
     button('重新檢查', () => { void refresh(); });
     if (choices.some(choice => !choice.token)) button('不可用存檔說明', () => {
       phase = 'unavailable'; heading.textContent = '不可用存檔'; rows.replaceChildren();
-      message.textContent = '尚未確認這些存檔可供目前版本讀取。版本資料不足、損壞或未通過檢查均不授予刪除權限；本視窗不會刪除任何存檔。';
+      message.textContent = '這些存檔的版本資料不足、損壞或未通過檢查，不能判定為已作廢的舊版，將保留且不載入。';
       for (const choice of choices.filter(item => !item.token)) rows.append(make('p', `槽${choice.slot + 1}　保留原存檔`));
     });
   }
@@ -82,7 +83,21 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
       const catalog = await store.list(); current(ticket);
       if (!Array.isArray(catalog) || catalog.some(row => row?.gameId !== selected.gameId || !Number.isSafeInteger(row.slot) || row.slot < 0) || new Set(catalog.map(row => row.slot)).size !== catalog.length)
         throw new TypeError('game-local save catalog required');
-      const next = catalog.map(row => ({ slot: row.slot, label: '', token: null }));
+      const removed = new Set(), ordinal = BigInt(saveReleaseOrdinalFromVersion(preview.selection.ordinal));
+      for (const row of catalog) {
+        let older = false;
+        try { older = row.releaseId !== preview.selection.releaseId && BigInt(saveReleaseOrdinal(row.releaseOrdinal)) < ordinal; } catch { /* Unknown identity stays unavailable. */ }
+        if (!older) continue;
+        let saved;
+        try { saved = await store.get(row.slot); } catch { current(ticket); continue; }
+        current(ticket);
+        if (!agrees(row, saved)) continue;
+        const latest = await reader.status({ gameId: selected.gameId }); current(ticket);
+        if (!latest.listed || latest.gameId !== selected.gameId || latest.releaseId !== preview.selection.releaseId || latest.ordinal !== preview.selection.ordinal)
+          throw new Error('current release changed during cleanup');
+        await store.compareDelete(saved.token); cleared++; removed.add(row.slot); current(ticket);
+      }
+      const next = catalog.filter(row => !removed.has(row.slot)).map(row => ({ slot: row.slot, label: '', token: null }));
       // Validate before exposing a selectable row. Nonmatching identities are
       // inert; their bodies are not read and they are not recognized old releases.
       for (const chapterId of new Set(catalog.filter(matches).map(row => row.chapterId))) {

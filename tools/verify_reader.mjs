@@ -100,15 +100,15 @@ try {
   check('new version admission', response.status === 200 && body.ordinal === '1.1');
   const newTicket = body.ticket;
   response = await getFile('chapter:c1', oldTicket);
-  check('old game stays on old chapter after update', response.status === 200 && (await data(response)).fixture === '0:c1');
+  check('update invalidates old capability', response.status === 409 && (await data(response)).error === 'RELEASE_CHANGED');
   response = await getFile('chapter:c1', newTicket);
   check('new game uses new chapter', response.status === 200 && (await data(response)).fixture === '1:c1');
-  await commit(unlisted());
+  await commit(unlisted(false, v2.directory[0]));
   check('unlisted forbids new admission', (await call(admitPath(1))).status === 403);
   response = await getFile('chapter:c1', oldTicket);
-  check('unlisted old game continues fixed resources', response.status === 200 && (await data(response)).fixture === '0:c1');
-  response = await getFile('asset:p0001', oldTicket);
-  check('old template resource remains readable after update and unlist', response.status === 200 && Buffer.from(await response.arrayBuffer()).equals(TEMPLATE_PORTRAIT));
+  check('unlisting cannot revive an obsolete capability', response.status === 409 && (await data(response)).error === 'RELEASE_CHANGED');
+  response = await getFile('asset:p0001', newTicket);
+  check('unlisting alone retains current admitted resources', response.status === 200 && Buffer.from(await response.arrayBuffer()).equals(TEMPLATE_PORTRAIT));
   response = await call('/play-api/v1/registry');
   check('unlisted has no public directory/announcements', (await data(response)).directory.length === 0);
   response = await call(`/play-api/v1/status?game=${GAME}`);
@@ -119,7 +119,7 @@ try {
   // Rotate the issuing key, retain the previous verification key for old games.
   const rotated = { ...bindings, PLAYER_ADMISSION_ACTIVE_KEY: 'owned2', PLAYER_ADMISSION_KEYS: JSON.stringify({ owned1: '11'.repeat(32), owned2: '22'.repeat(32) }) };
   await mf.setOptions({ ...options, bindings: rotated }); bucket = await mf.getR2Bucket('PUBLISH_BUCKET');
-  check('old capability survives rotation and worker restart', (await getFile('chapter:c1', oldTicket)).status === 200);
+  check('current capability survives signing-key rotation and worker restart', (await getFile('chapter:c1', newTicket)).status === 200);
   check('new key can issue current admission', (await call(admitPath(1))).status === 200);
   const nodeEnv = { ...rotated, PUBLISH_BUCKET: { get: key => bucket.get(key) } };
   const nodeCall = (path, env = nodeEnv, ticket = null) => reader.fetch(new Request(`https://reader.test${path}`, { headers: ticket ? { Authorization: `Bearer ${ticket}` } : {} }), env);
@@ -131,13 +131,21 @@ try {
   } } };
   check('unlist during admission await returns no ticket', (await nodeCall(admitPath(1), duringIndex)).status === 409 && raced);
   await commit(v2); raced = false;
-  const oldChapterKey = v1.files.find(f => f.key.endsWith('/chapters/c1.json')).key;
+  const oldChapterKey = v2.files.find(f => f.key.endsWith('/chapters/c1.json')).key;
+  const duringUpdate = { ...nodeEnv, PUBLISH_BUCKET: { async get(key) {
+    const row = await bucket.get(key);
+    if (!raced && key === oldChapterKey) { raced = true; await commit(publication(2, GAME, ['c1', 'c2'], 'race-r2')); }
+    return row;
+  } } };
+  const lateUpdate = await nodeCall('/play-api/v1/file?role=chapter:c1', duringUpdate, newTicket);
+  check('update after resource read suppresses late bytes', lateUpdate.status === 409 && (await data(lateUpdate)).error === 'RELEASE_CHANGED' && raced);
+  await commit(v2); raced = false;
   const duringFile = { ...nodeEnv, PUBLISH_BUCKET: { async get(key) {
     const row = await bucket.get(key);
     if (!raced && key === oldChapterKey) { raced = true; await commit(unlisted(true)); }
     return row;
   } } };
-  check('deletion observed after await suppresses late bytes', (await nodeCall('/play-api/v1/file?role=chapter:c1', duringFile, oldTicket)).status === 410 && raced);
+  check('deletion observed after await suppresses late bytes', (await nodeCall('/play-api/v1/file?role=chapter:c1', duringFile, newTicket)).status === 410 && raced);
   check('explicit deletion denies existing capability', (await getFile('chapter:c1', oldTicket)).status === 410);
   check('explicit deletion status', (await call(`/play-api/v1/status?game=${GAME}`)).status === 410);
   check('unknown ID is never falsely deleted', (await call(`/play-api/v1/status?game=${OTHER_GAME}`)).status === 200);
@@ -147,10 +155,10 @@ try {
   await commit(v2);
   const oldBytes = await r2.get(oldChapterKey);
   await bucket.put(oldChapterKey, Buffer.from('{'));
-  check('tampered immutable bytes fail closed', (await getFile('chapter:c1', oldTicket)).status === 503);
+  check('tampered current immutable bytes fail closed', (await getFile('chapter:c1', newTicket)).status === 503);
   await bucket.put(oldChapterKey, oldBytes.bytes);
   await bucket.delete(v1.releases[0].runtime.key);
-  check('missing old index does not fall back to latest', (await getFile('chapter:c1', oldTicket)).status === 503);
+  check('obsolete capability denied before missing old index lookup', (await getFile('chapter:c1', oldTicket)).status === 409);
   check('current capability unaffected by missing unrelated old index', (await getFile('chapter:c1', newTicket)).status === 200);
   check('missing signing configuration fails closed', (await nodeCall(admitPath(1), { PUBLISH_BUCKET: nodeEnv.PUBLISH_BUCKET })).status === 503);
   check('wrong origin cannot use capability', (await reader.fetch(new Request('https://other.test/play-api/v1/file?role=manifest', { headers: { Authorization: `Bearer ${newTicket}` } }), nodeEnv)).status === 503);
@@ -167,9 +175,9 @@ try {
   check('encoded role alias cannot read literal hash key', (await getFile(`chapter:${scopedChapter.replace('#', '%23')}`, scopedTicket)).status === 403);
   check('stripped scope is not the selected chapter', (await call(admitPath(2, GAME, 'upper-1'))).status === 422);
   await commit(publication(3, GAME, [scopedChapter, scopedOther]));
-  await commit(unlisted());
+  await commit(unlisted(false, publication(3, GAME, [scopedChapter, scopedOther]).directory[0]));
   response = await getFile(`chapter:${scopedChapter}`, scopedTicket);
-  check('scoped old ticket retains old bytes after update and unlist', response.status === 200 && (await data(response)).fixture === `2:${scopedChapter}`);
+  check('scoped old ticket is invalid after update and unlist', response.status === 409 && (await data(response)).error === 'RELEASE_CHANGED');
   await commit(publication(3, GAME, [scopedChapter, scopedOther]));
   const root = await r2.get('control/current.json');
   let rootValue; try { rootValue = JSON.parse(root.bytes); } catch { throw new Error('bad fixture root'); }

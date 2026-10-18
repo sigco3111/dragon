@@ -69,5 +69,33 @@ assert.throws(() => createGameSaveStore({ gameId: "x", databaseName: "owned" }),
 for (const cause of [null, 0, undefined]) { const store = createGameSaveStore({ gameId: "throwing-adapter", databaseName: "owned", getIndexedDB() { throw cause; } }); assert.equal(await store.get(0).then(() => false, () => true), true); negatives++; }
 for (const id of ["", "a\u0000b", "\ud800"]) { assert.throws(() => create(id), TypeError); negatives++; }
 checks.push("no success before commit / required explicit adapters / inaccessible DB and malformed opaque identity refused");
+// Current-release policy is explicit; legacy/default writes keep their contract.
+const pruningMemory = gameSaveMemoryIDB(), pruning = create('prune', pruningMemory), neighbour = create('neighbour', pruningMemory);
+await pruning.put({ ...input('prune', 0), releaseOrdinal: 9 });
+await pruning.put(input('prune', 1));
+await pruning.put({ ...input('prune', 2), releaseId: 'fixture-next', releaseOrdinal: 11 });
+await neighbour.put(input('neighbour', 0));
+const neighbourBefore = await neighbour.get(0);
+await pruning.put({ ...input('prune', 3), releaseId: 'fixture-next', releaseOrdinal: 11 }, null, { discardOlderReleases: true });
+assert.deepEqual((await pruning.list()).map(row => row.slot), [2, 3]);
+assert.equal(await pruning.get(0), null); assert.equal(await pruning.get(1), null); assert.deepEqual(await neighbour.get(0), neighbourBefore);
+await conflict(pruning.put(input('prune', 4), null, { discardOlderReleases: true }));
+const large = create('large-prune', pruningMemory);
+await large.put({ ...input('large-prune'), releaseOrdinal: '9007199254740993' });
+await large.put({ ...input('large-prune', 1), releaseId: 'fixture-next', releaseOrdinal: '9007199254740994' }, null, { discardOlderReleases: true });
+assert.equal(await large.get(0), null); assert.equal((await large.get(1)).record.releaseOrdinal, '9007199254740994');
+checks.push('explicit current save removes only older same-game slots; same-version and other-game slots retained; stale writer refused; large ordinals exact');
+for (const failAt of [3, 4, 5, 6]) {
+  const db = gameSaveMemoryIDB(), store = create('prune-failure', db);
+  await store.put(input('prune-failure')); const before = db.records(); db.configure({ failAt });
+  await assert.rejects(store.put({ ...input('prune-failure', 1), releaseId: 'fixture-next', releaseOrdinal: 11 }, null, { discardOlderReleases: true }), /transaction/); negatives++;
+  assert.deepEqual(db.records(), before);
+}
+const damaged = new Map(pruningMemory.records());
+damaged.get(gameSaveKeys('large-prune', 1).record).bodyText = '{}';
+const damagedDB = gameSaveMemoryIDB([...damaged]), damagedBefore = damagedDB.records();
+await assert.rejects(create('large-prune', damagedDB).put({ ...input('large-prune', 2), releaseId: 'fixture-third', releaseOrdinal: '9007199254740995' }, null, { discardOlderReleases: true })); negatives++;
+assert.deepEqual(damagedDB.records(), damagedBefore);
+checks.push('new save and all old-record deletions roll back together; malformed old body is not silently removed');
 assert.equal(implicitIDB, 0); for (const [p, h] of Object.entries(hashes)) assert.equal(sha(p), h);
 process.stdout.write(JSON.stringify({ result: "PASS-OPT-IN-GAME-SAVE-STORE-MEMORY", groups: checks.length, negatives, checks, hashes, implicitIDB, limits: "JSON engineering fixtures only; mock serialized; no App/restore/recognized releases/latest/confirmation/delete policy/real user saves" }) + "\n");

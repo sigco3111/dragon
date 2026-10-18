@@ -36,10 +36,10 @@ async function json(value) { const data = new TextEncoder().encode(JSON.stringif
 values.set('manifest',await json(manifest)); values.set('chapter:'+C,await json((await (await fetch(builtin.dataURL)).json()).scenarios[0]));
 const selection = {gameId:G,releaseId:R,ordinal:base.environment.identity.ordinal,revision:'1',sourceDigest:builtin.sourceDigest,name:'Owned restore',publishedAt:'2037-01-01T00:00:00.000Z',chapters:[C]};
 const header = {...base.saves.identity,manifestDigest:values.get('manifest').sha256};
-const control = window.__restore = {sessions:[],gets:[],calls:0,view:null,chosen:null,settled:false,hold:false,release:null,holdGet:false,releaseGet:null,changed:false,staticFailure:false};
+const control = window.__restore = {sessions:[],gets:[],calls:0,view:null,chosen:null,settled:false,hold:false,release:null,holdGet:false,releaseGet:null,changed:false,staticFailure:false,statusFailure:false};
 const store = {...base.store,async get(slot){control.gets.push(slot);if(control.holdGet)await new Promise(done=>{control.releaseGet=done;});return base.store.get(slot);}};
 const reader = {
-  async status(){return {...selection,listed:true};},
+  async status(){if(control.statusFailure)throw new Error('owned status unavailable');return {...selection,listed:true};},
   async admit({chapterId,ordinal}) {
     control.calls++;
     if (ordinal !== selection.ordinal || chapterId !== C || control.changed) throw new Error('owned current release changed');
@@ -51,6 +51,7 @@ const reader = {
   },
 };
 const options = {root:document.body,reader,selection,store,compilerRevision:TRIAL_COMPILER_REVISION,maxTotalBytes:256*1024*1024,async readStatic(path){if(control.staticFailure)throw new Error('owned static failure');return structuredClone(values.get(path));}};
+control.advance = () => { selection.releaseId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'; selection.ordinal = '1.' + (BigInt(base.environment.identity.ordinal.slice(2)) + 1n); };
 control.before = () => base.store.list();
 control.empty = async () => {for(const row of await base.store.list()){const value=await base.store.get(row.slot);await base.store.compareDelete(value.token);}};
 control.seed = async (slot=0, changes={}) => {
@@ -61,6 +62,7 @@ control.reset = async () => {
   control.view?.close(); control.release?.(); control.releaseGet?.(); control.release=null; control.releaseGet=null; control.hold=false;control.holdGet=false;
   control.chosen?.session.close(); control.chosen?.pack.close(); control.chosen=null;
   for(const row of await base.store.list()){const value=await base.store.get(row.slot);await base.store.compareDelete(value.token);}
+  selection.releaseId=R;selection.ordinal=base.environment.identity.ordinal;control.statusFailure=false;
   control.changed=false;control.staticFailure=false;control.gets=[];control.sessions=[];control.calls=0;
   await control.seed();
 };

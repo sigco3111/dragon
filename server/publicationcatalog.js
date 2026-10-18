@@ -48,7 +48,8 @@ export function projectPublicationCatalog(catalog, context) {
   // Stable ordering, without changing chapter order or announcement snapshots.
   const games = [...catalog.games].sort((a, b) => { if (a.gameId < b.gameId) return -1; if (a.gameId > b.gameId) return 1; return 0; });
   for (const game of games) {
-    gameStates.push({ gameId: game.gameId, listed: game.listed, ...(game.deleted ? { deleted: true } : {}) });
+    gameStates.push({ gameId: game.gameId, listed: game.listed, ...(game.deleted ? { deleted: true } : {}),
+      ...(game.current ? { currentRelease: { releaseId: game.current.releaseId, ordinal: game.current.ordinal } } : {}) });
     if (!game.listed) continue;
     const c = game.current;
     directory.push({ gameId: c.gameId, releaseId: c.releaseId, ordinal: c.ordinal, revision: c.revision, sourceDigest: c.sourceDigest, name: c.name, publishedAt: c.publishedAt, chapters: [...c.chapters] });

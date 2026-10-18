@@ -1,10 +1,10 @@
 // Read-only publication worker. Never deploy the old prefix-only file API.
-// Current directory/new admissions; signed fixed-runtime capabilities for old
-// already-started games. A missing game is NOT evidence of physical deletion.
+// Signed capabilities remain bound to the current formal release. Updating a
+// game invalidates older capabilities; missing state is NOT physical deletion.
 import { issueAdmission, verifyAdmission } from './admission.js';
 import { validatePublicationRoot, publicationRootArchiveKey } from './publicationroot.js';
 import { validateFirstOnlineReference, firstOnlineReceiptKey, rootVisibleAt, receiptVisibleAt } from './firstonline.js';
-import { MAX_METADATA_BYTES, isGameId, isChapterId, isOrdinal, parseJSON, requireValue, sameIdentity, sha256, validateIndex, validateRuntimeReference } from './runtimecontract.js';
+import { MAX_METADATA_BYTES, isGameId, isId, isChapterId, isOrdinal, parseJSON, requireValue, sameIdentity, sha256, validateIndex, validateRuntimeReference } from './runtimecontract.js';
 const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { ...headers, 'Content-Type': 'application/json; charset=utf-8' } });
 class ReadError extends Error {
@@ -36,6 +36,10 @@ async function snapshot(env, archived = null) {
   const states = new Map();
   for (const row of projection.gameStates) {
     requireValue(isGameId(row?.gameId) && typeof row.listed === 'boolean' && (row.deleted === undefined || typeof row.deleted === 'boolean') && !(row.deleted && row.listed) && !states.has(row.gameId), 'REGISTRY_CORRUPT');
+    if (row.currentRelease !== undefined) {
+      const current = row.currentRelease;
+      requireValue(!row.deleted && current && Object.keys(current).length === 2 && isId(current.releaseId) && isOrdinal(current.ordinal), 'REGISTRY_CORRUPT');
+    }
     states.set(row.gameId, row);
   }
   const releaseMap = new Map();
@@ -50,6 +54,8 @@ async function snapshot(env, archived = null) {
     const release = releaseMap.get(row?.gameId);
     requireValue(release && sameIdentity(row, release) && states.get(row.gameId)?.listed === true && !states.get(row.gameId)?.deleted && !ids.has(row.gameId), 'REGISTRY_CORRUPT');
     requireValue(typeof row.name === 'string' && typeof row.publishedAt === 'string' && Array.isArray(row.chapters) && row.chapters.length > 0 && row.chapters.every(chapter => isChapterId(chapter, row.gameId)) && new Set(row.chapters).size === row.chapters.length, 'REGISTRY_CORRUPT');
+    const current = states.get(row.gameId).currentRelease;
+    requireValue(!current || current.releaseId === row.releaseId && current.ordinal === row.ordinal, 'REGISTRY_CORRUPT');
     ids.add(row.gameId);
     directory.push({ gameId: row.gameId, name: row.name, releaseId: row.releaseId, ordinal: row.ordinal, revision: row.revision, sourceDigest: row.sourceDigest, publishedAt: row.publishedAt, chapters: row.chapters });
   }
@@ -94,11 +100,16 @@ async function registry(env, state) {
     return json({ ...result, announcements: [], announcementsError: 'ANNOUNCEMENTS_UNAVAILABLE' });
   }
 }
-function checkRunningState(state, gameId) {
+function checkRunningState(state, gameId, identity = null) {
   const row = state.states.get(gameId);
   if (row?.deleted === true) { stop('GAME_DELETED', 410); }
   // Unknown/missing state is an outage, not deletion or permission to guess.
   if (!row) { stop('GAME_STATE_UNAVAILABLE'); }
+  if (identity) {
+    const current = row.currentRelease ?? state.releases.get(gameId);
+    if (!current) stop('GAME_STATE_UNAVAILABLE');
+    if (current.releaseId !== identity.releaseId || current.ordinal !== identity.ordinal) stop('RELEASE_CHANGED', 409);
+  }
 }
 async function runtimeIndex(env, identity, ref) {
   validateRuntimeReference(identity, ref);
@@ -173,13 +184,13 @@ async function file(request, url, env) {
   const authorization = request.headers.get('Authorization');
   if (!authorization?.startsWith('Bearer ') || authorization.length > 4103) { stop('ADMISSION_INVALID', 403); }
   const claims = await verifyAdmission(env, url.origin, authorization.slice(7));
-  checkRunningState(await snapshot(env), claims.gameId);
+  checkRunningState(await snapshot(env), claims.gameId, claims);
   const index = await runtimeIndex(env, claims, claims.runtime), role = url.searchParams.get('role');
   if (!role || !Object.hasOwn(index.resources, role) || (role.startsWith('chapter:') && role !== `chapter:${claims.chapterId}`)) { stop('FILE_FORBIDDEN', 403); }
   const ref = index.resources[role], bytes = await readChecked(env, ref);
   if (ref.contentType === 'application/json') { parseJSON(bytes); }
-  // No cache or late object read may bypass a subsequently observed deletion.
-  checkRunningState(await snapshot(env), claims.gameId);
+  // Neither an update nor deletion observed after I/O may leak late bytes.
+  checkRunningState(await snapshot(env), claims.gameId, claims);
   return new Response(bytes, { headers: { ...headers, 'Content-Type': ref.contentType, 'X-Content-SHA256': ref.sha256 } });
 }
 export default {
@@ -198,7 +209,10 @@ export default {
       if (!isGameId(gameId)) { return json({ error: 'GAME_REQUIRED' }, 422); }
       if (state.states.get(gameId)?.deleted) { return json({ error: 'GAME_DELETED', gameId }, 410); }
       const entry = state.directory.find(row => row.gameId === gameId);
-      return json(entry ? { ...entry, listed: true } : { gameId, listed: false });
+      if (entry) return json({ ...entry, listed: true });
+      const result = { gameId, listed: false }, currentRelease = state.states.get(gameId)?.currentRelease;
+      if (currentRelease) result.currentRelease = currentRelease;
+      return json(result);
     } catch (error) {
       if (error instanceof ReadError) { return json({ error: error.message }, error.status); }
       if (error?.message === 'ADMISSION_INVALID') { return json({ error: 'ADMISSION_INVALID' }, 403); }

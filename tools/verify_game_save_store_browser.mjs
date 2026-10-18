@@ -85,6 +85,16 @@ try {
   assert.match(await one.evaluate(async token => { window.__abortKind = "delete"; try { await window.a.compareDelete(token); return "unsafe"; } catch (error) { return error.message; } }, deleteToken), /abort|transaction/i);
   assert.deepEqual(await two.evaluate(async () => (await window.a.get(0)).token), deleteToken); assert.deepEqual(await two.evaluate(() => window.a.list()), beforeFault);
   checks.push("native abort after put/delete request success rolls back body+summary; rejected Promise, original token retained");
+  assert.match(await one.evaluate(async () => {
+    window.__abortKind = 'delete';
+    try { await window.a.put({ ...window.input('game-a', 1), releaseId: 'fixture-next', releaseOrdinal: 11 }, null, { discardOlderReleases: true }); return 'unsafe'; }
+    catch (error) { return error.message; }
+  }), /abort|transaction/i);
+  assert.deepEqual(await two.evaluate(async () => (await window.a.get(0)).token), deleteToken);
+  assert.equal(await two.evaluate(() => window.a.get(1)), null);
+  await one.evaluate(() => window.a.put({ ...window.input('game-a', 1), releaseId: 'fixture-next', releaseOrdinal: 11 }, null, { discardOlderReleases: true }));
+  assert.deepEqual(await two.evaluate(async () => [(await window.a.get(0)), (await window.a.get(1)).record.releaseOrdinal, (await window.b.get(0)).record.snapshot.marker]), [null, 11, 2]);
+  checks.push('native new-version save plus old-version removal is atomic even after delete-success abort; other game stays intact');
   await one.evaluate(async () => { for (const id of ["a:b", "a%3Ab"]) await window.makeStore(id).put(window.input(id)); });
   assert.deepEqual(await two.evaluate(async () => Promise.all(["a:b", "a%3Ab"].map(async id => (await window.makeStore(id).get(0)).record.gameId))), ["a:b", "a%3Ab"]);
   assert.equal(await two.evaluate(() => window.legacyRead()), legacy); for (const page of pages) assert.ok((await page.evaluate(() => window.__saveOpens)).every(name => name === databaseName || name === databaseName + "-fresh"));

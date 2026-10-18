@@ -1,6 +1,6 @@
 // Browser transport only: no storage, engine state, automatic re-admission or
 // resource cache. A capability stays in this closure, never in a URL or DTO.
-import { ASSET_TYPES, MAX_METADATA_BYTES, MAX_RESOURCE_BYTES, isGameId, isChapterId, isOrdinal, isDigest, parseJSON, sha256, validateIdentity } from './runtimecontract.js';
+import { ASSET_TYPES, MAX_METADATA_BYTES, MAX_RESOURCE_BYTES, isGameId, isId, isChapterId, isOrdinal, isDigest, parseJSON, sha256, validateIdentity } from './runtimecontract.js';
 const jsonType = value => value === 'application/json' || value === 'application/json; charset=utf-8';
 const errors = new Set(['GAME_DELETED', 'GAME_NOT_LISTED', 'RELEASE_CHANGED', 'REGISTRY_CHANGED', 'CHAPTER_REQUIRED', 'ADMISSION_INVALID', 'ADMISSION_NOT_CONFIGURED', 'REGISTRY_EMPTY', 'REGISTRY_MISSING', 'REGISTRY_CORRUPT', 'RUNTIME_UNAVAILABLE', 'RUNTIME_CORRUPT', 'GAME_STATE_UNAVAILABLE', 'READER_UNAVAILABLE', 'FILE_FORBIDDEN', 'RELEASE_UNRECOGNIZED', 'RELEASE_HISTORY_UNAVAILABLE']);
 export class PlayerReaderError extends Error {
@@ -101,7 +101,11 @@ export function createPlayerReader({ origin, fetch: transport = globalThis.fetch
     if (!isGameId(gameId)) throw new TypeError('game ID required');
     const value = await json('/play-api/v1/status', { game: gameId }, guard);
     check(value?.gameId === gameId && typeof value.listed === 'boolean');
-    return value.listed ? Object.freeze({ ...entry(value), listed: true }) : Object.freeze({ gameId, listed: false });
+    if (value.listed) return Object.freeze({ ...entry(value), listed: true });
+    if (value.currentRelease === undefined) return Object.freeze({ gameId, listed: false });
+    const current = value.currentRelease;
+    check(current && Object.keys(current).length === 2 && isId(current.releaseId) && isOrdinal(current.ordinal));
+    return Object.freeze({ gameId, listed: false, currentRelease: Object.freeze({ releaseId: current.releaseId, ordinal: current.ordinal }) });
   }
   // Read-only recognition of an exact formal release. This is neither an old
   // admission capability nor a validity/deletion certificate for a local save.
@@ -126,13 +130,18 @@ export function createPlayerReader({ origin, fetch: transport = globalThis.fetch
     check(selected.gameId === gameId && selected.ordinal === ordinal && value.chapterId === chapterId && selected.chapters.includes(chapterId) && isDigest(value.manifestDigest) && value.fileEndpoint === '/play-api/v1/file' && typeof value.ticket === 'string' && /^[A-Za-z0-9_.-]{1,4096}$/.test(value.ticket));
     const identity = Object.freeze({ ...selected, chapterId, manifestDigest: value.manifestDigest });
     let token = value.ticket, state = 'active';
-    function current() { if (state !== 'active') fail(state === 'deleted' ? 'GAME_DELETED' : 'PLAYER_SESSION_CLOSED', state === 'deleted' ? 410 : 0); }
+    function current() {
+      if (state === 'deleted') fail('GAME_DELETED', 410);
+      if (state === 'outdated') fail('RELEASE_CHANGED', 409);
+      if (state !== 'active') fail('PLAYER_SESSION_CLOSED');
+    }
     async function observe(action) {
       current();
       try { const result = await action(); current(); return result; }
       catch (error) {
         current();
         if (error instanceof PlayerReaderError && error.code === 'GAME_DELETED' && error.status === 410) { state = 'deleted'; token = null; }
+        if (error instanceof PlayerReaderError && error.code === 'RELEASE_CHANGED' && error.status === 409) { state = 'outdated'; token = null; }
         throw error;
       }
     }

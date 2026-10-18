@@ -75,4 +75,13 @@ for(const headers of [{'content-type':'image/png','x-content-sha256':digest},{'c
  f.set(()=>Response.json({error:'RUNTIME_UNAVAILABLE'},{status:503}));await rejectCode(()=>s.read('manifest'),'RUNTIME_UNAVAILABLE');
  assert.equal(f.calls.at(-1).options.signal.aborted,false,'consumed error bodies also finish without abort');checks++;
 }
+{
+ const f=fixture(),s=await f.open();
+ f.set(()=>Response.json({gameId:G,listed:false,currentRelease:{releaseId:'r1',ordinal:'1.1'}}));
+ assert.deepEqual((await s.status()).currentRelease,{releaseId:'r1',ordinal:'1.1'});assert.equal(s.state(),'active');
+ f.set(()=>Response.json({gameId:G,listed:false,currentRelease:{releaseId:'r1',ordinal:'bad'}}));await rejectCode(s.status,'PLAYER_RESPONSE_INVALID');assert.equal(s.state(),'active');checks++;
+ f.set(()=>Response.json({error:'RELEASE_CHANGED'},{status:503}));await rejectCode(()=>s.read('manifest'),'RELEASE_CHANGED');assert.equal(s.state(),'active');
+ f.set(()=>Response.json({error:'RELEASE_CHANGED'},{status:409}));await rejectCode(()=>s.read('manifest'),'RELEASE_CHANGED');assert.equal(s.state(),'outdated');
+ const count=f.calls.length;await rejectCode(s.status,'RELEASE_CHANGED');await rejectCode(()=>s.read('manifest'),'RELEASE_CHANGED');assert.equal(f.calls.length,count);checks++;
+}
 process.stdout.write(JSON.stringify({checks,scope:'Owned transport and streams; no browser, engine, storage or network proof'})+'\n');

@@ -11,6 +11,7 @@ let groups=0;
 const original=fixture(),unchanged=structuredClone(original),projection=projectPublicationCatalog(original,context);
 assert.deepEqual(original,unchanged);assert.equal(projection.runtimeVersion,2);assert.equal(projection.directory.length,1);assert.equal(projection.gameStates.length,2);
 assert.equal(projection.directory[0].gameId,G);assert.equal(projection.releases.length,1);assert.equal(projection.announcements.length,1);assert.equal(Object.hasOwn(projection,'catalog'),false);groups++;
+assert.deepEqual(projection.gameStates.map(row=>row.currentRelease),[{releaseId:R,ordinal:'1.0'},{releaseId:R,ordinal:'1.0'}]);assert.deepEqual(Object.keys(projection.gameStates[1]).sort(),['currentRelease','gameId','listed']);groups++;
 projection.directory[0].chapters.push('changed');projection.releases[0].runtime.key='changed';projection.announcements[0].firstOnline.generation=999;assert.deepEqual(original,unchanged);groups++;
 assert.deepEqual(projectPublicationCatalog({...original,games:original.games.toReversed()},context),projectPublicationCatalog(original,context));groups++;
 for(const mutate of [
