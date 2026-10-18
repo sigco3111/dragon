@@ -1,0 +1,100 @@
+// Actual DOM + player reader, controlled registry responses, fresh profile.
+// No App/admission, storage, navigation, remote socket or production UI claim.
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {mkdir,mkdtemp,writeFile,readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {startBrowserTestServer} from './browser_test_server.mjs';
+import {assertCompletedStreamObservation} from './fixtures/player-client-browser.mjs';
+const {chromium}=createRequire(import.meta.url)('C:/Users/fczll/AppData/Roaming/npm/node_modules/@playwright/cli/node_modules/playwright');
+const sha=b=>createHash('sha256').update(b).digest('hex');
+const parent='.dragon-analysis/release-readiness';await mkdir(parent,{recursive:true});const artifact=await mkdtemp(join(parent,'player-catalog-browser-'));
+const server=await startBrowserTestServer(),origin=`http://127.0.0.1:${server.port}`,api='https://reader.owned.invalid';
+const game='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',release='bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
+const row={gameId:game,releaseId:release,ordinal:'1.39',revision:'1',sourceDigest:'a'.repeat(64),name:'<img src=x>自建',publishedAt:'2037-01-01T00:00:00Z',chapters:[game+'#chapter']};
+const history=Array.from({length:40},(_,i)=>({gameId:game,ordinal:'1.'+(39-i),name:row.name,creatorAccount:'<script>owner</script>',publishedAt:new Date(Date.UTC(2037,0,40-i)).toISOString(),firstOnlineAt:new Date(Date.UTC(2037,1,40-i)).toISOString()}));
+const payload=()=>({generation:1,digest:'c'.repeat(64),directory:[row],announcements:history});
+let response=payload(),hold=false,browser;const waiters=[],calls=[],errors=[],failed=[],forbidden=[];let checks=0;
+function releaseAll(){hold=false;for(const release of waiters.splice(0))release();}
+async function held(){for(let i=0;i<300;i++){if(waiters.length)return;await new Promise(resolve=>setTimeout(resolve,10));}throw new Error('owned response did not reach hold');}
+try{
+ const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>/^(systemroot|windir|path|pathext|temp|tmp|comspec|appdata|localappdata)$/i.test(key)));
+ browser=await chromium.launch({headless:true,env});const context=await browser.newContext({viewport:{width:1024,height:768},serviceWorkers:'block'});
+ await context.addInitScript(()=>{window.__idb=0;indexedDB.open=()=>{window.__idb++;throw new Error('storage forbidden');};});
+ await context.route('**/*',async route=>{
+  const request=route.request(),u=new URL(request.url());
+  if(u.origin===api&&u.pathname==='/play-api/v1/registry'&&request.method()==='GET'){
+   const headers=await request.allHeaders(),body=JSON.stringify(response);
+   const sequence=/^application\/json;owned-sequence=([1-9][0-9]*)$/.exec(headers.accept??'')?.[1];
+   calls.push({origin:api,path:u.pathname,method:request.method(),headers,sequence,status:200,bytes:Buffer.byteLength(body)});
+   if(hold)await new Promise(resolve=>waiters.push(resolve));
+   return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*','cache-control':'no-store'},body});
+  }
+  if(u.origin!==origin||/save\.dat|\/api\/|\/play-api\//i.test(u.pathname)){forbidden.push(u.pathname);return route.abort();}
+  if(u.pathname==='/__owned-catalog')return route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><body><main id="catalog" style="width:420px"></main><p id="outside">原界面</p></body></html>'});
+  return route.continue();
+ });
+ const page=await context.newPage();page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()==='error'&&!m.location().url?.endsWith('/favicon.ico'))errors.push(m.text());});page.on('requestfailed',r=>failed.push({path:new URL(r.url()).pathname,error:r.failure()?.errorText,sequence:/^application\/json;owned-sequence=([1-9][0-9]*)$/.exec(r.headers().accept??'')?.[1]}));
+ await page.goto(origin+'/__owned-catalog');
+ await page.evaluate(async api=>{
+  const {mountPlayerCatalog}=await import('/src/player/playercatalog.js');const {createPlayerReader}=await import('/src/player/playerclient.js');
+  const traces=window.__catalogTraces=[];
+  const transport=async(url,options)=>{
+   const sequence=String(traces.length+1),trace={sequence,completed:false,cancelled:false,bytes:0,status:null};traces.push(trace);
+   // A CORS-safelisted header associates this exact native stream, without a
+   // query change, extra request, body substitution or ignored failure event.
+   const response=await fetch(url,{...options,headers:{...options.headers,Accept:'application/json;owned-sequence='+sequence}});
+   trace.status=response.status;const body=response.body,getReader=body.getReader.bind(body);
+   Object.defineProperty(body,'getReader',{value(){const reader=getReader();return{
+    async read(){const row=await reader.read();if(row.done)trace.completed=true;else trace.bytes+=row.value.byteLength;return row;},
+    cancel(){trace.cancelled=true;return reader.cancel();},releaseLock(){return reader.releaseLock();},
+   };}});return response;
+  };
+  window.__catalog=mountPlayerCatalog({root:document.querySelector('#catalog'),reader:createPlayerReader({origin:api,fetch:transport})});
+ },api);
+ const selection=()=>page.evaluate(()=>window.__catalog.selection());
+ assert.equal((await selection()).kind,'builtin');assert.equal(calls.length,0);checks++;
+ assert.equal(await page.evaluate(()=>window.__catalog.refresh()),true);
+ const select=page.getByRole('combobox',{name:'選擇遊戲'}),notice=page.locator('.player-catalog-notice');
+ assert.equal(await select.locator('option').count(),2);await select.selectOption(game);
+ assert.equal((await selection()).releaseId,release);assert.equal((await selection()).ordinal,'1.39');checks++;
+ assert.match(await notice.textContent(),/<img src=x>自建 1.39/);assert.equal(await page.locator('img,script').count(),0);checks++;
+ const before=calls.length;await notice.click();await page.waitForFunction(()=>document.querySelectorAll('[role=dialog] tr').length===41);
+ assert.equal(calls.length,before+1);assert.equal(await selection(),null);assert.equal(await select.isDisabled(),true);checks++;
+ const dialog=page.getByRole('dialog',{name:'發布資訊'});
+ assert.equal(await dialog.locator('td').count(),200);assert.ok((await dialog.textContent()).includes(history[0].publishedAt));assert.ok((await dialog.textContent()).includes(history[39].firstOnlineAt));assert.equal(await dialog.locator('button').count(),1);assert.equal(await dialog.locator('img,script,a').count(),0);checks++;
+ const scroll=dialog.locator('div');assert.equal(await scroll.evaluate(node=>node.scrollHeight>node.clientHeight),true);await scroll.hover();await page.mouse.wheel(0,500);await page.waitForFunction(()=>document.querySelector('[role=dialog] div').scrollTop>0);checks++;
+ await dialog.locator('td').first().click();await page.waitForTimeout(3250);assert.equal(await dialog.count(),1);assert.equal(await selection(),null);assert.equal(calls.length,before+1);checks++;
+ await dialog.click({button:'right'});assert.equal(await dialog.count(),0);assert.equal((await selection()).gameId,game);assert.equal(await select.isDisabled(),false);checks++;
+ response={...payload(),announcementsError:'ANNOUNCEMENTS_UNAVAILABLE'};await page.evaluate(()=>window.__catalog.refresh());
+ assert.equal(await select.locator('option').count(),2);assert.equal((await selection()).gameId,game);assert.equal(await notice.textContent(),'通知暫不可用');checks++;
+ response={...payload(),directory:[],announcements:history};await page.evaluate(()=>window.__catalog.refresh());
+ assert.equal(await select.locator('option').count(),1);assert.equal((await selection()).kind,'builtin');assert.equal(await notice.textContent(),'暫無發布資訊');checks++;
+ response={generation:'invalid'};assert.equal(await page.evaluate(()=>window.__catalog.refresh()),false);
+ assert.match(await page.getByRole('status').textContent(),/目錄暫不可用/);assert.equal((await selection()).kind,'builtin');assert.equal(await notice.textContent(),'通知暫不可用');checks++;
+ response=payload();await page.getByRole('button',{name:'重新取得遊戲目錄及通知'}).click();await page.waitForFunction(()=>document.querySelector('select').options.length===2);checks++;
+ await select.selectOption(game);hold=true;await page.evaluate(()=>{window.__pending=window.__catalog.refresh();});await page.waitForFunction(()=>document.querySelector('select').options.length===1);
+ assert.equal((await selection()).kind,'builtin');assert.equal(await select.isDisabled(),false);await held();checks++;
+ // A later empty directory wins over the earlier held result.
+ hold=false;response={...payload(),generation:2,directory:[],announcements:[]};await page.evaluate(()=>window.__catalog.refresh());releaseAll();await page.evaluate(()=>window.__pending);
+ assert.equal(await select.locator('option').count(),1);assert.equal((await selection()).kind,'builtin');checks++;
+ response=payload();await page.evaluate(()=>window.__catalog.refresh());await select.selectOption(game);hold=true;await notice.click();await page.waitForFunction(()=>!!document.querySelector('[role=dialog]'));
+ await held();await dialog.click({button:'right'});releaseAll();await page.waitForFunction(()=>document.querySelector('select').options.length===2);
+ assert.equal(await dialog.count(),0);assert.equal((await selection()).gameId,game);checks++;
+ await notice.click();await page.waitForFunction(()=>document.querySelectorAll('[role=dialog] tr').length===41);
+ await page.screenshot({path:join(artifact,'history.png')});
+ hold=true;await page.evaluate(()=>{window.__last=window.__catalog.refresh();window.__catalog.close();});releaseAll();assert.equal(await page.evaluate(()=>window.__last),false);
+ assert.equal(await page.locator('.player-catalog,[role=dialog]').count(),0);assert.equal(await selection(),null);assert.equal(await page.locator('#outside').textContent(),'原界面');checks++;
+ await page.waitForFunction(()=>window.__catalogTraces.every(trace=>trace.completed));
+ const traces=await page.evaluate(()=>window.__catalogTraces),completedStreamFailures=[];
+ assert.equal(traces.length,calls.length);assert.ok(traces.every(trace=>trace.completed&&!trace.cancelled&&trace.bytes>0));
+ for(const event of failed){assert.ok(!completedStreamFailures.some(row=>row.sequence===event.sequence));completedStreamFailures.push(assertCompletedStreamObservation(event,traces,calls,api));}
+ assert.equal(await page.evaluate(()=>window.__idb),0);assert.deepEqual(errors,[]);assert.deepEqual(forbidden,[]);
+ assert.ok(calls.every(call=>!call.headers.authorization&&!call.headers.cookie&&!call.headers.referer&&call.method==='GET'));checks++;
+ const paths=['web/src/player/playercatalog.js','web/src/player/playerclient.js','web/src/player/runtimecontract.js','tools/verify_player_catalog_browser.mjs'];
+ const sources=Object.fromEntries(await Promise.all(paths.map(async p=>[p,sha(await readFile(p))])));
+ await writeFile(join(artifact,'result.json'),JSON.stringify({checks,sources,calls:calls.map(({origin,path,method,sequence,status,bytes})=>({origin,path,method,sequence,status,bytes})),traces,completedStreamFailures,errors,failed,forbidden,screenshotSHA:sha(await readFile(join(artifact,'history.png'))),scope:'Actual DOM/catalog + real reader with controlled registry responses. No title/App mount, admission, stored data, recognized old releases, cloud or deploy.'},null,2));
+ process.stdout.write(JSON.stringify({checks,artifact})+'\n');
+}catch(error){await writeFile(join(artifact,'failure.json'),JSON.stringify({error:String(error),errors,failed,forbidden},null,2));throw error;}
+finally{releaseAll();await browser?.close();await server.close();}

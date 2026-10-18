@@ -1,7 +1,8 @@
 // V1 slice 1: differential checks for vps/sqlite-port.mjs against the
 // Durable-Object storage.sql semantics server/*.js relies on.
 // Usage: node tools/verify_vps_sqlite_port.mjs
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStorage } from '../vps/sqlite-port.mjs';
@@ -60,7 +61,34 @@ mem.transactionSync(() => {
   try { mem.transactionSync(() => { mem.sql.exec('INSERT INTO t VALUES(?,?,?)', 'n4', 1, 'drop'); throw new Error('inner'); }); } catch { /* inner rolls back */ }
 });
 check('inner rollback keeps outer', mem.sql.exec("SELECT id FROM t WHERE id='n3'").toArray().length === 1 && mem.sql.exec("SELECT id FROM t WHERE id='n4'").toArray().length === 0);
+let asyncEntered = false;
+assert.throws(() => mem.transactionSync(async () => { asyncEntered = true; }), /SYNC_TRANSACTION_REQUIRED/);
+check('async callback rejected before invocation', !asyncEntered);
+assert.throws(() => mem.transactionSync(() => {
+  mem.sql.exec('INSERT INTO t VALUES(?,?,?)', 'promise', 1, 'rollback');
+  return Promise.resolve();
+}), /SYNC_TRANSACTION_REQUIRED/);
+check('thenable result rolls back synchronous prefix', mem.sql.exec("SELECT id FROM t WHERE id='promise'").toArray().length === 0);
+mem.transactionSync(() => mem.sql.exec('INSERT INTO t VALUES(?,?,?)', 'after', 1, 'valid'));
+check('transaction usable after async rejection', mem.sql.exec("SELECT id FROM t WHERE id='after'").toArray().length === 1);
+const cursor = mem.sql.exec('SELECT id FROM t ORDER BY id');
+assert.equal(cursor[Symbol.iterator](), cursor);
+assert.equal(cursor.next().value.id, 'a');
+const remainder = cursor.toArray();
+check('iterator and toArray share one consuming cursor', remainder.length > 0 && remainder.every(row => row.id !== 'a') && cursor.toArray().length === 0 && cursor.next().done);
+check('spread consumes query cursor', [...mem.sql.exec('SELECT id FROM t')].length === remainder.length + 1);
+const beforePages = mem.sql.databaseSize;
+assert.ok(Number.isSafeInteger(beforePages) && beforePages > 0);
+assert.throws(() => mem.transactionSync(() => {
+  mem.sql.exec('CREATE TABLE page_probe (bytes BLOB)');
+  mem.sql.exec('INSERT INTO page_probe VALUES(?)', new Uint8Array(128 * 1024));
+  assert.ok(mem.sql.databaseSize > beforePages);
+  throw new Error('size rollback');
+}), /size rollback/);
+check('logical page bytes include active writes and restore on rollback', mem.sql.databaseSize === beforePages);
 mem.close();
+assert.throws(() => mem.sql.databaseSize);
+check('closed database size cannot appear as zero', true);
 
 const dir = mkdtempSync(join(tmpdir(), 'vps-sqlite-'));
 const file = openStorage(join(dir, 'test.db'));
@@ -68,9 +96,21 @@ check('file open', !!file);
 const mode = file.sql.exec('PRAGMA journal_mode').toArray()[0]?.journal_mode;
 check('wal mode on file db', mode === 'wal');
 file.transactionSync(() => file.sql.exec('CREATE TABLE k (v TEXT)'));
+const concurrent = openStorage(join(dir, 'test.db'));
+const sqlCalls = [], exec = file.sql._db.exec.bind(file.sql._db);
+file.sql._db.exec = query => { sqlCalls.push(query); return exec(query); };
+try {
+  concurrent.sql.exec('BEGIN IMMEDIATE');
+  assert.throws(() => file.transactionSync(() => {}), /locked/);
+  concurrent.sql.exec('ROLLBACK');
+  sqlCalls.length = 0;
+  file.transactionSync(() => file.sql.exec("INSERT INTO k VALUES('after-lock')"));
+  check('failed BEGIN preserves root transaction depth', sqlCalls[0] === 'BEGIN IMMEDIATE' && sqlCalls.at(-1) === 'COMMIT');
+} finally { concurrent.close(); }
 file.close();
 const reopen = openStorage(join(dir, 'test.db'));
 check('restart persistence', reopen.sql.exec("SELECT name FROM sqlite_master WHERE name='k'").toArray().length === 1);
 reopen.close();
+rmSync(dir, { recursive: true, force: true });
 
 console.log(`passed ${passed} checks`);

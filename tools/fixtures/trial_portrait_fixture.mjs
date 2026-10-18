@@ -1,5 +1,5 @@
 // Test-only fixture shared by Node SQLite and a real workerd SQLite DO.
-// Principal/games/drafts/catalog are explicit stubs, NOT real authentication/R2.
+// Principal/games/drafts/runtimeAssets are explicit stubs, NOT real authentication/R2.
 import { TrialSessions } from '../../server/trials.js';
 import { HttpError } from '../../server/security.js';
 import { createHash } from 'node:crypto';
@@ -16,7 +16,7 @@ export function trialPortraitFixture(storage, policy) {
     },
     games: { snapshotReference() { throw new Error('unused fixture port'); }, assertNotDeleting() { if (deleting) { throw new HttpError(409, 'GAME_DELETING'); } } },
     drafts: { captureForCompile() { throw new Error('unused fixture port'); } },
-    catalog: { definition() { return {}; }, loadFull() { throw new Error('unused fixture port'); } }
+    runtimeAssets: { definition() { return {}; }, capture() { throw new Error('unused fixture port'); } }
   });
   const snapshot = () => sql.exec('SELECT asset_id,sha256,byte_length,bytes FROM trial_assets WHERE trial_id=? ORDER BY asset_id', TRIAL).toArray().map(row => ({ ...row, bytes: Buffer.from(row.bytes).toString('base64') }));
   const putManifest = bytes => sql.exec('INSERT OR REPLACE INTO trial_assets VALUES(?,?,?,?,?)', TRIAL, 'manifest', sha(bytes), bytes.length, bytes);

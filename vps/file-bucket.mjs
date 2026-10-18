@@ -1,94 +1,150 @@
-// VPS file bucket: native port behind server/blobs.js ImmutableBlobStore
-// and server/privatewrites.js PrivateWriteJournal. Replaces the R2 API
-// subset the worker uses:
-//
-//   put(key, bytes, { onlyIf }) -> object on write, null when the key
-//     already exists under If-None-Match:* (caller re-reads + re-hashes;
-//     an etag is never proof). Writes are atomic: O_EXCL create, fsync
-//     file, fsync directory, no overwrites.
-//   get(key) -> { key, size, body } with a web ReadableStream, or null.
-//   list({ prefix }) -> real prefix scan over both layouts.
-//
-// Keys must match private/<game-uuid>/<sha256-hex> (authoritative blobs)
-// or installed/<registry>/<sha256-hex> (installed source bytes; registry
-// ids are pinned names, not uuids). Anything else throws. No authority
-// logic here; server/blobs.js keeps every permission/hash gate.
-import { openSync, closeSync, writeSync, fsyncSync, mkdirSync, statSync, readdirSync, createReadStream } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+// Immutable private/installed filesystem port. A same-directory temporary file
+// is fully written and synced before hard-link installation (no overwrite), then
+// directory-synced. An interrupted confirmation is NOT a rollback assertion.
+// Linux directory fsync is mandatory; Windows's explicit unsupported errors are
+// tolerated only for local verification. Root/ancestors must not be symlinks.
+// This is not a sandbox against another privileged/same-uid filesystem writer:
+// production owns a private directory, and callers still verify bytes/SHA.
+import { constants, openSync, closeSync, writeSync, fsyncSync, mkdirSync, lstatSync, fstatSync, readdirSync, createReadStream, linkSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { join, resolve, sep, parse } from 'node:path';
 import { Readable } from 'node:stream';
 
 const KEY = /^(private\/([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})|installed\/([A-Za-z0-9_.-]{1,128}))\/([a-f0-9]{64})$/;
+const READ_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
+function statOrMissing(path) {
+  try { return lstatSync(path); }
+  catch (error) { if (error?.code === 'ENOENT') return null; throw error; }
+}
+function syncDirectory(path) {
+  let fd;
+  try {
+    fd = openSync(path, READ_FLAGS | (constants.O_DIRECTORY ?? 0));
+    fsyncSync(fd);
+  } catch (error) {
+    if (process.platform !== 'win32' || !['EPERM', 'ENOSYS', 'EINVAL', 'EISDIR'].includes(error?.code)) throw error;
+  } finally { if (fd !== undefined) closeSync(fd); }
+}
+function directory(path, create = false) {
+  const absolute = resolve(path), root = parse(absolute).root;
+  let current = root;
+  for (const part of absolute.slice(root.length).split(sep).filter(Boolean)) {
+    const parent = current; current = join(current, part);
+    let stat = statOrMissing(current);
+    if (!stat && create) {
+      try { mkdirSync(current, { mode: 0o700 }); }
+      catch (error) { if (error?.code !== 'EEXIST') throw error; }
+      stat = lstatSync(current); syncDirectory(parent);
+    }
+    if (!stat) return false;
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('bucket directory unsafe');
+  }
+  return true;
+}
+function regularFile(path) {
+  const stat = statOrMissing(path);
+  if (stat && (!stat.isFile() || stat.isSymbolicLink())) throw new Error('bucket object unsafe');
+  return stat;
+}
 
 export class FileBucket {
   #root;
   constructor({ root }) {
     if (typeof root !== 'string' || !root) throw new TypeError('root directory required');
     this.#root = resolve(root);
-    mkdirSync(this.#root, { recursive: true });
+    directory(this.#root, true);
   }
   #path(key) {
-    const match = KEY.exec(key);
-    if (!match) throw new TypeError('bucket key shape');
+    const match = typeof key === 'string' ? KEY.exec(key) : null;
+    if (!match || match[3] === '.' || match[3] === '..') throw new TypeError('bucket key shape');
     const parts = match[2] !== undefined ? ['private', match[2]] : ['installed', match[3]];
-    const full = resolve(this.#root, parts[0], parts[1], `${match[4]}.bin`);
+    const dir = resolve(this.#root, ...parts);
+    const full = join(dir, `${match[4]}.bin`);
     if (!full.startsWith(this.#root + sep)) throw new TypeError('bucket key escape');
-    return { full, dir: resolve(this.#root, parts[0], parts[1]) };
+    return { full, dir, hash: match[4] };
   }
   async put(key, bytes, options = {}) {
-    const { full, dir } = this.#path(key);
-    if (!ArrayBuffer.isView(bytes) || !(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)) {
-      throw new TypeError('bucket bytes');
-    }
-    const conditional = options?.onlyIf instanceof Headers && options.onlyIf.get('If-None-Match') === '*';
-    mkdirSync(dir, { recursive: true });
-    let fd;
+    const { full, dir, hash } = this.#path(key);
+    if (!(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)) throw new TypeError('bucket bytes');
+    if (options?.onlyIf !== undefined && (!(options.onlyIf instanceof Headers) ||
+        options.onlyIf.get('If-None-Match') !== '*' || [...options.onlyIf].length !== 1)) throw new TypeError('bucket condition');
+    directory(dir, true);
+    // Unconditional calls also never overwrite immutable private keys.
+    if (regularFile(full)) { syncDirectory(dir); return null; }
+    const temp = join(dir, `.${hash}.${randomUUID()}.tmp`);
+    let fd, ownsTemp = false;
     try {
-      fd = openSync(full, conditional ? 'wx' : 'w');
-    } catch (error) {
-      if (conditional && error?.code === 'EEXIST') { return null; }
-      throw error;
-    }
-    try {
-      if (bytes.byteLength) { writeSync(fd, bytes, 0, bytes.byteLength, 0); }
-      fsyncSync(fd);
+      fd = openSync(temp, 'wx', 0o600); ownsTemp = true;
+      for (let offset = 0; offset < bytes.byteLength;) {
+        const written = writeSync(fd, bytes, offset, bytes.byteLength - offset, offset);
+        if (!Number.isSafeInteger(written) || written < 1) throw new Error('bucket short write');
+        offset += written;
+      }
+      fsyncSync(fd); closeSync(fd); fd = undefined;
+      let created = true;
+      try { linkSync(temp, full); }
+      catch (error) {
+        if (error?.code !== 'EEXIST') throw error;
+        if (!regularFile(full)) throw new Error('bucket install disappeared');
+        created = false;
+      }
+      syncDirectory(dir);
+      return created ? {} : null;
     } finally {
-      closeSync(fd);
+      if (fd !== undefined) closeSync(fd);
+      if (ownsTemp) { unlinkSync(temp); syncDirectory(dir); }
     }
-    // Directory fsync is required for durability on Linux. Windows forbids
-    // fsync on directory handles (EPERM); there it is best-effort only and
-    // production Linux enforcement is covered by V1 container verification.
-    const dirFd = openSync(dir, 'r');
-    try { fsyncSync(dirFd); } catch (error) {
-      if (error?.code !== 'EPERM' && error?.code !== 'ENOSYS' && error?.code !== 'EINVAL') { throw error; }
-    } finally { closeSync(dirFd); }
-    return {};
   }
   async get(key) {
-    let full;
-    try { ({ full } = this.#path(key)); } catch { return null; }
-    let size;
-    try { size = statSync(full).size; } catch { return null; }
-    return { key, size, body: Readable.toWeb(createReadStream(full)) };
+    let path;
+    try { path = this.#path(key); } catch { return null; }
+    if (!directory(path.dir)) return null;
+    const stat = regularFile(path.full);
+    if (!stat) return null;
+    let stream;
+    return {
+      key, size: stat.size,
+      get body() {
+        if (stream) return stream;
+        if (!directory(path.dir)) throw new Error('bucket object disappeared');
+        regularFile(path.full);
+        const fd = openSync(path.full, READ_FLAGS);
+        try {
+          const actual = fstatSync(fd);
+          if (!actual.isFile() || actual.dev !== stat.dev || actual.ino !== stat.ino || actual.size !== stat.size) throw new Error('bucket object changed');
+          stream = Readable.toWeb(createReadStream(path.full, { fd, autoClose: true }));
+          return stream;
+        } catch (error) { closeSync(fd); throw error; }
+      },
+      arrayBuffer() { return new Response(this.body).arrayBuffer(); },
+    };
   }
   async list({ prefix = '' } = {}) {
+    if (typeof prefix !== 'string') throw new TypeError('bucket prefix');
     const out = [];
+    if (!directory(this.#root)) throw new Error('bucket root disappeared');
     for (const namespace of ['private', 'installed']) {
-      let gameDirs = [];
-      try { gameDirs = readdirSync(join(this.#root, namespace), { withFileTypes: true }); } catch { continue; }
-      for (const dirent of gameDirs) {
-        if (!dirent.isDirectory()) { continue; }
-        let files = [];
-        try { files = readdirSync(join(this.#root, namespace, dirent.name)); } catch { continue; }
-        for (const file of files) {
-          if (!file.endsWith('.bin')) { continue; }
-          const key = `${namespace}/${dirent.name}/${file.slice(0, -4)}`;
-          if (!KEY.test(key) || (prefix && !key.startsWith(prefix))) { continue; }
-          let size = 0;
-          try { size = statSync(join(this.#root, namespace, dirent.name, file)).size; } catch { continue; }
-          out.push({ key, size });
+      const base = join(this.#root, namespace);
+      if (!directory(base)) continue;
+      for (const name of readdirSync(base)) {
+        if (!KEY.test(`${namespace}/${name}/${'0'.repeat(64)}`) || name === '.' || name === '..') continue;
+        const dir = join(base, name);
+        if (!directory(dir)) throw new Error('bucket directory disappeared');
+        for (const file of readdirSync(dir)) {
+          if (!/^[a-f0-9]{64}\.bin$/.test(file)) continue;
+          const key = `${namespace}/${name}/${file.slice(0, -4)}`;
+          if (!key.startsWith(prefix)) continue;
+          const stat = regularFile(join(dir, file));
+          if (!stat) throw new Error('bucket object disappeared');
+          out.push({ key, size: stat.size });
         }
       }
     }
+    out.sort((a, b) => {
+      if (a.key < b.key) return -1;
+      if (a.key > b.key) return 1;
+      return 0;
+    });
     return { objects: out };
   }
 }

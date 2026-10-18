@@ -13,8 +13,8 @@ import { HttpError, fail } from '../server/security.js';
 
 let passed = 0;
 const check = (name, cond, extra = '') => {
-  if (!cond) { console.error(`FAIL ${name} ${extra}`); process.exitCode = 1; }
-  else { passed++; console.log(`ok ${name}`); }
+  if (!cond) { process.stderr.write(`FAIL ${name} ${extra}\n`); process.exitCode = 1; }
+  else { passed++; process.stdout.write(`ok ${name}\n`); }
 };
 const fails = async (name, fn, code) => {
   try { await fn(); } catch (e) {
@@ -49,12 +49,11 @@ const mkGame = (id, draftName) => storage.sql.exec(
   'INSERT INTO content_games VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
   id, 'u1', draftName, '', null, null, '1', '1', null, '0', 0, 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
 storage.transactionSync(() => { mkGame(GA, 'DraftA'); mkGame(GB, 'DraftB'); });
-// Worker #publishPin order, unlisted: issue → pin → prune → prune-ann → no announce.
+// Worker #publishPin order, unlisted: issue → pin → prune releases → no announce.
 const issued1 = storage.transactionSync(() => {
   const issued = releases.issueInTxn('ha', GA, '1', DIG);
   const pin = pins.publishInTxn('ha', { gameId: GA, name: 'AGame', revision: '1', sourceDigest: DIG, chapters: ['c1'], ordinal: issued.ordinal });
   releases.pruneExceptInTxn('ha', GA, issued.releaseId);
-  ann.pruneExceptInTxn(GA, issued.releaseId);
   return { issued, pin };
 });
 check('unlisted publish pins 1.0', issued1.pin.ordinal === '1.0');
@@ -78,12 +77,11 @@ const frozenAt = first.announcements[0].firstOnlineAt;
 // Frozen snapshot: later live renames do not rewrite the announcement (Q33).
 storage.transactionSync(() => { storage.sql.exec('UPDATE content_games SET draft_name=? WHERE game_id=?', 'Renamed', GA); });
 check('announcement keeps frozen name', ann.list().announcements[0].name === 'AGame');
-// Publish v2 while listed: single-version replacement, one row, revision+1 (Q31).
+// Publish v2 while listed: current release replaced, public history kept (Q31/Q32).
 const issued2 = storage.transactionSync(() => {
   const issued = releases.issueInTxn('ha', GA, '2', DIG);
   pins.publishInTxn('ha', { gameId: GA, name: 'AGame2', revision: '2', sourceDigest: DIG, chapters: ['c1'], ordinal: issued.ordinal });
   releases.pruneExceptInTxn('ha', GA, issued.releaseId);
-  ann.pruneExceptInTxn(GA, issued.releaseId);
   const live = storage.sql.exec('SELECT listed FROM content_games WHERE game_id=?', GA).toArray()[0];
   if (Number(live.listed) === 1) {
     if (ann.announceInTxn({ gameId: GA, releaseId: issued.releaseId, ordinal: issued.ordinal, name: 'AGame2', creatorAccount: 'author_a', publishedAt: issued.createdAt, firstOnlineAt: new Date().toISOString() })) { ann.bumpRegistryInTxn(); }
@@ -91,7 +89,8 @@ const issued2 = storage.transactionSync(() => {
   return issued;
 });
 const second = ann.list();
-check('listed publish replaces with 1.1', second.announcements.length === 1 && second.announcements[0].ordinal === issued2.ordinal && second.revision === 2);
+check('listed publish appends 1.1 without deleting 1.0', second.announcements.length === 2 && second.announcements[0].ordinal === issued2.ordinal && second.revision === 2);
+check('old public snapshot survives release pruning', JSON.stringify(second.announcements[1]) === JSON.stringify(first.announcements[0]));
 check('old release row pruned', storage.sql.exec('SELECT release_id FROM content_releases WHERE game_id=?', GA).toArray().length === 1);
 // 下架 hides but keeps the row; relist of the same version neither dups
 // nor retops (first_online_at preserved) — Q32/Q35.
@@ -102,7 +101,7 @@ const unlisted = storage.transactionSync(() => {
 });
 check('unlist flips down', unlisted.changed && !unlisted.becameListed);
 check('delisted hidden, row kept', ann.list().announcements.length === 0
-  && storage.sql.exec('SELECT COUNT(*) AS n FROM content_announcements WHERE game_id=?', GA).toArray()[0].n === 1
+  && storage.sql.exec('SELECT COUNT(*) AS n FROM content_announcements WHERE game_id=?', GA).toArray()[0].n === 2
   && ann.revision() === 3);
 const relisted = storage.transactionSync(() => {
   const done = games.setListedInTxn('ha', GA, true, '3');
@@ -111,9 +110,8 @@ const relisted = storage.transactionSync(() => {
   return done;
 });
 const third = ann.list();
-check('relist restores same row/order', relisted.becameListed && third.announcements.length === 1
-  && third.announcements[0].firstOnlineAt !== frozenAt // v2 row, not v1
-  && third.revision === 4);
+check('relist restores all rows/order', relisted.becameListed && JSON.stringify(third.announcements) === JSON.stringify(second.announcements)
+  && third.announcements[1].firstOnlineAt === frozenAt && third.revision === 4);
 check('relist same version is idempotent', ann.announceCurrentInTxn(GA) === false
   && ann.list().announcements[0].firstOnlineAt === third.announcements[0].firstOnlineAt);
 // No release yet → 上架 announces nothing (GB listed, never published).
@@ -138,7 +136,7 @@ check('page1 holds 30 + cursor', page1.announcements.length === 30 && typeof pag
 const ordered = page1.announcements.every((r, i, a) => i === 0 || a[i - 1].firstOnlineAt > r.firstOnlineAt || (a[i - 1].firstOnlineAt === r.firstOnlineAt && a[i - 1].announcementId > r.announcementId));
 check('sort key honored', ordered);
 const page2 = ann.list({ cursor: page1.nextCursor });
-check('page2 holds the rest, no cursor', page2.announcements.length === 3 && page2.nextCursor === null);
+check('page2 holds the rest, no cursor', page2.announcements.length === 4 && page2.nextCursor === null);
 const stale = ann.list({ cursor: Buffer.from(JSON.stringify({ t: page1.announcements[0].firstOnlineAt, id: page1.announcements[0].announcementId, rev: -1 })).toString('base64url') });
 check('stale revision returns first page', stale.announcements.length === 30 && stale.revision === page1.revision);
 await fails('malformed cursor 422', async () => ann.list({ cursor: '!!!' }), 'ANNOUNCE_CURSOR');
@@ -158,4 +156,5 @@ check('admin unlist applies', applied.listed === false);
 check('admin unlist bumps registry', ann.revision() === before + 1);
 check('admin-unlisted game hidden', ann.list().announcements.every(r => r.gameId !== GA));
 
-console.log(`passed ${passed} checks`);
+storage.close();
+process.stdout.write(`passed ${passed} checks\n`);

@@ -66,19 +66,22 @@ const registry = new PublishedGames({ storage, principal });
 const pinIn = { gameId: G, name: 'Agame', revision: '6', sourceDigest: 'c'.repeat(64), chapters: ['c1'] };
 const committed = storage.transactionSync(() => {
   const rel = ledger.issueInTxn('h1', G, '6', 'c'.repeat(64));
-  const pin = registry.publishInTxn('h1', pinIn);
+  const pin = registry.publishInTxn('h1', { ...pinIn, ordinal: rel.ordinal });
   return { rel, pin };
 });
 check('commit ordinal+pin', committed.rel.ordinal === '1.2' && committed.pin.revision === '6');
 try {
   storage.transactionSync(() => {
-    ledger.issueInTxn('h1', G, '7', 'd'.repeat(64));
-    registry.publishInTxn('h1', { ...pinIn, revision: '7', sourceDigest: 'd'.repeat(64) });
+    const rel = ledger.issueInTxn('h1', G, '7', 'd'.repeat(64));
+    registry.publishInTxn('h1', { ...pinIn, revision: '7', sourceDigest: 'd'.repeat(64), ordinal: rel.ordinal });
     throw new Error('simulated post-commit failure');
   });
   check('rollback throws', false);
 } catch (e) { check('rollback throws', e.message === 'simulated post-commit failure'); }
 check('rollback consumes nothing', ledger.history('h1', G).length === 3 && ledger.current('h1', G)?.ordinal === '1.2');
-check('pin still rev6', registry.list().some(p => p.gameId === G && p.revision === '6'));
+const retainedPin = storage.sql.exec('SELECT pin_json FROM published_games WHERE game_id=?', G).toArray()[0].pin_json;
+check('pin still rev6', retainedPin === JSON.stringify(committed.pin));
+check('unlisted pin remains private', registry.list().length === 0);
+storage.close();
 
 console.log(`passed ${passed} checks`);

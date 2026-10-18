@@ -2,15 +2,19 @@
 
 ## 部署边界
 
-当前内置游戏的静态发行包没有服务端API、数据库、WebSocket或云存档依赖。部署到域名根目录，保留目录结构和文件大小写。正式站点使用HTTPS；浏览器必须允许IndexedDB。不要上传仓库根目录、原版程序、真实存档或本机配置。
+当前生产项目是 **Workers Static Assets `dragon`**，由 GitHub `main` 触发自动部署；不是 Pages，也不是编辑器后台 `dragon-editor`。部署到原域名根目录，保留目录结构和文件大小写、HTTPS 与 IndexedDB origin。不要上传仓库根目录、原版程序、真实存档或本机配置。
 
-后继用户确认编辑器／私有后端部署VPS，正式自建游戏数据分发至Cloudflare；内置静态部署及游戏origin保持。自建数据目录／固定版本／资产增加只读发布取数能力，不意味着把编辑器、图片解码或玩家存档部署到Cloudflare。具体[适配／同步／读取端方案](editor-vps-cloudflare-plan.md)目前只设计，未创建资源／改变Git部署／域名，不把本页静态上线检查当作VPS／分发链验收。
+内置游戏仍从静态发行包读取编译后的运行数据，不依赖编辑器服务或 R2 成功；标题新增的目录／公告请求失败时降级为内置游戏。自建游戏的目录、正式包及 R2 取数则需要独立的只读服务，**不能据内置能运行声称新游戏分发已接通**。当前客户端旧 `/api/*` 接口与 `reader/worker.js` 的 `/play-api/v1/*` 尚未完整对接。后继用户选择A已补签名固定资源门并退役泛 key 读取，但持久分发、完整资源闭包和前端仍未闭合，不能直接改为生产 Worker 入口。现状见[R2接线](r2-player-connection.md)，静态部署批次证据见[部署审计](workers-deployment-audit.md)。
+
+后继用户确认编辑器／私有后端部署VPS，正式自建游戏数据分发至Cloudflare；内置静态部署及游戏origin保持。自建数据目录／固定版本／资产增加只读发布取数能力，不意味着把编辑器、图片解码或玩家存档部署到Cloudflare。具体[适配／同步／读取端方案](editor-vps-cloudflare-plan.md)的后继决定见[开发待办 H 节](editor-dev-todo.md#h-用户已决策2026-10-14)：`dragon` 私有 R2 桶及共用画像首传已有记录，publisher／reader 已有本地原型，但生产接线与 V5 尚未闭合。不把本页静态上线检查当作 VPS／R2 分发链验收。
 
 推荐 Node.js 22，执行 `node tools/prepare_deploy.mjs` 生成 `dist/`。这是可选复制步骤，不是游戏编译；完整 `web/` 仍可直接运行。脚本每次重建固定的 `dist/`，检查单文件不超过 25 MiB、文件数不超过 20,000 及大小写冲突。Cloudflare 套餐限额可能变化，以官方文档为准。
 
-发行包排除试听与逆向音频证据、调试日志、探针、设计源文件和展示截图；这些不等于可从研究仓库删除。运行中的 FLAC、两份效果音 WAV、开场 MP3，以及结束画面保留。尚未接入的 ENDBGM 原始导出仍保留在仓库，不随当前运行包发布。
+发行包排除 `content/builtin/compiled/*/game-source.json`（地图／章节的完整编辑创作源，现有文件约37～41 MiB），保留同目录的运行目录、章模板、地形、道路、四季图集和小地图。大源仍留在 Git，供编辑器／VPS 使用；玩家不加载它。不是跳过所有大文件：其它运行文件超25 MiB仍使打包失败，不得删掉体积守卫或靠少发资源蒙混通过。共享引擎依赖 `src/editor/` 中的部分模块，不能整目录排除。
 
-## Pages Git 自动部署（推荐）
+发行包还排除试听与逆向音频证据、调试日志、探针、设计源文件和展示截图；这些不等于可从研究仓库删除。运行中的 FLAC、两份效果音 WAV、开场 MP3，以及结束画面保留。尚未接入的 ENDBGM 原始导出仍保留在仓库，不随当前运行包发布。
+
+## Pages Git 自动部署（替代方案，非本站当前链路）
 
 1. 登录 Cloudflare，在 **Workers & Pages → Create application → Pages → Connect to Git** 创建项目。
 2. 安装／授权 Cloudflare GitHub 集成，仅选择所需仓库，例如 `tianyi092-jcza/dragon`。首次 OAuth 和账号选择需要仓库所有者完成，不能用 Wrangler 登录替代 GitHub 授权。
@@ -19,13 +23,13 @@
 5. 保存并部署，记录实际分配的 `*.pages.dev` 地址。不要把示例项目名或预期域名当作已上线地址。
 6. 后续 GitHub `main` 推送自动发布；按需要关闭不必要的分支预览。部署失败时旧的成功版本通常仍可访问，应核对部署记录中的提交 SHA。
 
-根目录 `wrangler.jsonc` 是 **Workers** 备选配置，不含 Pages 的 `pages_build_output_dir`；Pages 在控制台使用上述配置，不应把浏览器 JS 设为 Functions／Worker 入口。
+根目录 `wrangler.jsonc` 是本站当前 **Workers** 配置，不含 Pages 的 `pages_build_output_dir`；Pages 在控制台使用上述配置，不应把浏览器 JS 设为 Functions／Worker 入口。
 
 如需 Git 集成，首次不要用 `wrangler pages project create` 创建 Direct Upload 项目。Direct Upload 和 Git 集成的项目模式存在切换限制；临时命令行上传不等于已建立推送自动部署。
 
 自定义域名必须在 Pages 项目的 **Custom domains** 中添加并按提示配置 DNS／证书，不要仅手工添加 CNAME 就视为完成。修改域名不会迁移浏览器存档。
 
-## Workers Static Assets（备选）
+## Workers Static Assets（本站当前链路）
 
 使用 `wrangler.jsonc` 纯静态资源配置，不部署游戏后端。默认项目名是 `dragon`；首次发布前确认账号下没有会被覆盖的同名项目。
 
@@ -38,7 +42,11 @@ npx wrangler@4 deploy
 
 Wrangler 自动执行配置中的复制命令。账号有多个时，用本机环境变量 `CLOUDFLARE_ACCOUNT_ID` 指定正确账号；不要在仓库写凭据。
 
-如选择 Workers 的 Git 自动部署：在 Cloudflare 控制台连接 GitHub 仓库、生产分支 `main`，根目录选仓库根，部署命令用 `npx wrangler@4 deploy`；该命令已包含配置里的静态打包步骤。构建环境选择受支持的 Node.js 版本。平台界面和可用功能以当前账号为准，首次成功部署后再核对推送触发记录。Pages 与 Workers 二选一即可，不必为同一站点同时创建两套生产项目。
+Workers Git 自动部署设置应明确为：GitHub `tianyi092-jcza/dragon`、生产分支 `main`、根目录为仓库根（不是 `web/`、`server/` 或 `reader/`）；部署命令建议显式指定 `npx wrangler@4 deploy --config wrangler.jsonc`。该命令会执行配置里的 `node tools/prepare_deploy.mjs`，静态目录为 `dist/`；控制台无需再重复指定复制命令。Node.js 推荐22或更新的受支持版本。
+
+根配置仅发布 `web/` 的静态发行包；`server/wrangler.jsonc` 是编辑器开发后端，`vps/` 是另一部署目标，`reader/worker.js` 当前只是尚未生产准入的读取原型。不要让自动发现或控制台根目录选到它们，不要为了本次静态打包失败添加编辑器 DO／私有桶绑定。
+
+控制台实际设置、构建日志及部署提交 SHA 仍须逐次核验。`node --test tools/verify_prepare_deploy.mjs` 可做无网络打包回归；`wrangler deploy --dry-run` 只验本地配置与发行包，不证明云端令牌、Git 集成或 R2 运行链成功。Pages 与 Workers 二选一即可，不必为同一站点同时创建两套生产项目。
 
 ## 私有化部署
 

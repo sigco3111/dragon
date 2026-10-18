@@ -60,15 +60,40 @@ export class GameDeletionFence {
     if (!row || (row.owner_id !== actor.id && actor.role !== 'admin')) { fail(404, 'GAME_NOT_FOUND'); }
     return row;
   }
+  #decoded(operation) {
+    const value = parse(operation.result_json);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) { fail(503, 'DELETE_RECEIPT_CORRUPT'); }
+    if (!Object.hasOwn(value, 'version')) { return { result: value, distribution: undefined }; }
+    const ref = value.distribution;
+    if (value.version !== 1 || Object.keys(value).sort().join(',') !== 'distribution,result,version' || !ref || Array.isArray(ref) || Object.keys(ref).sort().join(',') !== 'generation,operationId' || !uuid(ref.operationId) || !Number.isSafeInteger(ref.generation) || ref.generation < 1 || JSON.stringify({ version: 1, result: value.result, distribution: ref }) !== operation.result_json) { fail(503, 'DELETE_RECEIPT_CORRUPT'); }
+    this.#distribution(operation.game_id, ref);
+    return { result: value.result, distribution: Object.freeze({ ...ref }) };
+  }
+  #distribution(gameId, ref) {
+    const event = this.#one('SELECT game_id,kind,generation FROM content_distribution_events WHERE operation_id=?', ref.operationId);
+    if (!event || event.game_id !== gameId || event.kind !== 'delete-fence' || event.generation !== ref.generation) { fail(503, 'DELETE_DISTRIBUTION_CORRUPT'); }
+  }
   #receipt(actor, operation) {
     if (operation.auth_epoch !== actor.epoch) { fail(409, 'OPERATION_REVOKED'); }
     this.#target(actor, operation.game_id);
-    const fence = this.#one('SELECT * FROM content_deletion_fences WHERE game_id=?', operation.game_id), result = parse(operation.result_json);
+    const fence = this.#one('SELECT * FROM content_deletion_fences WHERE game_id=?', operation.game_id), { result } = this.#decoded(operation);
     if (!result || typeof result !== 'object' || Array.isArray(result) || Object.keys(result).sort().join(',') !== 'createdAt,gameId,rowRevision,state') { fail(503, 'DELETE_RECEIPT_CORRUPT'); }
     if (!fence || result.gameId !== operation.game_id || result.state !== 'fenced' || result.rowRevision !== fence.fence_revision || result.createdAt !== fence.created_at || fence.actor_id !== actor.id) { fail(503, 'DELETE_RECEIPT_CORRUPT'); }
     return result;
   }
-  begin(tokenHash, operationKey, input) {
+  // Minimal deletion confirmation metadata, not access to another author's draft.
+  previewForAdmin(tokenHash, gameId) {
+    return this.#storage.transactionSync(() => {
+      const actor = this.#actor(tokenHash);
+      if (actor.role !== 'admin') { fail(403, 'ADMIN_REQUIRED'); }
+      const row = this.#target(actor, gameId);
+      this.#assertFenceable(actor, { gameId, expectedRowRevision: row.row_revision, confirmationName: row.draft_name });
+      if (!rev(row.row_revision) || typeof row.draft_name !== 'string' || !row.draft_name.isWellFormed() || [...row.draft_name].length > 8) { fail(503, 'DELETE_METADATA_CORRUPT'); }
+      return Object.freeze({ gameId, rowRevision: row.row_revision, confirmationName: row.draft_name });
+    });
+  }
+  begin(tokenHash, operationKey, input, recordDistribution) {
+    if (recordDistribution !== undefined && (typeof recordDistribution !== 'function' || recordDistribution.constructor?.name === 'AsyncFunction')) { throw new TypeError('synchronous trusted deletion distribution callback required'); }
     fields(input, ['gameId', 'expectedRowRevision', 'confirmationName']);
     const captured = { gameId: input.gameId, expectedRowRevision: input.expectedRowRevision, confirmationName: input.confirmationName };
     if (!keyOK(operationKey) || !rev(captured.expectedRowRevision) || typeof captured.confirmationName !== 'string' || !captured.confirmationName.isWellFormed() || [...captured.confirmationName].length > 8) { fail(422, 'DELETE_INPUT'); }
@@ -87,15 +112,43 @@ export class GameDeletionFence {
       this.#cascadeTrialsForGame(row.game_id);
       this.#cascadePublishForGame(row.game_id);
       const result = { gameId: row.game_id, state: 'fenced', rowRevision: next, createdAt: time };
-      this.#sql.exec('INSERT INTO content_deletion_operations VALUES(?,?,?,?,?,?)', actor.id, operationKey, digest, actor.epoch, row.game_id, JSON.stringify(result));
+      let text = JSON.stringify(result);
+      if (recordDistribution !== undefined) {
+        const record = recordDistribution();
+        if (record && typeof record.then === 'function') { throw new TypeError('synchronous deletion distribution result required'); }
+        if (!record || record.deduped !== false || record.gameId !== row.game_id || record.kind !== 'delete-fence' || !uuid(record.operationId) || !Number.isSafeInteger(record.generation) || record.generation < 1) { fail(503, 'DELETE_DISTRIBUTION_CORRUPT'); }
+        const distribution = { operationId: record.operationId, generation: record.generation };
+        this.#distribution(row.game_id, distribution);
+        text = JSON.stringify({ version: 1, result, distribution });
+      }
+      this.#sql.exec('INSERT INTO content_deletion_operations VALUES(?,?,?,?,?,?)', actor.id, operationKey, digest, actor.epoch, row.game_id, text);
       this.#sql.exec('INSERT INTO content_audits VALUES(?,?,?,?,?,?,?)', crypto.randomUUID(), actor.id, 'delete-fence', row.game_id, row.row_revision, next, time);
-      return result;
+      const current = this.#actor(tokenHash);
+      if (current.id !== actor.id || current.epoch !== actor.epoch || current.role !== actor.role) { fail(401, 'SESSION_INVALID'); }
+      this.#guard(current.id, operationKey);
+      const finalRow = this.#target(current, row.game_id);
+      if (finalRow.owner_id !== row.owner_id || finalRow.row_revision !== next || finalRow.listed !== 0) { fail(503, 'DELETE_RECEIPT_CORRUPT'); }
+      return this.#receipt(current, this.#one('SELECT * FROM content_deletion_operations WHERE actor=? AND op_key=?', actor.id, operationKey));
     });
   }
   query(tokenHash, operationKey) {
     if (!keyOK(operationKey)) { fail(422, 'DELETE_INPUT'); }
-    const actor = this.#actor(tokenHash), row = this.#one('SELECT * FROM content_deletion_operations WHERE actor=? AND op_key=?', actor.id, operationKey);
-    if (!row) { fail(404, 'DELETE_OPERATION_NOT_FOUND'); }
-    return this.#receipt(actor, row);
+    return this.#storage.transactionSync(() => {
+      const actor = this.#actor(tokenHash);
+      this.#guard(actor.id, operationKey);
+      const row = this.#one('SELECT * FROM content_deletion_operations WHERE actor=? AND op_key=?', actor.id, operationKey);
+      if (!row) { fail(404, 'DELETE_OPERATION_NOT_FOUND'); }
+      return this.#receipt(actor, row);
+    });
+  }
+  queryDistribution(tokenHash, operationKey, gameId) {
+    return this.#storage.transactionSync(() => {
+      const result = this.query(tokenHash, operationKey);
+      if (result.gameId !== gameId) { fail(404, 'DELETE_OPERATION_NOT_FOUND'); }
+      const actor = this.#actor(tokenHash), row = this.#one('SELECT * FROM content_deletion_operations WHERE actor=? AND op_key=?', actor.id, operationKey);
+      const { distribution } = this.#decoded(row);
+      if (distribution === undefined) { fail(503, 'DISTRIBUTION_STATUS_UNAVAILABLE'); }
+      return Object.freeze({ result, distribution });
+    });
   }
 }

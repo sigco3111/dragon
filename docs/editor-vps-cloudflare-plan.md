@@ -1,6 +1,6 @@
 # EDITOR-VPS-CLOUDFLARE-PLAN-1：VPS编辑器／Cloudflare玩家端拆分方案
 
-状态：**已确认部署边界；工程接入方案待审阅，尚未实施或部署。** 本页为平台拆分、适配与分发的唯一详细方案源，不认证原版规则或关闭既有产品缺口。产品来源：[产品§5.5](game-editor-design.md#55-vps编辑器与cloudflare玩家端拆分最新确认)；共同合同：[工程§4–8](game-editor-technical-design.md)。
+状态：**部署边界已确认，本文初始方案不是完整落地／上线证明。后继已实现VPS适配实验、publisher／reader原型及R2选择A的签名资源通道；生产分发与玩家接线仍未闭合。** 选择A及限定代码／验证见[R2接线维护源](r2-player-connection.md)；后继用户已明确授权先补齐发布条件，再提交／推送GitHub main并跟踪Cloudflare实际部署至成功，随后部署约定VPS／域名并测试；本页其余“暂不实施／待授权／挂起”为历史范围，不再阻塞此次已授权工作。共同应用及持久端口的实际本地进展见[VPS就绪审计](vps-editor-readiness.md)，不是生产成功证明。 本页为平台拆分、适配与分发的唯一详细方案源，不认证原版规则或关闭既有产品缺口。产品来源：[产品§5.5](game-editor-design.md#55-vps编辑器与cloudflare玩家端拆分最新确认)；共同合同：[工程§4–8](game-editor-technical-design.md)。
 
 用户确认「分成两套，由编辑器发布到cloudflare游戏上」，并要求整理VPS适配、发布同步、Cloudflare读取端方案，暂不实施部署。两套指部署／职责；用户补充编辑器也有测试试玩，所以**VPS与Cloudflare各部署一份同一引擎的副本；VPS试玩用于验证编辑成果，共用同一源码／规则／源格式，修改引擎必须同步更新两边，不分别维护兼容变体**。此前Containers可行性讨论不再作为实施方向；不创建Containers或解码Worker，不安装软件、改域名／端口／凭据、迁移真实数据、commit／push或deploy。本轮只修改方案与必要的产品／工程／交接文档。
 
@@ -34,7 +34,7 @@ Cloudflare：正式玩家页面／引擎副本＋发布资源R2＋薄读取Worke
 
 | 接缝 | 当前源码 | 拟议适配 |
 | --- | --- | --- |
-| 权威入口／认证／同事务构造 | `server/worker.js` 的 `EditorMetadata`，`server/wrangler.jsonc` 的DO／R2 bindings | 提炼共用应用／路由核心，Node HTTP适配；保实际principal／Origin／CSRF／epoch及提交复查 |
+| 权威入口／认证／同事务构造 | `server/editorapp.js` 的共同应用，`server/worker.js` 注入DO基类 | 已有Node HTTP适配及实际Node/workerd构造验证；保实际principal／Origin／CSRF／epoch及提交复查，生产装配仍待完成 |
 | 私有元数据／Job | `server/metadata.js`、`privatedrafts.js`、`jobs.js`及管理／栅栏服务 | 同一VPS SQLite事务域；接口与类型差分验证，不把进程Map当持久状态 |
 | 私有对象／写日志 | `server/blobs.js`、`privatewrites.js`、`sourcecatalog.js` | 文件系统不可变对象适配＋SQL写意图／引用；保条件创建、全字节SHA、逐await复查 |
 | 公开正式数据 | `server/published.js`、`playpacks.js` | 把构建运行产物与权威发布事务／分发分离；现pack的draftRevision不冒正式releaseOrdinal |
@@ -82,9 +82,10 @@ VPS不是仅API：其软件发行包须包含编辑器前端、私有试玩入�
 | 区域 | 内容／边界 |
 | --- | --- |
 | VPS private | 完整创作源、原始上传、草稿、baseline、身份／会话、内部报告与任务；绝不上传为公开包 |
-| R2 `artifacts/<gameId>/<releaseId>/<sha>` | 校验完成的章节／固定表、地图／道路、视觉／小地图、规范头像及正式必需资源；创建后不可覆盖 |
+| R2 `artifacts/<gameId>/<ordinal>/<releaseId>/…` | 校验完成的章节／固定表、地图／道路、视觉／小地图、规范头像及正式必需资源；创建后不可覆盖 |
 | R2 `projections/<generation>/<digest>/...` | 不可变完整公开状态快照／目录／公告分片／release索引，只允许必要公开字段 |
 | R2 `control/current.json` | 小型可变根：协议版本、单调generation、不可变投影地址及SHA、前代／分发操作身份；仅条件写 |
+| R2 `control/programs/<软件清单SHA>.json` | 后继操作员安装链的不可变程序登记，绑定完整归档及源码树；不选择程序、不授游戏准入，登记协议见[R2§2.63](r2-player-connection.md#263-程序归档的不可变登记program-registration-1)，后继[§2.64](r2-player-connection.md#264-已登记程序资源的只读httpprogram-asset-http-1)按此登记只读供应软件资源，不开放HTML入口或改变游戏状态门 |
 
 运行包是数据，不是作者JS／HTML／SVG／任意远程URL；不为每个游戏复制一套系统代码。复用现有共同manifest／加载合同，正式身份清楚区分 `gameId/releaseId/releaseOrdinal/draftRevision/sourceDigest/manifestDigest/compilerRevision/ruleProfile`。现有 `studio-app-2`形状可经同一受审适配器转换，不静默把draftRevision或程序VERSION当游戏1.0。
 
@@ -113,8 +114,8 @@ VPS SQLite与R2**没有分布式原子事务**。采用一个VPS权威事务域�
 - 本游戏已有已提交未确认分发时，新的发布先拒／等待明确恢复，不把原pending视为可取消失败；草稿保存不修改原Outbox。管理下架可追加更高代次，其成功提示也须确认Cloudflare可见，不假称VPS写完已对玩家下架。降级／滞后状态显式可查。
 - 实际授权先后以VPS事务定义：撤销先于事务则拒；事务先于撤销已提交内容不倒回。后续必要管理限制仍按同一序列投影，作者发布不得绕过限制或重新上架。
 - 发布序号1.0→1.1→1.9→1.10；草稿保存／上架／下架不改序号。首次发布默认未上架，已有上架态由提交实际状态决定。公告保生成名称／版本／创建者账户快照，重新上架不重复公告／置顶，私密资料不输出。
-- **上线时间不冒入队时间**：publishedAt绑定VPS正式事务；首次firstOnlineAt绑定真正使该版可玩的Cloudflare根切换。拟将初次可见事件绑定generation，当前投影读取时以同一次R2根对象的服务端uploaded时间解析；确认后VPS持久记录该事件／时间，后代投影只引用已核收据，不用后续root时间重贴。分发Outbox的时间引用与业务快照固定，未知前代先核收据再物化后代，不改成latest草稿或重新发布。这些时间／代次绑定及公告一次可见需专项证明，不能声称本地提交已等于玩家上线。
-- VPS恢复备份后先比Cloudflare当前generation／摘要及分发收据；远端领先或链缺失时禁推送并受控核账，不能上传旧目录复活删除内容。仍存在游戏保全部已发布资源，不自动GC；未提交staging清理另需引用／在途写证据，不以TTL代替。
+- **上线时间不冒入队时间**：publishedAt绑定VPS正式事务；首次firstOnlineAt绑定真正使该版可玩的Cloudflare根切换。拟将初次可见事件绑定generation，当前投影读取时以同一次R2根对象的服务端uploaded时间解析；确认后VPS持久记录该事件／时间，后代投影只引用已核收据，不用后续root时间重贴。分发Outbox的时间引用与业务快照固定，未知前代先核收据再物化后代，不改成latest草稿或重新发布。服务时间引用及故障验证的局部实现见[R2接线§2.19](r2-player-connection.md#219-服务端可见时间引用first-online-reference-1)；共同权威生产者与公告一次提交仍须接线，不能声称本地提交已等于玩家上线。
+- VPS恢复备份后先比Cloudflare当前generation／摘要及分发收据；远端领先或链缺失时禁推送并受控核账，不能上传旧目录复活删除内容。按用户后继选择A，仍存在游戏为已准入旧局保留必要旧运行资源，不自动GC，不开放历史版本选择／回滚；未提交staging清理另需引用／在途写证据，不以TTL代替。
 
 ### 5.3 物理删除
 
@@ -125,6 +126,8 @@ VPS SQLite与R2**没有分布式原子事务**。采用一个VPS权威事务域�
 读取端每次实际请求先读状态再命中内部资产缓存；不把公开R2永久URL/CDN缓存放到状态门之前。清理不远程抹除已下载浏览器字节，不清玩家IDB；资源404／网络失败不是GAME_DELETED。完整physical delete当前未认证，平台拆分不能自动开放旧503门。
 
 ## 6. Cloudflare读取端与游戏接线
+
+后继用户已批准选择A：只开放当前版准入，签名能力仅续取已准入的固定运行资源。`reader/worker.js` 的原 `file?key=` 前缀原型已退役；当前角色白名单、密钥轮换、旧局／下架及返回前复查的本地实现见[R2维护源](r2-player-connection.md)。这不是下述完整前端／VPS／云接线的通过声明。
 
 保留现游戏origin及IndexedDB可见性；不要为方便跨域而换游戏域名。若现有域有受控API路由可同源；否则独立读取origin，对确切游戏origin开放所需匿名CORS，无编辑Cookie、通配凭据或VPS管理端代理。域名／路由改动待单独授权。
 
@@ -156,7 +159,7 @@ VPS CPU／RAM／磁盘上限、生成大图峰值、数据库／文件fsync与�
 
 ## 8. 实施切片与验收（全部待授权／执行）
 
-用户最新决定（取代此前环境先行）：先完成编辑器开发（见[功能待办](editor-dev-todo.md)），再说部署的事。V2–V5、sidecar上线、发布验证全部挂起；本节V1本地切片仅作功能开发底座保留，不推进部署动作。
+历史冻结决定曾要求先完成编辑器再部署；后继任务已明确授权按“补齐发布条件→提交推送→Cloudflare实际部署成功→VPS约定域部署并测试”执行。下表为验证门及历史切片，不再表示全部挂起；当前实际适配、失败记录及未完成项见[VPS就绪审计](vps-editor-readiness.md)，不能用旧161项拼成生产完成。
 
 | 切片 | 最小交付与证据 |
 | --- | --- |
@@ -171,6 +174,6 @@ VPS CPU／RAM／磁盘上限、生成大图峰值、数据库／文件fsync与�
 
 ### 待提供／批准的信息
 
-设计不等待这些信息，但实施必须核实：VPS系统与内存／磁盘／权限、现有域名和HTTPS方式、是否有真实编辑器存量需迁移、Cloudflare当前游戏部署方式／origin、测试与生产的发布桶／读取Worker授权及预算。**部署边界已确认，具体Outbox可见确认协议、适配实现及任何基础设施变更未批准。**
+设计不等待这些信息，但实施必须核实：VPS系统与内存／磁盘／权限、现有域名和HTTPS方式、是否有真实编辑器存量需迁移、Cloudflare当前游戏部署方式／origin、测试与生产的发布桶／读取Worker授权及预算。**后继任务已授权实现及约定部署，不再重复索取同一批准；仍缺实际连接／凭据或必要外部信息时向用户询问，不能猜测或绕过权限。**
 
 JPEG源扩容／发布UI整体验收／游戏编辑窗口并发的三项原决策仍保留，不在本方案擅自实现；格式／独立色彩与完整消费者仍按建议暂缓，旧资产冻结不是安全证明。不关闭Q37／Q69／Q70／Q71或完整E-01..11。

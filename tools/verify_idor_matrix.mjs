@@ -2,7 +2,7 @@
 // (404/401 sameness, no existence leak) across games/drafts/portraits/
 // blobs/jobs/trials. Real classes on VPS ports. Usage:
 // node tools/verify_idor_matrix.mjs
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -36,7 +36,9 @@ const sameCode = async (name, fnA, fnB) => {
 const UA = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaa01';
 const UB = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbb1';
 const UNKNOWN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const scratch = mkdtempSync(join(tmpdir(), 'vps-idor-'));
 const storage = openStorage(':memory:');
+try {
 storage.transactionSync(() => {
   storage.sql.exec("CREATE TABLE users (id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, role TEXT NOT NULL, password_hash TEXT NOT NULL, disabled INTEGER NOT NULL, must_change INTEGER NOT NULL, epoch INTEGER NOT NULL, version INTEGER NOT NULL)");
   storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', UA, 'author_a', 'author', '{}', 0, 0, 1, 1);
@@ -47,7 +49,7 @@ const actors = {
   hb: { id: UB, role: 'author', epoch: 1, must_change: 0 },
 };
 const principal = h => { if (!actors[h]) { fail(401, 'SESSION_INVALID'); } return actors[h]; };
-const bucket = new FileBucket({ root: join(mkdtempSync(join(tmpdir(), 'vps-idor-')), 'data') });
+const bucket = new FileBucket({ root: join(scratch, 'data') });
 const journal = new PrivateWriteJournal({ storage, bucket });
 const authority = (t, _c) => {
   if (t !== 'ha' && t !== 'hb') { fail(401, 'SESSION_INVALID'); }
@@ -91,7 +93,7 @@ const jobs = new CompileJobs({ storage, principal, metadata: games,
   verifyCheckpoint: async ({ digest }) => ({ digest }), compilerRevision: 'c1', profileRevision: 'p1' });
 const policy = installedSourcePolicy(readFileSync('server/pinned/world-manifest.txt'), readFileSync('server/pinned/entity-manifest.txt'));
 const trials = new TrialSessions({ storage, principal, games, drafts,
-  catalog: { loadFull: async () => { fail(503, 'IDOR_STUB'); }, definition: () => ({}) }, policy });
+  runtimeAssets: { capture: async () => { fail(503, 'IDOR_STUB'); }, definition: () => ({}) }, policy });
 
 const input1 = { metadata: { ...game.metadata }, resourceEdits: [], chapterEdits: [] };
 await sameCode('snapshot cross==unknown', () => games.snapshotReference('hb', GAME, '1'), () => games.snapshotReference('hb', UNKNOWN, '1'));
@@ -104,4 +106,5 @@ await sameCode('trial auth known==unknown', () => trials.authorize('ha', randomU
 check('trial unknown 401', (await (async () => { try { await trials.authorize('ha', UNKNOWN); return ''; } catch (e) { return e?.code; } })()) === 'TRIAL_INVALID');
 await sameCode('unauthenticated always 401', () => games.snapshotReference('hx', GAME, '1'), () => games.snapshotReference('hx', UNKNOWN, '1'));
 
-console.log(`passed ${passed} checks`);
+process.stdout.write(`passed ${passed} checks\n`);
+} finally { storage.close(); rmSync(scratch, { recursive: true, force: true }); }

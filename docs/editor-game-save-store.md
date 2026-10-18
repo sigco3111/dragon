@@ -7,6 +7,7 @@
 - `web/src/core/gamesavecodec.js`：严格JSON/正文/摘要/比较token编码；`gamesavestore.js#createGameSaveStore({gameId,databaseName,getIndexedDB,createRecordId?})`绑定游戏，数据库名/工厂必须显式提供，无默认访问global IndexedDB。工程opaque ID长度256，不normalize身份，拒控制码/孤立代理；game键encodeURIComponent分隔，百分号与冒号不会碰撞。
 - 沿现同源store `saves`/DBv1，独立`game:<encodedGameId>:catalog-v3`和`game:<encodedGameId>:record:<slot>`；目录格式3含gameId、nextWriteRevision、严格有序unique slot/active recordId的摘要。它不读`catalog-v2/record:<slot>/slots`，无自动迁移、整库升级/清空。
 - `put({gameId,slot,releaseId,releaseOrdinal,chapterId,manifestDigest,snapshot}, expected=null)`；null只能新槽，覆盖必须get返回的完整token。JSON捕获在第一个await前；snapshot须JSON对象，无损保未知字段；undefined/非有限/-0/稀疏/typed-array/date/function/symbol/bigint/访问器/循环拒收，不推测完整Scenario或原字节初始化。元数据只语法检查，不认证release/章/manifest存在、最新或可加载。
+- 正式序号后继无损扩展：`releaseOrdinal`小值保留原安全整数编码，仅更大值采用规范十进制字符串；槽号与writeRevision不放宽。无别名转换、旧档迁移或隐式清理，详细合同与验证维护于[R2§2.56](r2-player-connection.md#256-正式存档的大序号精确表示save-ordinal-1)。
 - 正文format3带recordId/writeRevision及输入字段；按排序字段的规范JSON bodyText算Web SHA-256，pair只bodyText/bodyDigest。get同事务捕获目录/正文，随后在事务外核实际digest、语法/绑定/摘要一致，返回独立record和frozen token；list仅读摘要，不证明可加载。
 - 新建recordId为独立crypto UUID（可注入fixture），覆盖保该ID；每游戏nextWriteRevision单调分配，不在删除后重置，耗尽拒。重复active ID拒；即使fixture故意重复已删ID也不能复活旧revision/body token。与规则RNG无关。
 - SHA不放进活跃IDB事务：put先捕获本地目录/正文、算候选摘要，再读写事务重核完整捕获目录及槽期待，正文＋目录同提交；不同槽的同时写也可能保守冲突，必须重读处理，不静默重试覆盖。任何请求成功不等事务完成。

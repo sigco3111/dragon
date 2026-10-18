@@ -1,7 +1,7 @@
 // D组公告后端（Q31–Q36，工程合同§8.3）：唯一(gameId,releaseId)公告事务。
 // 生成点：发版时若已上架、或上架时取当前版本；下架只隐藏（listed 过滤在读时执行），
-// 同版本重上不改 first_online_at、不重复插（INSERT OR IGNORE）；单版本替换（用户决策②）
-// 发版时删旧序号公告行。快照字段 name/version/creatorAccount 生成时冻结，无手改入口；
+// 同版本重上不改 first_online_at、不重复插；Q32保留全部已公开版本的公告，
+// 当前版可选不等于删旧公告。快照字段 name/version/creatorAccount 生成时冻结，无手改入口；
 // 私人资料（display_name/email/phone/note）永不进公告 DTO。registry revision 供游标用。
 import { fail } from './security.js';
 
@@ -45,9 +45,6 @@ export class AnnouncementStore {
     this.#sql.exec('INSERT INTO content_announcements(game_id,release_id,ordinal,name,creator_account,published_at,first_online_at) VALUES(?,?,?,?,?,?,?)',
       gameId, releaseId, ordinal, name, creatorAccount, publishedAt, firstOnlineAt);
     return true;
-  }
-  pruneExceptInTxn(gameId, keepReleaseId) {
-    this.#sql.exec('DELETE FROM content_announcements WHERE game_id=? AND release_id<>?', gameId, keepReleaseId);
   }
   bumpRegistryInTxn() {
     this.#sql.exec('UPDATE content_registry SET revision=revision+1 WHERE id=1');

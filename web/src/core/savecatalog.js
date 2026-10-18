@@ -31,8 +31,11 @@ export function nextSaveId(slots) {
 
 export function saveChoices(slots = []) {
   const normalized = normalizeSaveSlots({ slots }).slots;
-  return normalized.some((entry) => !entry.played)
-    ? normalized : [...normalized, emptySave(nextSaveId(normalized))];
+  // Reserved records are neither writable choices nor vacant slots. Keep all
+  // identities when allocating, even though unavailable rows are not offered.
+  const available = normalized.filter((entry) => !entry.unavailable);
+  return available.some((entry) => !entry.played)
+    ? available : [...available, emptySave(nextSaveId(normalized))];
 }
 
 export function summarizeSave(saved) {

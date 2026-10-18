@@ -7,6 +7,7 @@
 // 左右柱(含四角)=實心柱塊 frame_col 整柱堆疊 (放大截圖比對確認)
 import { runStartFlow } from "../app/startflow.js";
 import { admitSavedScenario } from "../game/savegame.js";
+import { mountPublicCatalog, navigatePlayerGame } from "../player/playerpublic.js";
 
 const COLORS = {
   0: "#000000",
@@ -35,6 +36,8 @@ export class StartMenu {
     this._onClick = null;
     this._onMove = null;
     this._onCtx = null;
+    this.publicCatalog = mountPublicCatalog(document.body);
+    this.selectedGame = null;
     // 全域屏蔽瀏覽器右鍵選單
     window.addEventListener("contextmenu", (e) => e.preventDefault());
   }
@@ -74,23 +77,27 @@ export class StartMenu {
     this.cv.style.display = "block";
     try {
       await this._loadAssets();
-      await this._loadGames();
-      await this._loadAnnouncements();
+      this.publicCatalog.node.hidden = false;
+      void this.publicCatalog.view.refresh();
       await runStartFlow(
         {
           chooseAction: () => this._yesNo(),
           chooseChapter: async () => {
-            // B 方案分流: 非內置不走主殼選章, 離殼進同源 play 持久會話槽 (章/勢力在 play 側選)。
-            // 內置走老路 (零影響); 導航後頁面卸載, 返回值僅守流程。
-            if ((this.selectedGameId ?? "wolong-builtin") !== "wolong-builtin") {
-              location.href = `${this._gamesBase ?? ""}/play?game=${encodeURIComponent(this.selectedGameId)}`;
+            if (this.selectedGame?.kind === "formal") {
+              navigatePlayerGame(this.selectedGame.gameId, "new");
               return -1;
             }
             return this._chooseChapter();
           },
           chooseFaction: (idx) => this._factionDialog(idx),
           chooseAdvisor: (idx, faction) => this._advisorDialog(idx, faction),
-          chooseSave: () => this._chooseSave(),
+          chooseSave: () => {
+            if (this.selectedGame?.kind === "formal") {
+              navigatePlayerGame(this.selectedGame.gameId, "load");
+              return -1;
+            }
+            return this._chooseSave();
+          },
           beginNewGame: async (idx, f, adv) => {
             await this.app.beginNewGame(idx, f, adv);
           },
@@ -101,6 +108,7 @@ export class StartMenu {
         initialAction,
       );
     } finally {
+      this.publicCatalog.node.hidden = true;
       this.cv.style.display = "none";
       for (const el of hidden) el.style.display = "";
     }
@@ -624,97 +632,18 @@ export class StartMenu {
     });
   }
 
-  // ── 遊戲選擇 (B 方案: 主殼固定槽位, 非內置進持久會話槽): 內置降格為列表首項。
-  // 列表源: 同源 /api/published-games, 不可達則回落 localhost 編輯器 (8322, 開發期 CORS)。
-  // 跳轉 play 跟列表源同基 (listBase + "/play"), 內置項不跳轉、走老路 (零影響)。
-  async _loadGames() {
-    const builtin = { gameId: "wolong-builtin", displayName: "臥龍傳·制霸天下" };
-    const bases = ["", "http://127.0.0.1:8322"]; // "" = 同源; 靜態殼 (8321) 無 API, 回落編輯器源。
-    for (const base of bases) {
-      try {
-        const r = await fetch(`${base}/api/published-games`);
-        if (!r.ok) continue;
-        const data = await r.json();
-        const entries = (Array.isArray(data?.games) ? data.games : []).filter((g) => g && typeof g.gameId === "string");
-        const names = new Map([[builtin.gameId, builtin.displayName]]);
-        for (const g of entries) if (!names.has(g.gameId) && typeof g.name === "string" && g.name) names.set(g.gameId, g.name);
-        this._games = [builtin.gameId, ...entries.map((g) => g.gameId).filter((id) => id !== builtin.gameId)]
-          .map((id) => ({ gameId: id, displayName: names.get(id) ?? id }));
-        this._gamesBase = base;
-        if (!this._games.some((g) => g.gameId === this.selectedGameId)) this.selectedGameId = builtin.gameId;
-        return;
-      } catch {
-        continue;
-      }
-    }
-    this._games = [builtin];
-    this._gamesBase = "";
-    this.selectedGameId = builtin.gameId;
-  }
-
-  // ── 公告 (Q34 玩家側隻讀)：同源 /api/announcements，失败即空（不阻流程）。
-  // 服务端已按 first_online DESC 排序，首頁 30 條；對話框只讀前 5 條。
-  async _loadAnnouncements() {
-    const bases = ["", "http://127.0.0.1:8322"]; // 與 _loadGames 同基。
-    for (const base of bases) {
-      try {
-        const r = await fetch(`${base}/api/announcements`);
-        if (!r.ok) continue;
-        const data = await r.json();
-        const list = Array.isArray(data?.announcements) ? data.announcements : [];
-        this._announcements = list
-          .filter((a) => a && typeof a.gameId === "string" && typeof a.name === "string" && a.name && typeof a.ordinal === "string")
-          .map((a) => ({ gameId: a.gameId, name: a.name, ordinal: a.ordinal, creatorAccount: typeof a.creatorAccount === "string" ? a.creatorAccount : "" }));
-        return;
-      } catch {
-        continue;
-      }
-    }
-    this._announcements = [];
-  }
-
-  _selectedGame() {
-    return this._games?.find((g) => g.gameId === this.selectedGameId) ?? { gameId: "wolong-builtin", displayName: "臥龍傳·制霸天下" };
-  }
-
   // ── YES/NO 對話框: comp7 @ (216,136), 金框 @ (208,128) 208×96 (0x8DC8) ──
   _yesNo() {
     return new Promise((resolve) => {
       const ox = 216,
         oy = 136;
       this._renderYesNo(ox, oy);
-      // 多遊戲 step1: 原生下拉獨立懸於彈窗上方 (fixed 定位, 見效果圖), 選中記 selectedGameId。
-      const sel = document.createElement("select");
-      sel.id = "startmenu-game";
-      sel.setAttribute("aria-label", "選擇遊戲");
-      for (const g of this._games ?? []) {
-        const opt = document.createElement("option");
-        opt.value = g.gameId;
-        opt.textContent = g.displayName;
-        sel.append(opt);
-      }
-      sel.value = this.selectedGameId ?? "wolong-builtin";
-      sel.addEventListener("change", () => {
-        this.selectedGameId = sel.value;
-      });
-      const r = this.cv.getBoundingClientRect();
-      const sx = r.width / (this.cv.width || 640);
-      const sy = r.height / (this.cv.height || 400);
-      const selW = 250 * sx;
-      const selH = Math.max(32, 36 * sy);
-      Object.assign(sel.style, {
-        position: "fixed",
-        left: `${r.left + (ox + 96) * sx - selW / 2}px`,
-        top: `${r.top + (oy - 8) * sy - selH - 28 * sy}px`,
-        width: `${selW}px`,
-        height: `${selH}px`,
-        padding: `${4 * sy}px ${8 * sx}px`,
-        fontSize: `${14 * sx}px`,
-        zIndex: "9999", // 蓋過遊戲 Canvas 合成層 (實測 zIndex 5 會被 #startv 蓋住)
-      });
-      document.body.append(sel);
+      this.publicCatalog.node.hidden = false;
       const done = (v) => {
-        sel.remove();
+        const selected = this.publicCatalog.view.selection();
+        if (!selected) return; // Announcement modal owns input; it cannot launch a game.
+        this.selectedGame = selected;
+        this.publicCatalog.node.hidden = true;
         resolve(v);
       };
       this._bind((x, y, btn) => {
@@ -1115,13 +1044,5 @@ export class StartMenu {
     }
     // 標題 "新游戏" 白字
     this._fwText("新游戏", ox + 72, oy + 4, 15);
-    // 公告隻讀區 (Q34)：選單頂部 canvas 走字，不設輸入。
-    const anns = Array.isArray(this._announcements) ? this._announcements.slice(0, 5) : [];
-    if (anns.length > 0) {
-      this._text("最新上架", 24, 16, 15);
-      anns.forEach((a, i) => {
-        this._text(`${a.name} ${a.ordinal}（${a.creatorAccount}）`, 24, 32 + i * 16, 15);
-      });
-    }
   }
 }

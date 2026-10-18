@@ -1,7 +1,7 @@
 // V1 slice 9: REAL TrialSessions issue/commit/serve/end on VPS ports with
 // a REAL installed-source install (41 pinned roles verified) and the S5
 // draft assembly. Usage: node tools/verify_vps_trial.mjs
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -13,10 +13,10 @@ import { GameMetadataStore } from '../server/metadata.js';
 import { GameSnapshotVerifier } from '../server/snapshots.js';
 import { PrivateDrafts } from '../server/drafts.js';
 import { InstalledSourceCatalog } from '../server/sourcecatalog.js';
+import { OwnedRuntimeAssets } from '../server/runtimeassets.js';
 import { installedSourcePolicy } from '../server/sourcecatalogpolicy.js';
 import { FIXED_COPY_PROFILE } from '../server/copyprofile.js';
 import { TrialSessions } from '../server/trials.js';
-import { encodePNG } from '../server/pngio.js';
 import { encodeSourceChunks, canonicalSourceTokens } from '../web/src/content/authoring/sourcejson.js';
 import { HttpError, fail } from '../server/security.js';
 import { createPinnedCopyLoader } from './editor_trusted_copy.mjs';
@@ -35,26 +35,28 @@ const fails = async (name, fn, code) => {
 };
 
 const ADMIN = '77777777-7777-4777-8777-777777777777';
-const OWNER = ADMIN;
+const OWNER = '88888888-8888-4888-8888-888888888888';
 const OTHER = '99999999-9999-4999-8999-999999999999';
 const ABSOLUTE = Date.now() + 8 * 3600000;
 const actors = {
   ha: { id: ADMIN, role: 'admin', epoch: 1, must_change: 0, absolute_until: ABSOLUTE },
-  h1: { id: ADMIN, role: 'admin', epoch: 1, must_change: 0, absolute_until: ABSOLUTE },
+  h1: { id: OWNER, role: 'author', epoch: 1, must_change: 0, absolute_until: ABSOLUTE },
   h2: { id: OTHER, role: 'author', epoch: 1, must_change: 0, absolute_until: ABSOLUTE },
 };
-// Production fact (worker code): Trial issue always passes #visuals ->
-// catalog.loadFull, which requires admin. The trial game is therefore
-// admin-owned here; the author gate below pins the observed behavior.
+// Separate install administrator and game author. Runtime visual reads are
+// owner-bound; this must not grant the author full-copy source access.
 
 const principal = h => { if (!actors[h]) { fail(401, 'SESSION_INVALID'); } return actors[h]; };
+const scratch = mkdtempSync(join(tmpdir(), 'vps-trial-'));
 const storage = openStorage(':memory:');
+try {
 storage.transactionSync(() => {
   storage.sql.exec("CREATE TABLE users (id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, role TEXT NOT NULL, password_hash TEXT NOT NULL, disabled INTEGER NOT NULL, must_change INTEGER NOT NULL, epoch INTEGER NOT NULL, version INTEGER NOT NULL)");
   storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', ADMIN, 'admin_s9', 'admin', '{}', 0, 0, 1, 1);
-  storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', OTHER, 'author_s9', 'author', '{}', 0, 0, 1, 1);
+  storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', OWNER, 'author_s9', 'author', '{}', 0, 0, 1, 1);
+  storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', OTHER, 'other_s9', 'author', '{}', 0, 0, 1, 1);
 });
-const root = join(mkdtempSync(join(tmpdir(), 'vps-trial-')), 'data');
+const root = join(scratch, 'data');
 const bucket = new FileBucket({ root });
 const journal = new PrivateWriteJournal({ storage, bucket });
 const authority = () => ({ ownerId: OWNER, epoch: 1 });
@@ -121,7 +123,8 @@ await drafts.save('h1', GAME, '1', 's9-save-0000000001', 'e'.repeat(64), { metad
 check('game ready', true);
 
 // 3. Trial issue/commit/serve/end.
-const trials = new TrialSessions({ storage, principal, games, drafts, catalog, policy });
+const runtimeAssets = new OwnedRuntimeAssets({ storage, bucket, principal, games, policy, kind: 'visuals' });
+const trials = new TrialSessions({ storage, principal, games, drafts, runtimeAssets, policy });
 check('construct', !!trials);
 const chapterId = game.chapterOrder[0];
 const issued = await trials.issue('h1', GAME, '1', chapterId);
@@ -140,7 +143,8 @@ await fails('unknown trial 401', async () => trials.status('h1', randomUUID()), 
 // 4. Portrait from shared manifest (B, no upload): manifest id resolves with kao URL.
 const served = trials.asset('h1', issued.trial.trialId, '0');
 check('portrait serve', served.mime === 'image/png' && served.url === 'kao/0.png' && served.sha256.length === 64);
-await fails('portrait unknown 404', async () => trials.asset('h1', issued.trial.trialId, 'no-such-id'), 'TRIAL_ASSET_NOT_FOUND');
+await fails('portrait malformed id 422', async () => trials.asset('h1', issued.trial.trialId, 'no-such-id'), 'TRIAL_ASSET_ID');
+await fails('portrait unknown 404', async () => trials.asset('h1', issued.trial.trialId, '999999'), 'TRIAL_ASSET_NOT_FOUND');
 
 // 5. End + epoch revocation.
 const pv = trials.endPreview('h1', issued.trial.trialId);
@@ -149,9 +153,10 @@ const fin = trials.endCommit('h1', issued.trial.trialId, pv);
 check('endCommit ended', fin.state === 'ended');
 await fails('serve after end 401', async () => trials.pack('h1', issued.trial.trialId), 'TRIAL_INVALID');
 await fails('author trial issue 404 (ownership first)', async () => trials.issue('h2', GAME, '1', chapterId), 'GAME_NOT_FOUND');
-await fails('author visuals 403 (observed gate)', async () => catalog.loadFull('h2', REG), 'FULL_COPY_SOURCE_ADMIN_REQUIRED');
+await fails('author full-copy source remains forbidden', async () => catalog.loadFull('h1', REG), 'FULL_COPY_SOURCE_ADMIN_REQUIRED');
 actors.h1.epoch = 2;
 await fails('epoch revoked 401', async () => trials.status('h1', issued.trial.trialId), 'TRIAL_INVALID');
 actors.h1.epoch = 1;
 
-console.log(`passed ${passed} checks`);
+process.stdout.write(`passed ${passed} checks\n`);
+} finally { storage.close(); rmSync(scratch, { recursive: true, force: true }); }

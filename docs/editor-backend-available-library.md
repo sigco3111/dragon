@@ -2,7 +2,9 @@
 
 此切片只把已有可用素材的固定byte库存接到真正SQL/R2登记；不是新原版规则、完整资源/Q69、RuntimeManifest、Trial或Release。375玩家输入及共同引擎不改，后台与玩家配置分离，无部署或云资源创建。
 
-## 当前捕获与原证边界
+> 下文为初始批次记录，不是当前pin。当前93632字节／20消费者清单的新registry、旧对象保留及实际Trial修复统一维护于[R2§2.60](r2-player-connection.md#260-固定库新身份与trial选边修复library-refresh-1)；不得按本页历史19消费者／旧SHA重新安装。
+
+## 初始批次捕获与原证边界
 
 原离线库398项/52,792,110B、387去重blob仍封存。先只读比对发现其19个consumer指纹中仅`main.js`与`battleview.js`已改变；不是资产变了，也不把旧指纹贴成当前程序证明。使用原显式stager在新的owned round实际重新捕获，398项/许可逐byte对旧库及当前Web完全同，20个G127/255未闭合引用同，其余17程序指纹同。新manifest93,530B，SHA`76cdf28d1cc6099ccd9f2e7c60085ed6694be6a7509f72c41960d63648cfd2e0`。
 

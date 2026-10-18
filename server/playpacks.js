@@ -26,11 +26,12 @@ const ASSET_MIME = Object.freeze({ terrain: 'application/octet-stream', roadGrap
 const ASSET_ROLE = Object.freeze({ terrain: 'rules-initial-terrain', roadGraph: 'native-road-v2', roadCost: 'legacy-grid-visual', roadOffset: 'legacy-grid-visual', minimapBase: 'automatic-minimap', minimapLarge: 'automatic-minimap' });
 const assetURL = (gameId, rev, sourceDigest, assetId) => `/api/trial-asset?game=${encodeURIComponent(gameId)}&revision=${rev}&digest=${sourceDigest}&asset=${assetId}`;
 export class PublishedPacks {
-  #storage; #sql; #principal; #catalog; #policy; #portraits;
-  constructor({ storage, principal, catalog, portraits = null }) {
+  #storage; #sql; #principal; #runtimeAssets; #policy; #portraits;
+  #prepared = new WeakMap();
+  constructor({ storage, principal, runtimeAssets = null, portraits = null }) {
     if (!storage?.sql || typeof principal !== 'function') { throw new TypeError('actual SQLite and trusted principal required'); }
     if (portraits !== null && typeof portraits?.forPublish !== 'function') { throw new TypeError('portrait reader required'); }
-    this.#storage = storage; this.#sql = storage.sql; this.#principal = principal; this.#catalog = catalog ?? null; this.#portraits = portraits;
+    this.#storage = storage; this.#sql = storage.sql; this.#principal = principal; this.#runtimeAssets = runtimeAssets; this.#portraits = portraits;
     // Same installed-source policy the worker builds for TrialSessions.
     this.#policy = installedSourcePolicy(new TextEncoder().encode(worldManifest), new TextEncoder().encode(entityManifest));
     if (!isInstalledSourcePolicy(this.#policy)) { throw new TypeError('installed source policy required'); }
@@ -53,11 +54,13 @@ export class PublishedPacks {
   // Registry season-visual descriptors for the manifest. Same contract as
   // TrialSessions visuals (policy-bound role paths + sha, R2 re-verified at
   // serve time); the installed source is shared public art, not game data.
-  async #visuals(tokenHash, gameId) {
-    if (!this.#catalog) { fail(503, 'PLAY_NOT_CONFIGURED'); }
-    const origin = this.#one('SELECT * FROM copy_origins WHERE game_id=?', gameId);
-    if (!origin || origin.registry_id !== this.#policy.registryId || origin.profile_revision !== this.#policy.profileRevision || origin.definition_digest !== this.#catalog.definition().definitionDigest) { fail(409, 'PLAY_SOURCE_CHANGED'); }
-    const source = await this.#catalog.loadFull(tokenHash, origin.registry_id);
+  async #visuals(tokenHash, reference) {
+    if (!this.#runtimeAssets) { fail(503, 'PLAY_NOT_CONFIGURED'); }
+    const origin = this.#one('SELECT * FROM copy_origins WHERE game_id=?', reference.gameId);
+    if (!origin || origin.registry_id !== this.#policy.registryId || origin.profile_revision !== this.#policy.profileRevision || origin.definition_digest !== this.#runtimeAssets.definition().definitionDigest) { fail(409, 'PLAY_SOURCE_CHANGED'); }
+    const rev = this.#policy.revision;
+    const paths = ['map_atlas_', 'map_tiles_'].flatMap(stem => ['spring', 'summer', 'autumn', 'winter'].map(season => `content/builtin/compiled/${rev}/${stem}${season}.png`));
+    const source = await this.#runtimeAssets.capture(tokenHash, reference, paths);
     const visual = path => {
       const role = this.#policy.roles.find(item => item.path === path);
       if (!role) { fail(503, 'PLAY_VISUALS_BINDING'); }
@@ -65,7 +68,6 @@ export class PublishedPacks {
       if (bytes.length !== role.byteLength || shaBytes(bytes) !== role.sha256) { fail(503, 'PLAY_VISUALS_BINDING'); }
       return Object.freeze({ path, url: role.path, sha256: role.sha256, byteLength: role.byteLength });
     };
-    const rev = this.#policy.revision;
     const group = stem => Object.freeze(Object.fromEntries(['spring', 'summer', 'autumn', 'winter'].map(season => [season, visual(`content/builtin/compiled/${rev}/${stem}${season}.png`)])));
     return Object.freeze({ seasonAtlases: group('map_atlas_'), seasons: group('map_tiles_') });
   }
@@ -89,8 +91,9 @@ export class PublishedPacks {
       return row;
     });
   }
-  async buildAndStore(tokenHash, { game, reference, compiled }) {
-    this.#actor(tokenHash);
+  async prepare(tokenHash, { game, reference, compiled }) {
+    const actor = this.#actor(tokenHash);
+    const authority = { id: actor.id, epoch: actor.epoch };
     if (!game || game.gameId !== reference.gameId || !Array.isArray(game.chapterOrder) || game.chapterOrder.length < 1) { fail(422, 'PLAY_SNAPSHOT'); }
     // Q39: unconfigured (non-384x256) maps block freeze/publish. Capacity is
     // not a width switch (admission §4); expansion stays refused.
@@ -101,7 +104,7 @@ export class PublishedPacks {
       if (typeof chapterId !== 'string' || !chapterId) { fail(422, 'PLAY_SNAPSHOT'); }
       const state = game.chapters?.[chapterId]?.state;
       if (!state || typeof state !== 'object') { fail(422, 'PLAY_SNAPSHOT'); }
-      states[chapterId] = state;
+      states[chapterId] = structuredClone(state);
     }
     const payloads = {
       terrain: Buffer.from(compiled.terrainBytes),
@@ -118,34 +121,74 @@ export class PublishedPacks {
     for (const bytes of Object.values(payloads)) {
       if (!(bytes instanceof Uint8Array) || bytes.length < 1) { fail(422, 'PLAY_SNAPSHOT'); }
     }
-    const visuals = await this.#visuals(tokenHash, reference.gameId);
+    // Capture every input before the asynchronous catalog read. A prepared
+    // package owns its bytes/JSON and must not observe later caller mutations.
+    const identity = { gameId: reference.gameId, draftRevision: reference.draftRevision, sourceDigest: reference.sourceDigest };
+    const chapterOrder = [...game.chapterOrder], ruleProfile = structuredClone(game.ruleProfile);
+    const { compatibilityAssetMode, width, height } = compiled;
+    const visuals = await this.#visuals(tokenHash, { ...reference, ...identity });
     const portraits = this.#freezePortraits(states);
     const portraitEntries = portraits.map(row => Object.freeze({ assetId: row.assetId, sha256: row.sha256, byteLength: row.byteLength, role: 'game-portrait', url: `kao/${row.assetId}.png`, mime: row.mime }));
-    const entries = Object.entries(payloads).map(([assetId, data]) => Object.freeze({ assetId, sha256: shaBytes(data), byteLength: data.length, role: ASSET_ROLE[assetId], url: assetURL(reference.gameId, reference.draftRevision, reference.sourceDigest, assetId) }));
+    const entries = Object.entries(payloads).map(([assetId, data]) => Object.freeze({ assetId, sha256: shaBytes(data), byteLength: data.length, role: ASSET_ROLE[assetId], url: assetURL(identity.gameId, identity.draftRevision, identity.sourceDigest, assetId) }));
     const manifest = Object.freeze({
       schemaVersion: 1, compilerRevision: TRIAL_COMPILER_REVISION, buildFormat: 'studio-app-2',
-      compatibilityAssetMode: compiled.compatibilityAssetMode, ruleProfile: game.ruleProfile,
-      identity: Object.freeze({ gameId: reference.gameId, draftRevision: reference.draftRevision, sourceDigest: reference.sourceDigest, trialSnapshotId: `${reference.gameId}@${reference.draftRevision}:${reference.sourceDigest}` }),
-      world: Object.freeze({ id: `${reference.gameId}-world`, revision: reference.sourceDigest, width: compiled.width, height: compiled.height, tileSize: 16 }),
-      chapters: Object.freeze([...game.chapterOrder]), visualAssets: visuals, minimap: Object.freeze({ ...minimap }), portraits: Object.freeze(portraitEntries),
+      compatibilityAssetMode, ruleProfile,
+      identity: Object.freeze({ ...identity, trialSnapshotId: `${identity.gameId}@${identity.draftRevision}:${identity.sourceDigest}` }),
+      world: Object.freeze({ id: `${identity.gameId}-world`, revision: identity.sourceDigest, width, height, tileSize: 16 }),
+      chapters: Object.freeze(chapterOrder), visualAssets: visuals, minimap: Object.freeze({ ...minimap }), portraits: Object.freeze(portraitEntries),
       minimapAssets: Object.freeze(entries.filter(entry => entry.assetId.startsWith('minimap'))),
       assets: Object.freeze(entries.filter(entry => !entry.assetId.startsWith('minimap'))),
     });
-    const manifestJson = JSON.stringify(manifest), now = new Date().toISOString();
-    this.#storage.transactionSync(() => {
-      this.#sql.exec('INSERT OR REPLACE INTO published_packs VALUES(?,?,?,?,?)', reference.gameId, reference.draftRevision, reference.sourceDigest, manifestJson, now);
-      this.#sql.exec('DELETE FROM published_pack_chapters WHERE game_id=?', reference.gameId);
-      for (const [chapterId, state] of Object.entries(states)) {
-        this.#sql.exec('INSERT INTO published_pack_chapters VALUES(?,?,?)', reference.gameId, chapterId, JSON.stringify(state));
-      }
-      this.#sql.exec('DELETE FROM published_pack_assets WHERE game_id=?', reference.gameId);
-      for (const entry of entries) {
-        const data = payloads[entry.assetId];
-        this.#sql.exec('INSERT INTO published_pack_assets VALUES(?,?,?,?,?)', reference.gameId, entry.assetId, entry.sha256, entry.byteLength, Buffer.from(data));
-      }
-      // 画像位元組住 R2 `kao/`，pack 只記 ID＋SHA（B 決策），此處不寫 pack_assets。
+    const ticket = Object.freeze({});
+    this.#prepared.set(ticket, {
+      authority, identity, manifest, manifestJson: JSON.stringify(manifest),
+      chapters: Object.entries(states).map(([id, state]) => [id, JSON.stringify(state)]),
+      entries, payloads,
     });
+    return ticket;
+  }
+  // Independent copies for precommit staging. No SQL write and no live-pack
+  // replacement; the coordinator must still recheck ownership/source/current
+  // draft and commit authority. The opaque ticket never leaves this server.
+  snapshotPrepared(tokenHash, ticket) {
+    const prepared = this.#prepared.get(ticket);
+    if (!prepared) { fail(422, 'PLAY_PREPARED'); }
+    const actor = this.#actor(tokenHash);
+    if (actor.id !== prepared.authority.id || actor.epoch !== prepared.authority.epoch) { fail(401, 'SESSION_INVALID'); }
+    const { identity, manifestJson, chapters, entries, payloads } = prepared;
+    return Object.freeze({
+      identity: Object.freeze({ ...identity }),
+      pack: Object.freeze({ game_id: identity.gameId, revision: identity.draftRevision, source_digest: identity.sourceDigest, manifest_json: manifestJson }),
+      chapters: Object.freeze(chapters.map(([chapter_id, state_json]) => Object.freeze({ chapter_id, state_json }))),
+      assets: Object.freeze(entries.map(entry => Object.freeze({ game_id: identity.gameId, asset_id: entry.assetId, sha256: entry.sha256, byte_length: entry.byteLength, bytes: Buffer.from(payloads[entry.assetId]) }))),
+    });
+  }
+  // Ambient transaction only: the caller commits pack + ordinal + pin + outbox
+  // together. No I/O/await here; preparation never modifies the live SQL pack.
+  installPreparedInTxn(tokenHash, ticket) {
+    const prepared = this.#prepared.get(ticket);
+    if (!prepared) { fail(422, 'PLAY_PREPARED'); }
+    const actor = this.#actor(tokenHash);
+    if (actor.id !== prepared.authority.id || actor.epoch !== prepared.authority.epoch) { fail(401, 'SESSION_INVALID'); }
+    const { identity, manifest, manifestJson, chapters, entries, payloads } = prepared;
+    this.#sql.exec('INSERT OR REPLACE INTO published_packs VALUES(?,?,?,?,?)', identity.gameId, identity.draftRevision, identity.sourceDigest, manifestJson, new Date().toISOString());
+    this.#sql.exec('DELETE FROM published_pack_chapters WHERE game_id=?', identity.gameId);
+    for (const [chapterId, stateJson] of chapters) {
+      this.#sql.exec('INSERT INTO published_pack_chapters VALUES(?,?,?)', identity.gameId, chapterId, stateJson);
+    }
+    this.#sql.exec('DELETE FROM published_pack_assets WHERE game_id=?', identity.gameId);
+    for (const entry of entries) {
+      this.#sql.exec('INSERT INTO published_pack_assets VALUES(?,?,?,?,?)', identity.gameId, entry.assetId, entry.sha256, entry.byteLength, payloads[entry.assetId]);
+    }
+    // Portrait bytes remain in R2 kao/; never copy them into SQL pack_assets.
+    this.#prepared.delete(ticket);
     return manifest;
+  }
+  // Standalone port helper. The actual publish route uses the ambient installer
+  // inside its larger atomic commit, never this independent transaction.
+  async buildAndStore(tokenHash, input) {
+    const ticket = await this.prepare(tokenHash, input);
+    return this.#storage.transactionSync(() => this.installPreparedInTxn(tokenHash, ticket));
   }
   retire(gameId) {
     this.#sql.exec('DELETE FROM published_packs WHERE game_id=?', gameId);

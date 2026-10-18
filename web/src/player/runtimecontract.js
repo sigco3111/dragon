@@ -1,0 +1,75 @@
+// Public transport contract, not a game-rule or compiler admission certificate.
+// Logical keys never include a test bucket prefix. No arbitrary client key reads.
+export const MAX_METADATA_BYTES = 2 * 1024 * 1024;
+export const MAX_RESOURCE_BYTES = 25 * 1024 * 1024;
+export const isGameId = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+export const isDigest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+export const isId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(value);
+// Source chapter IDs stay unchanged. A scoped ID belongs to this exact game;
+// do not widen release IDs or signing-key IDs, or accept URL-encoded aliases.
+export function isChapterId(value, gameId) {
+  return isGameId(gameId) && (isId(value) || (typeof value === 'string' && value.startsWith(`${gameId}#`) && isId(value.slice(gameId.length + 1))));
+}
+export const isOrdinal = value => typeof value === 'string' && /^1\.(0|[1-9][0-9]{0,30})$/.test(value);
+export const isRevision = value => typeof value === 'string' && /^[1-9][0-9]{0,30}$/.test(value);
+export const ASSET_TYPES = Object.freeze({ terrain: 'application/octet-stream', roadGraph: 'application/json', roadCost: 'application/octet-stream', roadOffset: 'application/json', minimapBase: 'image/png', minimapLarge: 'image/png' });
+export function requireValue(condition, code = 'RUNTIME_CORRUPT') {
+  if (!condition) { throw new Error(code); }
+}
+export function parseJSON(bytes) {
+  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+  catch (cause) { throw new Error('RUNTIME_CORRUPT', { cause }); }
+}
+export async function sha256(bytes) {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join('');
+}
+export function validReference(ref, max = MAX_RESOURCE_BYTES) {
+  return ref && typeof ref.key === 'string' && isDigest(ref.sha256) && Number.isSafeInteger(ref.byteLength) && ref.byteLength > 0 && ref.byteLength <= max;
+}
+export function validateIdentity(value) {
+  requireValue(value && isGameId(value.gameId) && isId(value.releaseId) && isOrdinal(value.ordinal) && isRevision(value.revision) && isDigest(value.sourceDigest));
+}
+export function runtimeBase(identity) {
+  validateIdentity(identity);
+  // A failed pre-commit candidate must not occupy another attempt's ordinal.
+  // The authority must retain one releaseId for an exact retry, and allocate a
+  // distinct ID for a new candidate; path syntax alone is not that authority.
+  return `artifacts/${identity.gameId}/${identity.ordinal}/${identity.releaseId}/`;
+}
+export function validateRuntimeReference(identity, ref) {
+  const base = runtimeBase(identity);
+  requireValue(validReference(ref, MAX_METADATA_BYTES) && ref.key === `${base}runtime-${ref.sha256}.json`);
+}
+export function validateIndex(index) {
+  const base = runtimeBase(index);
+  requireValue(index.version === 1 && Array.isArray(index.chapters) && index.chapters.length > 0 && index.chapters.every(chapter => isChapterId(chapter, index.gameId)) && new Set(index.chapters).size === index.chapters.length);
+  requireValue(index.resources && typeof index.resources === 'object' && !Array.isArray(index.resources));
+  const entries = Object.entries(index.resources);
+  requireValue(entries.length <= 2048 && Object.hasOwn(index.resources, 'manifest'));
+  for (const chapter of index.chapters) { requireValue(Object.hasOwn(index.resources, `chapter:${chapter}`)); }
+  for (const [role, ref] of entries) {
+    requireValue(validReference(ref));
+    if (role === 'manifest') {
+      requireValue(ref.key === `${base}manifest.json` && ref.contentType === 'application/json' && ref.byteLength <= MAX_METADATA_BYTES);
+    } else if (role.startsWith('chapter:')) {
+      const chapter = role.slice(8);
+      // R2 keys are opaque strings: '#' is literal here. Only the S3 HTTP
+      // signer encodes path segments; query callers encode the role once.
+      requireValue(index.chapters.includes(chapter) && ref.key === `${base}chapters/${chapter}.json` && ref.contentType === 'application/json');
+    } else if (role.startsWith('asset:')) {
+      const id = role.slice(6);
+      if (Object.hasOwn(ASSET_TYPES, id)) {
+        requireValue(ref.key === `${base}${ref.sha256}` && ref.contentType === ASSET_TYPES[id]);
+      } else {
+        // Shared library IDs include both DOS byte names and p-prefixed template
+        // names. This is path syntax, not membership: the frozen index supplies
+        // the exact declared ID, hash and length, and the reader checks all three.
+        requireValue(/^p?[0-9]{1,6}$/.test(id) && ref.key === `kao/${id}.png` && ref.contentType === 'image/png');
+      }
+    } else { throw new Error('RUNTIME_CORRUPT'); }
+  }
+  return index;
+}
+export function sameIdentity(a, b) {
+  return ['gameId', 'releaseId', 'ordinal', 'revision', 'sourceDigest'].every(key => a?.[key] === b?.[key]);
+}

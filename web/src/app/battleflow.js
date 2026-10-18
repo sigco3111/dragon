@@ -107,6 +107,7 @@ export function createStrategicBattleMethods(services = {}) {
 }
 
 export async function openStrategicBattle(app, create, applyExit) {
+  if (app.checkFormalCurrent?.() === false) return false;
   const continuation = captureLegionContinuation(app);
   const fail = (error) => {
     if (!continuation.isCurrent()) return false;
@@ -119,7 +120,7 @@ export async function openStrategicBattle(app, create, applyExit) {
   try {
     const battle = create();
     return await app.battleView.open(battle, (exit) => {
-      if (!continuation.claim()) return;
+      if (app.checkFormalCurrent?.() === false || !continuation.claim()) return;
       try {
         app.originalRng = exit.strategicRng;
         app.activeBattleRng = app.originalRng;

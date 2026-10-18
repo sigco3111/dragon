@@ -1,0 +1,103 @@
+// Node HTTP platform adapter for the SAME editor application as the DO.
+// Only the configured editor Host is accepted. Proxy/source headers are never
+// trusted: rate identity comes from the socket (shared behind a local proxy).
+import { register } from 'node:module';
+import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { config, HttpError } from '../server/security.js';
+register('./text-loader.mjs', import.meta.url);
+const { createEditorApplication, createEditorGateway } = await import('../server/editorapp.js');
+const EditorApplication = createEditorApplication(class NodeApplicationBase {});
+const LIMIT = 16384; // Same bounded JSON request contract as server/security.js.
+const errorReply = (status, error) => Response.json({ error }, { status, headers: {
+  'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+} });
+
+export function createEditorService({ storage, bucket, env, runtimeStager, frozenPublication = false }) {
+  const policy = config(env);
+  if (!storage?.sql || !bucket) throw new TypeError('SQLite and private bucket ports required');
+  const bindings = { ...env, EDITOR_BLOBS: bucket };
+  // Trusted startup option only; the shared factory validates it before SQL.
+  const Application = runtimeStager === undefined && frozenPublication === false ? EditorApplication : createEditorApplication(class NodeApplicationBase {}, { runtimeStager, frozenPublication });
+  const entry = createEditorGateway({ frozenPublication });
+  const application = new Application({ storage }, bindings);
+  bindings.EDITOR_METADATA = {
+    idFromName(name) { if (name !== 'editor-authority-v1') throw new Error('unknown authority'); return name; },
+    get(name) { if (name !== 'editor-authority-v1') throw new Error('unknown authority'); return application; },
+  };
+  return Object.freeze({
+    origin: policy.origin,
+    async fetch(request, source = 'local-shared') {
+      let origin;
+      try { origin = new URL(request.url).origin; }
+      catch { return errorReply(400, 'INVALID_URL'); }
+      if (origin !== policy.origin) return errorReply(403, 'ORIGIN_REJECTED');
+      const forwarded = new Request(request);
+      for (const name of ['X-Editor-Source', 'CF-Connecting-IP', 'Forwarded', 'X-Forwarded-For', 'X-Real-IP']) forwarded.headers.delete(name);
+      forwarded.headers.set('CF-Connecting-IP', source);
+      return entry.fetch(forwarded, bindings);
+    },
+  });
+}
+
+function capture(request) {
+  return new Promise((resolve, reject) => {
+    let length = 0;
+    const chunks = [];
+    const clean = () => {
+      request.off('data', data); request.off('end', end);
+      request.off('error', error); request.off('aborted', aborted);
+    };
+    const error = cause => { clean(); reject(cause); };
+    const aborted = () => error(new HttpError(400, 'REQUEST_ABORTED'));
+    const end = () => { clean(); resolve(Buffer.concat(chunks, length)); };
+    const data = bytes => {
+      length += bytes.length;
+      if (length > LIMIT) { request.pause(); error(new HttpError(413, 'REQUEST_TOO_LARGE')); }
+      else chunks.push(bytes);
+    };
+    request.on('data', data); request.once('end', end);
+    request.once('error', error); request.once('aborted', aborted);
+  });
+}
+
+export async function startEditorServer({ storage, bucket, env, runtimeStager, frozenPublication = false, host = '127.0.0.1', port = 8787 }) {
+  if (!['127.0.0.1', '0.0.0.0'].includes(host) || !Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('listen address');
+  const service = createEditorService({ storage, bucket, env, runtimeStager, frozenPublication });
+  let authority;
+  try { authority = new URL(service.origin).host; }
+  catch { throw new TypeError('configured editor origin'); }
+  const server = createServer({ maxHeaderSize: 8192, requestTimeout: 30000, headersTimeout: 10000 }, async (request, response) => {
+    try {
+      if (request.headers.host?.toLowerCase() !== authority) throw new HttpError(403, 'ORIGIN_REJECTED');
+      if (!request.url?.startsWith('/') || request.url.startsWith('//') || /[\\#\x00-\x20]/.test(request.url)) throw new HttpError(400, 'INVALID_URL');
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(request.headers)) if (value !== undefined) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
+      const method = request.method;
+      if (method !== 'GET' && method !== 'POST') throw new HttpError(404, 'NOT_FOUND');
+      if (Number(request.headers['content-length'] ?? 0) > LIMIT) throw new HttpError(413, 'REQUEST_TOO_LARGE');
+      const bytes = method === 'POST' ? await capture(request) : undefined;
+      headers.delete('content-length'); headers.delete('transfer-encoding');
+      const input = new Request(service.origin + request.url, { method, headers, body: bytes });
+      const reply = await service.fetch(input, request.socket.remoteAddress ?? 'local-shared');
+      for (const [key, value] of reply.headers) if (key !== 'set-cookie') response.setHeader(key, value);
+      const cookies = reply.headers.getSetCookie();
+      if (cookies.length) response.setHeader('Set-Cookie', cookies);
+      response.writeHead(reply.status);
+      if (reply.body) await pipeline(Readable.fromWeb(reply.body), response);
+      else response.end();
+    } catch (error) {
+      if (response.headersSent) { response.destroy(); return; }
+      const reply = errorReply(error instanceof HttpError ? error.status : 500, error instanceof HttpError ? error.code : 'INTERNAL_ERROR');
+      response.writeHead(reply.status, { ...Object.fromEntries(reply.headers), Connection: 'close' });
+      response.end(await reply.text(), () => request.destroy());
+    }
+  });
+  server.maxHeadersCount = 64;
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve(); }); });
+  return Object.freeze({
+    address: server.address(),
+    close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
+  });
+}

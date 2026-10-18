@@ -1,7 +1,7 @@
 // V1 slice 4: run the REAL server/blobs.js ImmutableBlobStore and
 // server/privatewrites.js PrivateWriteJournal on vps/file-bucket.mjs.
 // Usage: node tools/verify_vps_blob_file.mjs
-import { mkdtempSync, appendFileSync } from 'node:fs';
+import { mkdtempSync, appendFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStorage } from '../vps/sqlite-port.mjs';
@@ -30,7 +30,9 @@ const games = new GameMetadataStore({ storage,
   principal: h => { if (h !== 'h1') { fail(401, 'SESSION_INVALID'); } return { id: 'u1', role: 'author', epoch: 1, must_change: 0 }; },
   verifySnapshot: undefined, recoverAllocation: () => { fail(503, 'COPY_NOT_CONFIGURED'); } });
 void games;
-const blobRoot = join(mkdtempSync(join(tmpdir(), 'vps-blob-')), 'data');
+const own = mkdtempSync(join(tmpdir(), 'vps-blob-'));
+const blobRoot = join(own, 'data');
+try {
 const bucket = new FileBucket({ root: blobRoot });
 const journal = new PrivateWriteJournal({ storage, bucket });
 const authority = (tokenHash, _context) => {
@@ -80,3 +82,4 @@ check('bucket traversal rejected', traversal);
 await fails('journal bad key 422', async () => journal.put('evil', new Uint8Array([1]), {}), 'PRIVATE_WRITE_KEY');
 
 console.log(`passed ${passed} checks`);
+} finally { storage.close(); rmSync(own, { recursive: true, force: true }); }

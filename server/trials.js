@@ -74,10 +74,10 @@ export function trialChapterActiveGaps(state) {
   return Object.freeze(chapterActiveGaps(state ?? {}).map((gap) => Object.freeze({ kind: gap.code, slot: null, value: null, logicalURL: null, message: gap.message })));
 }
 export class TrialSessions {
-  #sql; #principal; #games; #drafts; #catalog; #policy;
-  constructor({ storage, principal, games, drafts, catalog, policy }) {
-    if (!storage?.sql || typeof principal !== 'function' || typeof games?.snapshotReference !== 'function' || typeof games?.assertNotDeleting !== 'function' || typeof drafts?.captureForCompile !== 'function' || typeof catalog?.loadFull !== 'function' || typeof catalog?.definition !== 'function' || !isInstalledSourcePolicy(policy)) { throw new TypeError('actual trial session ports required'); }
-    this.#sql = storage.sql; this.#principal = principal; this.#games = games; this.#drafts = drafts; this.#catalog = catalog; this.#policy = policy;
+  #sql; #principal; #games; #drafts; #runtimeAssets; #policy;
+  constructor({ storage, principal, games, drafts, runtimeAssets, policy }) {
+    if (!storage?.sql || typeof principal !== 'function' || typeof games?.snapshotReference !== 'function' || typeof games?.assertNotDeleting !== 'function' || typeof drafts?.captureForCompile !== 'function' || typeof runtimeAssets?.capture !== 'function' || typeof runtimeAssets?.definition !== 'function' || !isInstalledSourcePolicy(policy)) { throw new TypeError('actual trial session ports required'); }
+    this.#sql = storage.sql; this.#principal = principal; this.#games = games; this.#drafts = drafts; this.#runtimeAssets = runtimeAssets; this.#policy = policy;
     storage.transactionSync(() => this.#sql.exec("CREATE TABLE IF NOT EXISTS trial_sessions (trial_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, session_token_hash TEXT NOT NULL, auth_epoch INTEGER NOT NULL, game_id TEXT NOT NULL, draft_revision TEXT NOT NULL, chapter_id TEXT NOT NULL, snapshot_id TEXT NOT NULL, snapshot_digest TEXT NOT NULL, manifest_digest TEXT, state TEXT NOT NULL CHECK(state IN ('active','ended')), end_reason TEXT, created_at TEXT NOT NULL, absolute_until INTEGER NOT NULL)"));
     storage.transactionSync(() => this.#sql.exec('CREATE TABLE IF NOT EXISTS trial_assets (trial_id TEXT NOT NULL, asset_id TEXT NOT NULL, sha256 TEXT NOT NULL, byte_length INTEGER NOT NULL, bytes BLOB NOT NULL, PRIMARY KEY(trial_id,asset_id))'));
   }
@@ -94,11 +94,12 @@ export class TrialSessions {
   }
   // Registry visual descriptors from the game's copy_origins registry; the descriptors are the same public
   // compiled-atlas references the App loads anyway — owner-bound trial, no new source capability.
-  async #visuals(tokenHash, gameId) {
-    const origin = this.#one('SELECT * FROM copy_origins WHERE game_id=?', gameId);
-    if (!origin || origin.registry_id !== this.#policy.registryId || origin.profile_revision !== this.#policy.profileRevision || origin.definition_digest !== this.#catalog.definition().definitionDigest) { fail(409, 'TRIAL_SOURCE_CHANGED'); }
-    const source = await this.#catalog.loadFull(tokenHash, origin.registry_id);
+  async #visuals(tokenHash, reference) {
+    const origin = this.#one('SELECT * FROM copy_origins WHERE game_id=?', reference.gameId);
+    if (!origin || origin.registry_id !== this.#policy.registryId || origin.profile_revision !== this.#policy.profileRevision || origin.definition_digest !== this.#runtimeAssets.definition().definitionDigest) { fail(409, 'TRIAL_SOURCE_CHANGED'); }
     const manifestPath = `content/builtin/compiled/${this.#policy.revision}/manifest.json`, manifestRole = this.#policy.roles.find(item => item.path === manifestPath);
+    const paths = [manifestPath, ...['map_atlas_', 'map_tiles_'].flatMap(stem => ['spring', 'summer', 'autumn', 'winter'].map(season => `content/builtin/compiled/${this.#policy.revision}/${stem}${season}.png`))];
+    const source = await this.#runtimeAssets.capture(tokenHash, reference, paths);
     if (!manifestRole) { fail(503, 'TRIAL_VISUALS_BINDING'); }
     const manifestBytes = source.readWeb(manifestPath);
     if (manifestBytes.length !== manifestRole.byteLength || shaBytes(manifestBytes) !== manifestRole.sha256) { fail(503, 'TRIAL_VISUALS_BINDING'); }
@@ -177,7 +178,7 @@ export class TrialSessions {
     }
     const roles = { terrain: 'rules-initial-terrain', roadGraph: 'native-road-v2', roadCost: 'legacy-grid-visual', roadOffset: 'legacy-grid-visual', minimapBase: 'automatic-minimap', minimapLarge: 'automatic-minimap' };
     const entries = Object.entries(payloads).map(([assetId, data]) => ({ assetId, sha256: shaBytes(data), byteLength: data.length, role: roles[assetId], url: `/api/trials/${trialId}/assets/${assetId}` }));
-    const visualAssets = await this.#visuals(tokenHash, gameId);
+    const visualAssets = await this.#visuals(tokenHash, reference);
     const chapterState = this.#checkChapterState(projection, chapterId);
     const manifest = { schemaVersion: 1, compilerRevision: TRIAL_COMPILER_REVISION, buildFormat: 'studio-chapter-1',
       scope: { kind: 'chapter', chapterId, savedSourceDigest: projection.savedSourceDigest, selectedSourceDigest: projection.selectedSourceDigest },

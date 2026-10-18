@@ -8029,6 +8029,8 @@ export class GameBar {
       scroll: 0,
       hover: -1,
     };
+    // Read-only remote status: no Trial network gate, clock or save identity change.
+    void this.app.refreshFormalStatus?.();
     this.app.view.draw();
     return true;
   }

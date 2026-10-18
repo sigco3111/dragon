@@ -1,3 +1,13 @@
+# Match the reviewed Trial bundle source bytes on every platform. Two existing
+# modules are CRLF-pinned; generated descriptors below retain their raw bytes.
+web/src/**/*.js text eol=lf
+web/intro/styles.css text eol=lf
+# JSON wrappers keep their single LF terminator; embedded source bytes stay exact.
+server/public/trialweb.txt text eol=lf
+server/public/trialapp.txt text eol=lf
+server/public/playapp.txt text eol=lf
+web/src/content/authoring/gamesource.js text eol=crlf
+web/src/game/navigation/originalroadarrival.js text eol=crlf
 # Immutable generated packages are SHA-256 admitted, including original CRLF.
 # Review their semantic/native diffs through the manifest verification tools.
 web/content/builtin/compiled/** binary
@@ -10,6 +20,13 @@ web/src/editor/builtinentitysource.generated.js -text
 docs/data/*.json -text
 # Worker Text imports retain pinned manifest bytes across Git checkouts.
 server/pinned/*.txt -text
+server/available-library.txt -text
+# Reviewed available-library consumer fingerprints bind checkout bytes:
+# code is LF; the existing shell fingerprint is CRLF. Keep both exact.
+# Do not change manifest hashes to accommodate platform checkout conversion.
+web/index.html text eol=crlf
+tools/stage_editor_trial_assets.mjs text eol=lf
+tools/editor_builtin_source.mjs text eol=lf
 # Server vendor bytes/licenses are SHA-pinned; retain upstream trailing spaces.
 # Keep normal textual diffs, exempt only imported blank-at-eol (not our code).
 server/vendor/jpeg-js/decoder.js -text whitespace=-blank-at-eol

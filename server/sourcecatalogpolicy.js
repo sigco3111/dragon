@@ -48,7 +48,7 @@ export function installedAvailableLibraryPolicy(input) {
   } catch { fail(503, 'LIBRARY_MANIFEST_NOT_PINNED'); }
   if (length !== 93632) fail(503, 'LIBRARY_MANIFEST_NOT_PINNED');
   const bytes = new Uint8Array(length); bytes.set(new Uint8Array(buffer, offset, length));
-  const manifestHash = 'c89cb0c99ec2b3dd13900c35c2882f26799eadef074d7d2d4811c2d8059291f2';
+  const manifestHash = '8993b360d062fd29c2c26f5e55812a6b1911e2531881a44781e90e7690ddc06b';
   const library = manifest(bytes, manifestHash, 93632);
   if (library.schemaVersion !== 1 || library.profile !== TRIAL_ASSET_PROFILE || library.mode !== 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE' || library.baseRevision !== revision || library.runtimeDataSha256 !== 'f819a1a5bb81d8b915a19e8efbaf6a212d8e4516843513869dc1b939ca1ac3af' || Object.keys(library.resources).sort().join('\n') !== FIXED_TRIAL_ASSET_PATHS.join('\n') || Object.keys(library.supportingFiles).join(',') !== 'font/OFL-Oswald.txt' || Object.keys(library.programHashes).length !== 20 || library.unresolvedReferences.length !== 20) fail(503, 'LIBRARY_MANIFEST_IDENTITY');
   const roles = [{ path: 'available-library-manifest.json', sha256: manifestHash, byteLength: 93632 }];
@@ -58,6 +58,6 @@ export function installedAvailableLibraryPolicy(input) {
   }
   roles.sort((a, b) => { if (a.path < b.path) return -1; if (a.path > b.path) return 1; return 0; });
   if (roles.length !== 400 || new Set(roles.map(row => row.path)).size !== 400) fail(503, 'LIBRARY_MANIFEST_ROLE');
-  const policy = Object.freeze({ registryId: 'approved-available-library-76cdf28-1', revision, sourceDigest, profileRevision: TRIAL_ASSET_PROFILE, mode: library.mode, manifestDigest: manifestHash, runtimeDataSha256: library.runtimeDataSha256, programHashes: Object.freeze({ ...library.programHashes }), unresolvedReferences: Object.freeze(library.unresolvedReferences.map(ref => Object.freeze({ ...ref }))), roles: Object.freeze(roles.map(Object.freeze)) });
+  const policy = Object.freeze({ registryId: 'approved-available-library-8993b360-1', revision, sourceDigest, profileRevision: TRIAL_ASSET_PROFILE, mode: library.mode, manifestDigest: manifestHash, runtimeDataSha256: library.runtimeDataSha256, programHashes: Object.freeze({ ...library.programHashes }), unresolvedReferences: Object.freeze(library.unresolvedReferences.map(ref => Object.freeze({ ...ref }))), roles: Object.freeze(roles.map(Object.freeze)) });
   policies.add(policy); return policy;
 }

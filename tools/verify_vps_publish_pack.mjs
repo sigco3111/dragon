@@ -13,6 +13,7 @@ const { GameMetadataStore } = await import('../server/metadata.js');
 const { GameSnapshotVerifier } = await import('../server/snapshots.js');
 const { PrivateDrafts } = await import('../server/drafts.js');
 const { InstalledSourceCatalog } = await import('../server/sourcecatalog.js');
+const { OwnedRuntimeAssets } = await import('../server/runtimeassets.js');
 const { installedSourcePolicy } = await import('../server/sourcecatalogpolicy.js');
 const { PublishedGames } = await import('../server/published.js');
 const { PublishedPacks, RESERVED_ASSET_IDS } = await import('../server/playpacks.js');
@@ -21,7 +22,8 @@ const { encodeSourceChunks, canonicalSourceTokens } = await import('../web/src/c
 const { compileTrialSource } = await import('../web/src/content/authoring/trialcompile.js');
 const { HttpError, fail } = await import('../server/security.js');
 const { createPinnedCopyLoader } = await import('./editor_trusted_copy.mjs');
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { KAO_MANIFEST } from '../web/kao/manifest.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -47,14 +49,16 @@ const actors = {
   h2: { id: 'cccccccc-cccc-4ccc-cccc-cccccccccccc', role: 'author', epoch: 1, must_change: 0 },
 };
 const principal = h => { if (!actors[h]) { fail(401, 'SESSION_INVALID'); } return actors[h]; };
+const scratch = mkdtempSync(join(tmpdir(), 'vps-pub-'));
 const storage = openStorage(':memory:');
+try {
 storage.transactionSync(() => {
   storage.sql.exec("CREATE TABLE users (id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, role TEXT NOT NULL, password_hash TEXT NOT NULL, disabled INTEGER NOT NULL, must_change INTEGER NOT NULL, epoch INTEGER NOT NULL, version INTEGER NOT NULL)");
   storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', ADMIN, 'admin_s10', 'admin', '{}', 0, 0, 1, 1);
   storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', OWNER, 'author_s10', 'author', '{}', 0, 0, 1, 1);
   storage.sql.exec('INSERT INTO users VALUES(?,?,?,?,?,?,?,?)', actors.h2.id, 'author2_s10', 'author', '{}', 0, 0, 1, 1);
 });
-const bucket = new FileBucket({ root: join(mkdtempSync(join(tmpdir(), 'vps-pub-')), 'data') });
+const bucket = new FileBucket({ root: join(scratch, 'data') });
 const journal = new PrivateWriteJournal({ storage, bucket });
 const authority = () => ({ ownerId: OWNER, epoch: 1 });
 const blobs = new ImmutableBlobStore({ bucket: journal, authority, storage });
@@ -114,17 +118,20 @@ await drafts.save('h1', GAME, '1', 's10-save-0000000001', 'e'.repeat(64), { meta
 
 // 3. Portrait (shared library, B) + freeze + pin + serve.
 const portraits = new GamePortraits({ reservedIds: RESERVED_ASSET_IDS });
-check('portrait manifest', portraits.list().length === 620 && portraits.get('0').mime === 'image/png');
-const packs = new PublishedPacks({ storage, principal, catalog, portraits });
+check('portrait manifest projection', portraits.list().length === KAO_MANIFEST.length && portraits.list().every((row, i) => row.assetId === KAO_MANIFEST[i].id && row.sha256 === KAO_MANIFEST[i].sha256 && row.byteLength === KAO_MANIFEST[i].bytes) && portraits.get('0').mime === 'image/png');
+const runtimeAssets = new OwnedRuntimeAssets({ storage, bucket, principal, games, policy, kind: 'visuals' });
+const packs = new PublishedPacks({ storage, principal, runtimeAssets, portraits });
 const registry = new PublishedGames({ storage, principal });
 const compiled = compileTrialSource(game, bytes => createHash('sha256').update(bytes).digest('hex'));
 const reference = games.snapshotReference('h1', GAME, '1');
-await fails('author freeze 403 (observed)', async () => packs.buildAndStore('h1', { game, reference, compiled }), 'FULL_COPY_SOURCE_ADMIN_REQUIRED');
-const manifest = await packs.buildAndStore('ha', { game, reference, compiled });
+await fails('full-copy source remains admin-only', async () => catalog.loadFull('h1', REG), 'FULL_COPY_SOURCE_ADMIN_REQUIRED');
+const manifest = await packs.buildAndStore('h1', { game, reference, compiled });
 check('freeze manifest', manifest.chapters.length === 20 && manifest.portraits.every(p => p.url.startsWith('kao/')) && manifest.identity.sourceDigest === sourceDigest);
 const pin = registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '1', sourceDigest, chapters: [...game.chapterOrder], ordinal: '1.0' });
 check('pin', pin.revision === '1' && typeof pin.publishedAt === 'string' && pin.ordinal === '1.0');
-check('registry list', registry.list().some(p => p.gameId === GAME));
+check('unlisted release hidden', !registry.list().some(p => p.gameId === GAME));
+games.setListed('ha', GAME, true, games.listOwn('h1').find(row => row.gameId === GAME).rowRevision);
+check('registry list after admin listing', registry.list().some(p => p.gameId === GAME));
 const pack = packs.pack(GAME);
 check('pack default chapter', pack.chapterId === game.chapterOrder[0] && pack.manifest.identity.draftRevision === '1');
 check('pack explicit', packs.pack(GAME, '1', game.chapterOrder[3]).chapterId === game.chapterOrder[3]);
@@ -142,10 +149,12 @@ await fails('bad name 422', async () => registry.publish('h1', { gameId: GAME, n
 const read1 = await drafts.read('h1', GAME, '1');
 const f0 = read1.chapters[0].factions[0];
 await drafts.save('h1', GAME, '1', 's10-save-0000000002', 'e'.repeat(64), { metadata: { ...game.metadata }, resourceEdits: [{ chapterId: read1.chapters[0].chapterId, slot: 0, values: { money: f0.money + 2, reserve_cav: f0.reserve_cav, reserve_arc: f0.reserve_arc, reserve_inf: f0.reserve_inf } }], chapterEdits: [] });
+await fails('stale draft visual capture refused', async () => packs.prepare('h1', { game, reference, compiled }), 'SOURCE_RUNTIME_CHANGED');
+check('stale preparation preserves live pack', packs.pack(GAME).manifest.identity.draftRevision === '1');
 const game2 = (await drafts.captureForCompile('h1', GAME, '2')).game;
 const compiled2 = compileTrialSource(game2, bytes => createHash('sha256').update(bytes).digest('hex'));
 const ref2 = games.snapshotReference('h1', GAME, '2');
-await packs.buildAndStore('ha', { game: game2, reference: ref2, compiled: compiled2 });
+await packs.buildAndStore('h1', { game: game2, reference: ref2, compiled: compiled2 });
 registry.publish('h1', { gameId: GAME, name: 'S10發布', revision: '2', sourceDigest: ref2.sourceDigest, chapters: [...game2.chapterOrder], ordinal: '1.1' });
 check('republish rev2', packs.pack(GAME).manifest.identity.draftRevision === '2');
 await fails('stale rev gone 409', async () => packs.pack(GAME, '1'), 'PLAY_SNAPSHOT_CHANGED');
@@ -165,4 +174,5 @@ storage.sql.exec('UPDATE content_games SET listed=1 WHERE game_id=?', GAME);
 await fails('corrupt pin 500', async () => registry.list(), 'PUBLISH_CORRUPT');
 storage.sql.exec('DELETE FROM published_games WHERE game_id=?', GAME);
 
-console.log(`passed ${passed} checks`);
+process.stdout.write(`passed ${passed} checks\n`);
+} finally { storage.close(); rmSync(scratch, { recursive: true, force: true }); }

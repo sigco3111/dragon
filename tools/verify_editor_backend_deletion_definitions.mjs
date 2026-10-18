@@ -42,7 +42,7 @@ async function login(account){
 async function observed(input,session){
  const x=(await action({action:'observe',input},session)).result;
  assert.deepEqual(Object.keys(x).sort(),['gameId','rowRevision','schemaDigest','tablesVerified','indexesVerified','foreignKeyDeclarationsVerified','definitionsVerified','rowIntegrityVerified','nativeDrainVerified','deleteAllowed','mode'].sort());
- assert.equal(x.gameId,input.gameId);assert.equal(x.rowRevision,input.expectedRowRevision);assert.match(x.schemaDigest,/^[a-f0-9]{64}$/);assert.equal(x.tablesVerified,47);assert.equal(x.definitionsVerified,true);assert.equal(x.rowIntegrityVerified,false);assert.equal(x.nativeDrainVerified,false);assert.equal(x.deleteAllowed,false);assert.equal(x.mode,'CURRENT_DECLARED_SQL_DEFINITIONS_ONLY_LEGACY_UNKNOWN');
+ assert.equal(x.gameId,input.gameId);assert.equal(x.rowRevision,input.expectedRowRevision);assert.match(x.schemaDigest,/^[a-f0-9]{64}$/);assert.equal(x.tablesVerified,50);assert.equal(x.definitionsVerified,true);assert.equal(x.rowIntegrityVerified,false);assert.equal(x.nativeDrainVerified,false);assert.equal(x.deleteAllowed,false);assert.equal(x.mode,'CURRENT_DECLARED_SQL_DEFINITIONS_ONLY_LEGACY_UNKNOWN');
  observations.push(x);return x;
 }
 try{
@@ -51,7 +51,7 @@ try{
  const owner=await login('definition_owner'),other=await login('definition_other'),dump=(await action({action:'dump'},admin)).result;
  writeFileSync(`${d}native-r${round}-schema.json`,JSON.stringify(dump,null,2)+'\n',{flag:'wx'});
  const expected=parse(readFileSync(`${d}expected.json`));assert.deepEqual(dump.objects.map(r=>[r.type,r.name,r.tbl_name,r.sql]),expected.objects);assert.equal(dump.foreignKeys[0].foreign_keys,1);assert.equal(dump.deferred[0].defer_foreign_keys,0);
- checks.push('real fresh Root/workerd initialized current47 code-declared tables, implicitindex identities/text equal independent NodeSQLite oracle; actual FK enforcement on/nondeferred. No staged bytes or source/runtime admission');
+ checks.push('real fresh Root/workerd initialized current50 code-declared tables, implicitindex identities/text equal independent NodeSQLite oracle; actual FK enforcement on/nondeferred. No staged bytes or source/runtime admission');
  const game=(await action({action:'create',name:'定義核驗'},owner)).result,input={gameId:game.gameId,expectedRowRevision:'1'};
  await rejected({action:'observe',input},owner,409,'DELETE_FENCE_REQUIRED');await rejected({action:'observe',input},other,404,'GAME_NOT_FOUND');await rejected({action:'observe',input:{gameId:'wolong-builtin',expectedRowRevision:'1'}},admin,403,'BUILTIN_PROTECTED');await rejected({action:'observe',input:{gameId:[game.gameId],expectedRowRevision:'1'}},owner,422,'DELETE_SCHEMA_INPUT');await rejected({action:'observe',input:{...input,expectedRowRevision:'01'}},owner,422,'DELETE_SCHEMA_INPUT');await rejected({action:'observe',input:{...input,plan:{}}},owner,422,'REQUEST_FIELDS');
  const fence=(await action({action:'fence',input:{...input,confirmationName:game.name}},owner)).result;input.expectedRowRevision=fence.rowRevision;
@@ -61,7 +61,7 @@ try{
  checks.push('actual owner/admin/authenticated foreign and builtin/UUID/exact fields/CAS/durable fence gates; exact11 facts do not grant row/native/delete. Owned skeleton is NOT GameSource; observation does not freeze Jobs/Drafts or write rows/R2');
  for(const kind of ['check','fk','collation','unique']){
   await action({action:'mutate',kind},admin);assert.equal((await action({action:'columns'},admin)).result.columnsVerified,true);await rejected({action:'observe',input},owner,503,'DELETE_SCHEMA_DEFINITION');await action({action:'restore'},admin);assert.equal((await observed(input,owner)).schemaDigest,first.schemaDigest);
-  checks.push(`actual ${kind} DDL drift keeps original47/317 column gate passing; new current definition gate exact503, owned restore returns same oracle digest without SQL/R2 cleanup or migration`);
+  checks.push(`actual ${kind} DDL drift keeps current50/343 column gate passing; new current definition gate exact503, owned restore returns same oracle digest without SQL/R2 cleanup or migration`);
  }
  for(const kind of ['index','view','trigger','table']){
   await action({action:'mutate',kind},admin);if(kind!=='table'){assert.equal((await action({action:'columns'},admin)).result.columnsVerified,true);}await rejected({action:'observe',input},owner,503,'DELETE_SCHEMA_DEFINITION');await action({action:'restore'},admin);assert.equal((await observed(input,admin)).schemaDigest,first.schemaDigest);
@@ -76,7 +76,7 @@ try{
  await rejected({action:'observe',input},undefined,401,'LOGIN_REQUIRED');await rejected({action:'observe',input},owner,403,'CSRF_REJECTED',{'X-CSRF-Token':'bad'});await rejected({action:'observe',input},owner,403,'ORIGIN_REJECTED',{Origin:'https://example.invalid'});
  checks.push('real loopback HTTP cookie/Origin/CSRF required; internal observation never trusts an anonymous DTO or supplied schema');
  await server.close();server=await startEditorBackend(join(own,'wrangler.jsonc'),{stageSource:false,stageLibrary:false});assert.equal((await observed(input,owner)).schemaDigest,first.schemaDigest);
- checks.push('actual workerd/DO restart retains fence/authority and exact47 declarations; reobservation is fresh facts, not immutable approval/oldprovider proof');
+ checks.push('actual workerd/DO restart retains fence/authority and exact50 declarations; reobservation is fresh facts, not immutable approval/oldprovider proof');
  const changed=await call('/api/auth/password',{oldPassword:password,newPassword:randomBytes(24).toString('hex')},owner);assert.equal(changed.status,200);await rejected({action:'observe',input},owner,401,'SESSION_INVALID');
  const latest={cookie:changed.cookie,csrf:changed.data.csrf};assert.equal((await observed(input,latest)).schemaDigest,first.schemaDigest);
  const missingPublic=await call(`/api/games/${game.gameId}/delete`,{},admin);assert.equal(missingPublic.status,404);

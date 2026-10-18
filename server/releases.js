@@ -4,6 +4,7 @@
 // publish transaction (publish wiring is C-2; standalone commits here).
 // No rollback API by design (Q42); retire() clears packs, never releases.
 import { fail } from './security.js';
+import { isOrdinal, isRevision } from '../reader/runtimecontract.js';
 
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const revision = value => typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
@@ -19,6 +20,7 @@ export function bumpOrdinal(current) {
 
 export class ReleaseLedger {
   #storage; #sql; #principal; #games;
+  #prepared = new WeakMap();
   constructor({ storage, principal, games }) {
     if (!storage?.sql || typeof principal !== 'function' || typeof games?.listOwn !== 'function' || typeof games?.assertNotDeleting !== 'function') {
       throw new TypeError('actual SQL, principal and game directory required');
@@ -39,6 +41,50 @@ export class ReleaseLedger {
     if (!entry) fail(404, 'GAME_NOT_FOUND');
     this.#games.assertNotDeleting(gameId);
     return { actor, entry };
+  }
+  #candidateRow(tokenHash, gameId) {
+    const { actor } = this.#owned(tokenHash, gameId);
+    const row = this.#one('SELECT owner_id,draft_revision,row_revision,current_release_id,next_ordinal FROM content_games WHERE game_id=?', gameId);
+    if (!row || row.owner_id !== actor.id) fail(404, 'GAME_NOT_FOUND');
+    if (!isRevision(row.draft_revision) || !isRevision(row.row_revision) ||
+        row.current_release_id !== null && !uuid(row.current_release_id) ||
+        row.next_ordinal !== '0' && !isOrdinal(row.next_ordinal)) fail(503, 'RELEASE_STATE_CORRUPT');
+    return { actor, row };
+  }
+  // Provisional identity only: no reservation, ordinal advance or public root.
+  // Different attempts at the same ordinal get disjoint immutable namespaces.
+  // The publish coordinator still verifies the compiled source/root and owns
+  // permanent request replay; this capability is not a content/R2 proof.
+  prepare(tokenHash, gameId, draftRevision, sourceDigest) {
+    if (!isRevision(draftRevision)) fail(422, 'RELEASE_REVISION');
+    if (!digest(sourceDigest)) fail(422, 'RELEASE_DIGEST');
+    return this.#storage.transactionSync(() => {
+      const { actor, row } = this.#candidateRow(tokenHash, gameId);
+      if (row.draft_revision !== draftRevision) fail(409, 'RELEASE_CONFLICT');
+      const ordinal = bumpOrdinal(row.next_ordinal);
+      if (!isOrdinal(ordinal)) fail(503, 'RELEASE_STATE_CORRUPT');
+      const identity = Object.freeze({ gameId, releaseId: crypto.randomUUID(), ordinal, draftRevision, sourceDigest });
+      const ticket = Object.freeze({});
+      this.#prepared.set(ticket, { identity, row, actorId: actor.id, epoch: actor.epoch });
+      return Object.freeze({ ticket, identity });
+    });
+  }
+  // Ambient transaction only. Keep the capability after invocation: an outer
+  // rollback may retry the SAME staged identity. A committed pointer/counter
+  // change prevents reuse; permanent HTTP replay happens before this method.
+  issuePreparedInTxn(tokenHash, ticket) {
+    const prepared = this.#prepared.get(ticket);
+    if (!prepared) fail(422, 'RELEASE_PREPARED');
+    const { identity, row: prior } = prepared;
+    const { actor, row } = this.#candidateRow(tokenHash, identity.gameId);
+    if (actor.id !== prepared.actorId || actor.epoch !== prepared.epoch) fail(401, 'SESSION_INVALID');
+    if (Object.keys(prior).some(key => row[key] !== prior[key])) fail(409, 'RELEASE_CONFLICT');
+    const time = new Date().toISOString();
+    this.#sql.exec('UPDATE content_games SET next_ordinal=?,current_release_id=?,modified_at=? WHERE game_id=? AND next_ordinal=? AND current_release_id IS ? AND row_revision=? AND draft_revision=? AND owner_id=?',
+      identity.ordinal, identity.releaseId, time, identity.gameId, prior.next_ordinal, prior.current_release_id, prior.row_revision, prior.draft_revision, actor.id);
+    if (this.#one('SELECT changes() AS n')?.n !== 1) fail(409, 'RELEASE_CONFLICT');
+    this.#sql.exec('INSERT INTO content_releases VALUES(?,?,?,?,?,?)', identity.gameId, identity.releaseId, identity.ordinal, identity.draftRevision, identity.sourceDigest, time);
+    return Object.freeze({ ...identity, createdAt: time });
   }
   // Issues the next ordinal for a verified draft revision. Runs in its own
   // transaction here; the publish route calls the inner form inside the

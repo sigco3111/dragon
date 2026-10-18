@@ -65,6 +65,26 @@ export class PublishedGames {
     this.#sql.exec('INSERT OR REPLACE INTO published_games VALUES(?,?,?,?)', gameId, actor.id, JSON.stringify(pin), now);
     return pin;
   }
+  // Trusted route only, AFTER current administrator/fence/CAS checks, in the
+  // SAME transaction as the listing flag. A draft cannot be pre-listed. This
+  // verifies committed SQL identity, not R2 visibility or resource closure.
+  assertListableInTxn(gameId) {
+    this.#gameId(gameId);
+    const row = this.#one(`SELECT g.owner_id,g.current_release_id,
+      r.game_id AS release_game_id,r.ordinal,r.draft_revision,r.source_digest,
+      p.owner_id AS pin_owner_id,p.pin_json,
+      k.revision AS pack_revision,k.source_digest AS pack_digest
+      FROM content_games g
+      LEFT JOIN content_releases r ON r.release_id=g.current_release_id
+      LEFT JOIN published_games p ON p.game_id=g.game_id
+      LEFT JOIN published_packs k ON k.game_id=g.game_id
+      WHERE g.game_id=?`, gameId);
+    if (!row) { fail(404, 'GAME_NOT_FOUND'); }
+    if (row.current_release_id === null) { fail(409, 'GAME_NOT_PUBLISHED'); }
+    if (!uuid(row.current_release_id) || row.release_game_id !== gameId || row.pin_owner_id !== row.owner_id || typeof row.pin_json !== 'string' || !/^1\.(0|[1-9][0-9]{0,30})$/.test(row.ordinal ?? '') || !/^[1-9][0-9]{0,30}$/.test(row.draft_revision ?? '') || !digest(row.source_digest) || row.pack_revision !== row.draft_revision || row.pack_digest !== row.source_digest) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
+    const pin = this.#readPin(gameId, row.pin_json);
+    if (pin.ordinal !== row.ordinal || pin.revision !== row.draft_revision || pin.sourceDigest !== row.source_digest || !pin.chapters.length || new Set(pin.chapters).size !== pin.chapters.length) { fail(503, 'PUBLISH_REFERENCE_CORRUPT'); }
+  }
   // Node unpublish is idempotent (missing file → still success); missing rows
   // and the builtin no-op the same way. Only the recorded owner (or an admin)
   // may remove another owner's pin.

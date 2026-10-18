@@ -163,6 +163,7 @@ export class BattleView {
 
   /** 开战：暂停战略时钟→A1C5启动→持续9FA0输入/A426/A065主循环。 */
   async open(battle, onFinish) {
+    if (this.app.checkFormalCurrent?.() === false) return;
     if (this._trialDiscarded) {
       throw new Error("ended Trial cannot reopen battle view");
     }
@@ -196,7 +197,7 @@ export class BattleView {
         loadJSON("battle_talk.json"),
         loadBytes("battle_display.bin"),
       ]);
-      if (generation !== this._openGeneration) return;
+      if (this.app.checkFormalCurrent?.() === false || generation !== this._openGeneration) return;
       this.mapImg = mapImg;
       this.unitImg = unitImg;
       battle.session.messages.catalog = talkCatalog;
@@ -226,7 +227,7 @@ export class BattleView {
         throw new Error("99CB native display boundary mismatch");
       this.composeBattlefield();
     } catch (error) {
-      if (generation !== this._openGeneration) return;
+      if (this.app.checkFormalCurrent?.() === false || generation !== this._openGeneration) return;
       this.clearBattleDialogue();
       this.cv.style.display = "none";
       this.app.clock._legacyPaused = this.prevClockState.legacyPaused;
@@ -267,7 +268,7 @@ export class BattleView {
         })
       : null;
     const loop = (now) => {
-      if (!this.active || generation !== this._openGeneration) return;
+      if (this.app.checkFormalCurrent?.() === false || !this.active || generation !== this._openGeneration) return;
       if (!this.runtimeEnabled || this.app.runtimeEnabled === false) {
         this._last = now;
         this._raf = requestAnimationFrame(loop);
@@ -395,7 +396,7 @@ export class BattleView {
 
   /** 每逻辑帧严格执行输入队列→A426→A065，直到战斗本身结束。 */
   updateBattleFrames(dt) {
-    if (this._trialDiscarded) { return false; }
+    if (this.app.checkFormalCurrent?.() === false || this._trialDiscarded) { return false; }
     const firstFrameDue = this.firstTacticalFramePending;
     const elapsedSeconds = Number(dt);
     const elapsedMs =
@@ -460,6 +461,16 @@ export class BattleView {
     if (this.app.canPersist !== false || !this.app.trialIdentity) {
       throw new Error("battle discard requires an isolated Trial");
     }
+    return this._discardEndedSession();
+  }
+
+  // Explicit formal owner; do not forge or relax the private Trial guard above.
+  discardFormal() {
+    if (!this.app._formalEntry?.ended) throw new Error("formal session has not ended");
+    return this._discardEndedSession();
+  }
+
+  _discardEndedSession() {
     if (this._trialDiscarded) { return false; }
     this._trialDiscarded = true;
     this._openGeneration++;
@@ -504,7 +515,7 @@ export class BattleView {
 
   /** 结束：战果只来自OriginalBattleSession.settleExit。 */
   finish() {
-    if (!this.active) return;
+    if (this.app.checkFormalCurrent?.() === false || !this.active) return;
     this.active = false;
     this._openGeneration++;
     cancelAnimationFrame(this._raf);
@@ -547,7 +558,7 @@ export class BattleView {
   }
 
   queuePanelInput(input) {
-    if (!this.active || !queueTacticalPanelInput(this.battle, input)) return;
+    if (this.app.checkFormalCurrent?.() === false || !this.active || !queueTacticalPanelInput(this.battle, input)) return;
     this.updateCursor();
     this.syncBattlePanel();
   }

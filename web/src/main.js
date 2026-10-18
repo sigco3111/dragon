@@ -112,6 +112,41 @@ const app = {
   exitConfirmed: false,
   _gameAssetsPromise: null,
   _saveQueue: Promise.resolve(),
+  _formalEntry: null,
+
+  // Formal ownership is independent of private Trial authentication. Terminal
+  // cleanup never settles a battle or deletes local records; the host owns the
+  // confirmation/initial-page UI and pack/session disposal through onExit.
+  checkFormalCurrent() {
+    const entry = this._formalEntry;
+    if (!entry) return true;
+    if (entry.ended) return false;
+    try { entry.assertCurrent(); return true; }
+    catch (error) {
+      entry.failure = error;
+      void this.returnToTitle().catch(failure => {
+        globalThis.__dragonDebug?.reportError?.("formal exit failed", failure);
+      });
+      return false;
+    }
+  },
+
+  assertFormalCurrent() {
+    if (!this.checkFormalCurrent())
+      throw this._formalEntry.failure ?? new DOMException("Formal session ended", "AbortError");
+  },
+
+  async refreshFormalStatus() {
+    const entry = this._formalEntry;
+    if (!entry?.checkStatus || !this.checkFormalCurrent()) return;
+    try {
+      await entry.checkStatus();
+    } catch {
+      // Status availability is not a save/clock gate. Only the captured
+      // environment's terminal ownership can retire this already admitted game.
+    }
+    if (this._formalEntry === entry) this.checkFormalCurrent();
+  },
 
   /** 用户手势内解锁AudioContext并开始解码委任接战样本。 */
   prepareEngageAudio() {
@@ -141,6 +176,7 @@ const app = {
           battleScripts,
           talkTable,
         ]) => {
+          this.assertFormalCurrent();
           battleMaps.navigation = battleNavigation;
           battleMaps.formationVectors = battleRules.formationVectors;
           this.battleMaps = battleMaps;
@@ -163,9 +199,11 @@ const app = {
   },
 
   async enterGame(load) {
+    this.assertFormalCurrent();
     const entry = {};
     this._gameEntryRequest = entry;
     const assertCurrentEntry = () => {
+      this.assertFormalCurrent();
       if (this._gameEntryRequest !== entry)
         throw new DOMException("Game entry superseded", "AbortError");
     };
@@ -215,6 +253,7 @@ const app = {
   },
 
   async beginSavedGame(slotIdx) {
+    this.assertFormalCurrent();
     if (this.canPersist === false) return false;
     // Recheck the current slot before enterGame changes runtime/UI; never trust rows.
     const saved = this.saves?.slots.find((slot) => slot.slot === slotIdx);
@@ -226,7 +265,7 @@ const app = {
   },
 
   setRuntimeEnabled(enabled) {
-    this.runtimeEnabled = Boolean(enabled);
+    this.runtimeEnabled = Boolean(enabled) && !this._formalEntry?.ended;
     this.music.setEnabled(this.runtimeEnabled);
     if (!this.runtimeEnabled) {
       clearMapPointerClockHold();
@@ -266,7 +305,7 @@ const app = {
       if (rafId != null) cancelAnimationFrame(rafId);
       if (this.engageTransition === transition) this.engageTransition = null;
       try {
-        if (!continuation.claim()) return;
+        if (!this.checkFormalCurrent() || !continuation.claim()) return;
         operation();
       } finally {
         this.gamebar?.syncClock?.();
@@ -290,7 +329,15 @@ const app = {
 
   /** 游戏结束：清理运行态并返回首页开局选单 (YES/NO) */
   async returnToTitle(initialAction) {
+    const formal = this._formalEntry;
+    if (formal?.exit) return formal.exit;
     this._gameEntryRequest = null;
+    if (formal) {
+      formal.ended = true;
+      this.setRuntimeEnabled(false);
+      this._nativeTacticalQueue = [];
+      this.battleView?.discardFormal();
+    }
     if (this.canPersist === false) {
       // Terminate before callbacks/UI cleanup: no late tactical open may revive it.
       this.trialEnded = true;
@@ -363,6 +410,15 @@ const app = {
     this.view.seasonImg = null;
     this.scenario = null;
     this.clock = null;
+    if (formal) {
+      this.originalRng = null;
+      this.activeBattleRng = null;
+      formal.exit = Promise.resolve().then(() => formal.onExit(Object.freeze({
+        reason: formal.failure?.code === "GAME_DELETED" ? "deleted" : formal.failure ? "unavailable" : "title",
+        initialAction,
+      })));
+      return formal.exit;
+    }
     if (this.canPersist === false) {
       this.trialEnded = true;
       this.originalRng = null;
@@ -420,6 +476,7 @@ const app = {
       savedLabel = null,
     } = {},
   ) {
+    this.assertFormalCurrent();
     const loadedWorld = this.world,
       loadedContent = this.content;
     const entry = this._gameEntryRequest,
@@ -435,6 +492,7 @@ const app = {
     if (this.gamebar) this.gamebar.syncClock();
     else if (previousClock) previousClock.hold = true;
     const assertCurrentPreflight = () => {
+      this.assertFormalCurrent();
       if (
         this._scenarioAssemblyPending !== assembly ||
         this.world !== loadedWorld ||
@@ -515,6 +573,7 @@ const app = {
     const loadedScenario = this.scenario;
     let ownedClock = this.clock;
     const assertCurrentAssembly = () => {
+      this.assertFormalCurrent();
       if (
         this._scenarioAssemblyPending !== assembly ||
         this._scenarioAssemblyIncomplete !== assembly ||
@@ -663,33 +722,56 @@ const app = {
 
   /** 按调用顺序写入玩家浏览器的 IndexedDB；服务端不接收任何存档。 */
   async saveGame(slotIdx, label) {
+    if (!this.checkFormalCurrent()) return { saved: "blocked", reason: "superseded" };
     if (this.canPersist === false) return { saved: "blocked", reason: "trial" };
     if (!this.runtimeEnabled) {
       this.hud?.flashEvent?.("遊戲目前已暫停，無法存檔。");
       return { saved: "blocked" };
     }
+    // A queued save belongs to its calling session, not the next scene that
+    // happens to occupy this shared App when the queue or IDB completes.
+    const owner = [
+      "scenario", "scenarioIdx", "world", "content", "clock", "saveRepository",
+      "_gameEntryRequest", "_scenarioAssemblyPending", "_scenarioAssemblyIncomplete",
+    ].map((key) => [key, this[key]]);
+    const isCurrent = () => this.checkFormalCurrent() && this.canPersist !== false &&
+      owner.every(([key, value]) => this[key] === value);
+    const repository = this.saveRepository;
     const operation = async () => {
+      if (!isCurrent()) return { saved: "blocked", reason: "superseded" };
+      if (!this.runtimeEnabled) return { saved: "blocked" };
       if (!canSnapshotState(this)) {
         this.hud?.flashEvent?.("戰鬥處理中，現在無法存檔。");
         return { saved: "blocked" };
       }
       try {
+        if (this._formalEntry?.checkStatus) {
+          await this.refreshFormalStatus();
+          if (!isCurrent()) return { saved: "blocked", reason: "superseded" };
+          if (!this.runtimeEnabled || !canSnapshotState(this))
+            return { saved: "blocked" };
+        }
         let sv = snapshotState(this, slotIdx, label);
         // Stored snapshots are immutable to gameplay; copy the index, not every
         // other archive's full rule RAM, when replacing one record.
-        const next = { schema: 1, slots: this.saves.slots.slice() };
+        const previous = this.saves;
+        const next = { schema: 1, slots: previous.slots.slice() };
         const index = next.slots.findIndex((saved) => saved.slot === slotIdx);
         if (index >= 0) {
-          sv = await this.saveRepository.put(sv);
+          sv = await repository.put(sv);
           next.slots[index] = sv;
         } else {
-          sv = await this.saveRepository.add(sv);
+          sv = await repository.add(sv);
           next.slots.push(sv);
         }
+        // The transaction has committed; retirement cannot turn that into an
+        // abort. Acknowledge it without installing old UI/slot state.
+        if (!isCurrent() || this.saves !== previous)
+          return { saved: "superseded", committed: true, slot: sv.slot };
         slotIdx = sv.slot;
         this.saves = next;
       } catch (error) {
-        this.hud?.flashEvent?.("本機存檔失敗，原存檔未變更。");
+        if (isCurrent()) this.hud?.flashEvent?.("本機存檔失敗，原存檔未變更。");
         return { saved: "failed", error };
       }
       this.loadedSaveSlot = slotIdx;
@@ -724,16 +806,30 @@ const app = {
   },
 
   setSeason(i, isCurrent = () => true) {
+    this.assertFormalCurrent();
     this.seasonIdx = i;
     const world = this.world;
     return world.loadSeason(SEASONS[i]).then((img) => {
-      if (!isCurrent() || this.world !== world || this.seasonIdx !== i) return;
+      if (!this.checkFormalCurrent() || !isCurrent() || this.world !== world || this.seasonIdx !== i) return;
       this.view.seasonImg = img;
       if (this.gameStarted) this.view.draw();
+    }).catch(error => {
+      if (this._formalEntry && !this.checkFormalCurrent()) return;
+      throw error;
     });
   },
 };
 app.score = new ScoreDirector(app.music, () => app.clock);
+// Observe retirement before a DOM command, including HUD and tactical buttons.
+// After disposal the host owns its own confirmation/navigation controls.
+for (const type of ["pointerdown", "mousedown", "mouseup", "click", "contextmenu", "keydown", "keyup", "wheel"]) {
+  window.addEventListener(type, event => {
+    if (app._formalEntry && !app._formalEntry.ended && !app.checkFormalCurrent()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, { capture: true, passive: false });
+}
 
 const canvas = document.querySelector("#cv");
 window.__app = app; // 调试句柄(控制台可用 __app.clock 等)
@@ -944,12 +1040,35 @@ window.addEventListener("beforeunload", (e) => {
 });
 
 // 标题阶段只读取章节目录和本机存档；地图/道路/战斗数据在确认进入游戏后加载。
-export async function startApp(opening, { trial = null } = {}) {
+export async function startApp(opening, { trial = null, formal = null } = {}) {
+  let formalEntry = null;
+  if (formal !== null) {
+    const environment = formal.environment, repository = formal.saveRepository;
+    if (trial !== null || !environment?.content || !environment.world || !Number.isInteger(environment.player) ||
+        typeof environment.assertCurrent !== "function" || typeof formal.onExit !== "function" ||
+        !(formal.checkStatus == null || typeof formal.checkStatus === "function") ||
+        !["load", "list", "get", "put", "add"].every(key => typeof repository?.[key] === "function") ||
+        !(formal.savedSlot == null || Number.isSafeInteger(formal.savedSlot) && formal.savedSlot >= 0))
+      throw new TypeError("Explicit formal environment, repository and exit owner required");
+    environment.assertCurrent();
+    formalEntry = { assertCurrent: environment.assertCurrent.bind(environment), onExit: formal.onExit,
+      checkStatus: formal.checkStatus ?? null,
+      content: environment.content, world: environment.world, player: environment.player,
+      repository, savedSlot: formal.savedSlot ?? null, ended: false, exit: null, failure: null };
+  }
   if (app._bootStarted) throw new Error("App already started; open a new trial window");
   app._bootStarted = true;
+  try {
   app.opening = opening;
   app.runtimeEnabled = false;
-  if (trial) {
+  if (formalEntry) {
+    app._formalEntry = formalEntry;
+    app.content = formalEntry.content;
+    app.world = formalEntry.world;
+    app.saveRepository = formalEntry.repository;
+    app.saves = await app.saveRepository.load();
+    app.assertFormalCurrent();
+  } else if (trial) {
     if (trial.persistent === true) {
       // b2 发布玩：持久存档，按游戏隔离库；canPersist 保持非 false 即允许存读。
       app.saveRepository = createSaveRepository(createIndexedDbSaveBackend({ databaseName: playSaveDatabaseName(trial.identity.gameId) }));
@@ -966,7 +1085,7 @@ export async function startApp(opening, { trial = null } = {}) {
   app.data = app.content.data;
 
   app.speaker = speaker; // 0xCDE/0xCE7 PC喇叭音效复刻
-  if (!trial) app.startMenu = new StartMenu(app);
+  if (!trial && !formalEntry) app.startMenu = new StartMenu(app);
   app.score.title();
   document.addEventListener(
     "pointerdown",
@@ -984,7 +1103,10 @@ export async function startApp(opening, { trial = null } = {}) {
   });
   // boot.js 取得单实例锁后挂载独立开场；这里不装配默认地图。
   globalThis.__dragonApp = app;
-  if (trial) await app.beginNewGame(0, trial.player, null);
+  if (formalEntry) {
+    if (formalEntry.savedSlot === null) await app.beginNewGame(0, formalEntry.player, null);
+    else await app.beginSavedGame(formalEntry.savedSlot);
+  } else if (trial) await app.beginNewGame(0, trial.player, null);
   else {
     await Promise.all([opening?.menuReady, app.startMenu._loadAssets()]);
     await app.startMenu.show();
@@ -1005,7 +1127,7 @@ export async function startApp(opening, { trial = null } = {}) {
     requestAnimationFrame(frame);
     const dt = now - last;
     last = now;
-    if (!app.runtimeEnabled) {
+    if (!app.checkFormalCurrent() || !app.runtimeEnabled) {
       app.weatherFx.pause();
       return;
     }
@@ -1082,4 +1204,20 @@ export async function startApp(opening, { trial = null } = {}) {
     // 下一帧已在入口调度，此处不再调度（见P88注释）。
   }
   requestAnimationFrame(frame);
+  } catch (error) {
+    // A failed formal boot cannot leave a live partial assembly without its
+    // host. Retire synchronously; do not await a user-confirmation/navigation
+    // promise or misreport the original startup failure as a successful boot.
+    if (formalEntry && app._formalEntry === formalEntry && !formalEntry.ended) {
+      // A resource/repository error code is not evidence of game deletion.
+      // Only the fixed environment's ownership guard can supply that fact.
+      formalEntry.failure = new Error("Formal startup failed", { cause: error });
+      try { formalEntry.assertCurrent(); }
+      catch (ownerError) { if (ownerError instanceof Error) formalEntry.failure = ownerError; }
+      void app.returnToTitle().catch((exitError) => {
+        globalThis.__dragonDebug?.reportError?.("formal startup exit failed", exitError);
+      });
+    }
+    throw error;
+  }
 }

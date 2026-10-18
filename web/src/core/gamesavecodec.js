@@ -9,6 +9,20 @@ export function saveInteger(value, minimum = 0) {
   if (!Number.isSafeInteger(value) || value < minimum || Object.is(value, -0)) throw new TypeError("invalid save integer");
   return value;
 }
+// Format 3 ordinal extension: existing safe integers retain their exact bytes;
+// only larger formal counters use canonical decimal strings (at most 31 digits).
+// Slots and writeRevision remain safe integers; no aliases or implicit migration.
+export function saveReleaseOrdinal(value) {
+  if (typeof value === "number") return saveInteger(value);
+  if (typeof value !== "string" || !/^[1-9][0-9]{0,30}$/.test(value) || BigInt(value) <= BigInt(Number.MAX_SAFE_INTEGER))
+    throw new TypeError("invalid save release ordinal");
+  return value;
+}
+export function saveReleaseOrdinalFromVersion(version) {
+  if (typeof version !== "string" || !/^1\.(0|[1-9][0-9]{0,30})$/.test(version)) throw new TypeError("invalid formal version");
+  const digits = version.slice(2);
+  return BigInt(digits) <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(digits) : digits;
+}
 export function saveDigest(value) { if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) throw new TypeError("invalid save digest"); return value; }
 function plain(value) { return value !== null && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null); }
 export function saveObject(value, keys) {
@@ -49,7 +63,7 @@ export function gameSaveKeys(gameId, slot) {
 }
 function header(value, gameId) {
   saveIdentity(value.gameId); if (value.gameId !== gameId) throw new TypeError("save game mismatch");
-  saveIdentity(value.releaseId); saveIdentity(value.chapterId); saveInteger(value.releaseOrdinal); saveInteger(value.slot); saveDigest(value.manifestDigest);
+  saveIdentity(value.releaseId); saveIdentity(value.chapterId); saveReleaseOrdinal(value.releaseOrdinal); saveInteger(value.slot); saveDigest(value.manifestDigest);
 }
 export function saveInput(value, gameId) {
   saveObject(value, [...headerKeys, "snapshot"]); header(value, gameId); saveObject(value.snapshot);

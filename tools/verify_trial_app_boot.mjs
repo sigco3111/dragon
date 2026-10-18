@@ -125,7 +125,16 @@ try {
   const pageOrigin = `http://127.0.0.1:${server.address().port}`;
   const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE || 'C:/Users/fczll/AppData/Roaming/npm/node_modules/@playwright/cli/node_modules/playwright');
   const browser = await chromium.launch(), page = await browser.newPage();
-  const errors = [], failedRequests = [];
+  const errors = [], failedRequests = [], forbidden = [];
+  await page.addInitScript(() => {
+    window.__ownedIdbReads = 0;
+    Object.defineProperty(window, 'indexedDB', { get() { window.__ownedIdbReads++; throw new Error('Trial cannot access saves'); } });
+  });
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if ((url.protocol === 'blob:' && url.origin === pageOrigin) || (url.origin === pageOrigin && !/save\.dat/i.test(url.pathname))) return route.continue();
+    forbidden.push(url.href); return route.abort();
+  });
   page.on('pageerror', error => errors.push(String(error).slice(0, 300)));
   page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ''}`.slice(0, 200)));
   try {
@@ -137,6 +146,11 @@ try {
     const options = await page.locator('#trial-faction option').count();
     assert.ok(options > 0, 'faction options');
     check('browser-faction-options');
+    assert.equal(await page.locator('input[type=file]').count(), 0);
+    const startBox = await page.locator('#start-trial').boundingBox(), viewport = page.viewportSize();
+    assert.ok(startBox && startBox.x >= 0 && startBox.y >= 0 && startBox.x + startBox.width <= viewport.width && startBox.y + startBox.height <= viewport.height);
+    await page.screenshot({ path: `${out}/choice.png` });
+    check('shared-portrait-only chooser has a reachable ordinary start button');
     await page.locator('#trial-faction').selectOption({ index: 0 });
     await page.getByRole('button', { name: '開始試運行' }).click();
     await page.waitForFunction(() => document.getElementById('trial-status').textContent.includes('僅記憶體'), null, { timeout: 180000 });
@@ -164,10 +178,15 @@ try {
     while (landed().length < derived.length && Date.now() - t0 < 180000) { await page.waitForTimeout(2000); }
     assert.deepEqual(landed().sort(), derived.sort(), 'derived assets landed');
     check('browser-derived-assets-landed');
+    await page.waitForFunction(() => window.__app?.runtimeEnabled === true && window.__app?.gameStarted === true && !window.__app?._scenarioAssemblyPending && !window.__app?._scenarioAssemblyIncomplete && window.__app?.scenario?.cities?.length === 192, null, { timeout: 120000 });
+    assert.equal(await page.evaluate(() => window.__ownedIdbReads), 0); assert.deepEqual(forbidden, []);
+    assert.ok(!traffic.some(line => /^POST .*\/portraits/.test(line)));
+    check('actual App active with 192 cities; no save access, outside traffic or portrait upload');
     await page.screenshot({ path: `${out}/loaded.png` });
     await ok('real-trial-end', `/api/trials/${trial.trialId}/end`, {}, admin);
     await page.waitForTimeout(15000);
     assert.deepEqual(errors, []);
+    assert.equal(await page.evaluate(() => window.__ownedIdbReads), 0); assert.deepEqual(forbidden, []);
     check('page-tolerates-end-without-errors');
     await page.screenshot({ path: `${out}/after-end.png` });
   } catch (cause) {

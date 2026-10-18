@@ -5,11 +5,25 @@ import { assertDeletionColumnSchema } from './deletionschema.js';
 import { buildPrivateReferenceEdges } from './deletionreferences.js';
 const sha = value => createHash('sha256').update(value).digest('hex');
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
-const knownTables = new Set(['schema_version','users','sessions','login_rates','operations','content_schema','content_used_ids','content_games','content_snapshots','content_names','content_reservations','content_operations','content_audits','content_deletion_fences','content_deletion_operations','copy_http_commands','copy_requests','copy_objects','copy_origins','installed_sources','source_operations','draft_requests','draft_objects','draft_references','compile_jobs','compile_operations','stage_http_commands','content_http_command_targets','content_http_command_proofs','content_private_writes','content_deletion_job_freezes','data_compile_objects','image_compile_objects','fallback_compile_objects','content_deletion_draft_freezes','content_releases','draft_topology_moves','draft_topology_rebuilds','content_distribution_outbox','published_games','published_pack_assets','published_pack_chapters','published_packs','trial_assets','trial_sessions','content_announcements','content_registry']);
+const knownTables = new Set(['schema_version','users','sessions','login_rates','operations','content_schema','content_used_ids','content_games','content_snapshots','content_names','content_reservations','content_operations','content_audits','content_deletion_fences','content_deletion_operations','copy_http_commands','copy_requests','copy_objects','copy_origins','installed_sources','source_operations','draft_requests','draft_objects','draft_references','compile_jobs','compile_operations','stage_http_commands','content_http_command_targets','content_http_command_proofs','content_private_writes','content_deletion_job_freezes','data_compile_objects','image_compile_objects','fallback_compile_objects','content_deletion_draft_freezes','content_releases','draft_topology_moves','draft_topology_rebuilds','content_distribution_outbox','content_distribution_state','content_distribution_events','content_distribution_chunks','published_games','published_pack_assets','published_pack_chapters','published_packs','trial_assets','trial_sessions','content_announcements','content_registry']);
 const scopedTables = ['content_snapshots','content_names','content_audits','content_deletion_operations','copy_requests','copy_objects','copy_origins','draft_requests','draft_objects','draft_references','compile_jobs','content_http_command_proofs','content_private_writes','content_deletion_job_freezes','data_compile_objects','image_compile_objects','fallback_compile_objects','content_deletion_draft_freezes'];
 const objectTables = ['copy_objects','draft_objects','draft_references','data_compile_objects','image_compile_objects','fallback_compile_objects'];
 function json(value) { try { return JSON.parse(value); } catch { fail(503, 'DELETE_INVENTORY_RECORD'); } }
 function encode(value) { const text = JSON.stringify(value); if (Buffer.byteLength(text) > 4 * 1024 * 1024) fail(413, 'DELETE_INVENTORY_BUDGET'); return text; }
+// Frozen envelopes can contain references to MULTIPLE games. Until their full
+// reference/scrub plan is implemented, never treat a populated ledger as empty
+// or as merely the events whose game_id matches this deletion target.
+function emptyDistribution(sql) {
+  let state, events, chunks;
+  try {
+    state = sql.exec('SELECT * FROM content_distribution_state LIMIT 2').toArray();
+    events = sql.exec('SELECT generation FROM content_distribution_events LIMIT 1').toArray();
+    chunks = sql.exec('SELECT generation FROM content_distribution_chunks LIMIT 1').toArray();
+  } catch { fail(503, 'DELETE_INVENTORY_SCHEMA'); }
+  const row = state[0];
+  if (state.length !== 1 || !row || row.singleton !== 1 || !uuid(row.authority_id) || row.version !== 1 || row.tail_generation !== 0 || row.confirmed_generation !== 0 || row.tail_digest !== null || row.confirmed_digest !== null || row.blocked_reason !== null || events.length || chunks.length) fail(503, 'DELETE_DISTRIBUTION_UNSUPPORTED');
+  return sha(encode(row));
+}
 export class GameDeletionInventory {
   #storage; #sql; #principal; #bucket;
   constructor({ storage, principal, bucket }) {
@@ -30,6 +44,7 @@ export class GameDeletionInventory {
       const schema = this.#sql.exec("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name").toArray().filter(r => !r.name.startsWith('sqlite_') && !r.name.startsWith('_cf_'));
       if (schema.some(r => !knownTables.has(r.name)) || !schema.some(r => r.name === 'content_deletion_fences')) fail(503, 'DELETE_INVENTORY_SCHEMA');
       assertDeletionColumnSchema(this.#sql,schema);
+      const distributionDigest = emptyDistribution(this.#sql);
       const present = new Set(schema.map(r => r.name)), rows = {};
       for (const table of scopedTables) rows[table] = present.has(table) ? this.#sql.exec('SELECT * FROM '+table+' WHERE game_id=?', gameId).toArray() : [];
       const jobs = new Set(rows.compile_jobs.map(r => r.job_id));
@@ -56,7 +71,7 @@ export class GameDeletionInventory {
       const prefix = 'private/'+gameId+'/', foreignRoots = [];
       for (const table of ['content_snapshots','compile_jobs']) if (present.has(table)) for (const r of this.#sql.exec('SELECT game_id,root_key FROM '+table).toArray()) if (r.game_id !== gameId && typeof r.root_key === 'string' && r.root_key.startsWith(prefix)) foreignRoots.push([table,r.game_id,r.root_key]);
       for (const values of Object.values(rows)) values.sort((a,b) => { const x=JSON.stringify(a), y=JSON.stringify(b); if(x<y)return -1; if(x>y)return 1; return 0; });
-      foreignRoots.sort(); const text=encode({schema,game,fence,rows,foreignRoots});
+      foreignRoots.sort(); const text=encode({schema,game,fence,rows,foreignRoots,distributionDigest});
       return { actorId:actor.id, epoch:actor.epoch, gameId, rowRevision:game.row_revision, rows, foreignRoots, sqlDigest:sha(text) };
     });
   }

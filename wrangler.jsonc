@@ -1,9 +1,19 @@
 {
   "name": "dragon",
+  "main": "reader/site.js",
   "compatibility_date": "2025-04-01",
   "build": { "command": "node tools/prepare_deploy.mjs" },
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "404-page"
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/play-api", "/play-api/*", "/program-assets", "/program-assets/*", "/", "/index.html"]
+  },
+  "r2_buckets": [
+    { "binding": "PUBLISH_BUCKET", "bucket_name": "dragon" }
+  ],
+  "vars": {
+    "PLAYER_ORIGIN": "https://dragon.720108.xyz",
+    "PLAYER_ADMISSION_ACTIVE_KEY": "primary"
   }
 }

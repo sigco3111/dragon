@@ -645,7 +645,7 @@ jobs-r1八组53实际请求／七产物、请求1而当前2、SQL过期/真实�
 
 ### 6.18 固定可用库byte目录（E-01-BACKEND-AVAILABLE-LIBRARY-1，限定）
 
-[独立可用库](editor-backend-available-library.md)保持原398资源／许可／20个G127/255未闭合引用byte，当前捕获仅更新两consumer指纹；400角色代码SHA锚／临时品牌／独立registry，复用原SQL/R2全对象核验、永久key和epoch守卫。Root真实管理员明确登记，运维stage不等批准，不能用库替代41角色复制源或Game作者权。
+[独立可用库](editor-backend-available-library.md)初始批次保持原398资源／许可／20个G127/255未闭合引用byte，当时仅更新两consumer指纹；当前重新捕获及新registry见[R2§2.60](r2-player-connection.md#260-固定库新身份与trial选边修复library-refresh-1)。400角色代码SHA锚／临时品牌／独立registry，复用原SQL/R2全对象核验、永久key和epoch守卫。Root真实管理员明确登记，运维stage不等批准，不能用库替代41角色复制源或Game作者权。
 
 policy十负控与默认Root五组26请求／真实重启改密，以及原目录61／阶段API42当前回归有证。库仍STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE，无asset读取、全部loader/CSS/audio或RuntimeManifest／Trial／发布许可；375玩家不改，运维预算非云SLA，完整第4/7节仍缺。
 
@@ -719,6 +719,8 @@ policy十负控与默认Root五组26请求／真实重启改密，以及原目�
 ## 8. 玩家目录、正式对局与本地存档
 
 ### 8.1 最新目录与固定对局
+
+**R2 接线用户选择 A 已确认**：当前版唯一可选择／新准入／恢复；已准入旧局固定资源保留，与编辑器只显示当前版、SQL 剪旧正式行并不矛盾。不可变运行索引及签名 capability 的后继实现和验证见[R2 接线](r2-player-connection.md)，不据此宣称前端、旧档检查或完整发布链已接通。更新／下架不自动清旧运行资源，不用 TTL 代替安全回收证据；物理删除例外仍按第5节。
 
 > 当前本机workerd匿名目录／玩壳／冻结包及按游戏IDB持久入口已接；以下完整正式release、旧局续取／警告、删档／公告政策仍是验收合同，不以现pin的draftRevision代替releaseOrdinal。后文opt-in各轮未装App属于当时身份，现限定安装也不代表全部政策通过；见[审计](editor-closeout-audit.md)。
 

@@ -60,9 +60,10 @@ F-1已关闭：`tools/verify_idor_matrix.mjs`十项（跨作者与未知id不可
 
 ## H. 用户已决策（2026-10-14）
 - [定] JPEG源预算：保持当前值（16384像素/单边8192/100KiB），不扩大。
-- [定] Q25/Q26/D/A2（2026-10-15，用户决策①②③）：发布＝作者定版，上架＝管理员操作、仅上架进玩家目录；无回退、只增不减、仅保留当前版（A2只显示当前版）；开放作者自建（第一章＋公用基础地图、画像自传或模板库选（模板库待建）、重名允许、玩家侧「名＋版本（作者）」）。均已落地并 commit（见C-2b/Q25/Q26/D/A2条）。
+- [定] Q25/Q26/D/A2（2026-10-15，用户决策①②③）：发布＝作者定版，上架＝管理员操作、仅上架进玩家目录；无回退、只增不减、仅保留当前版（A2只显示当前版；后继R2选择A明确不立即删除已准入旧局的必要运行资源，见下一条）；开放作者自建（第一章＋公用基础地图、画像自传或模板库选（模板库待建）、重名允许、玩家侧「名＋版本（作者）」）。均已落地并 commit（见C-2b/Q25/Q26/D/A2条）。
+- [定] **后继 R2 接线选择 A**：仅当前版可选／新局／读档，已准入旧局固定资源继续保留；更新／下架不清旧运行包，不开放历史选择或回滚，不以TTL代替安全回收。物理删除仍例外。政策维护于[产品§5](game-editor-design.md#5-草稿校验与发布)，限定接线与未完成项见[R2维护源](r2-player-connection.md)；旧 SQL 行剪枝不等于删除 R2 运行资源。
 - [定] A2 发布 UI 完整分支验收补齐：`GET /api/games/:id/releases`版本列表＋`publish.txt`作者UI（发布对话框/版本列表/公告预览/失败落字）＋lane化验证（releases四码冒烟、`verify_publish_ui_model`十六项）；修Q26遗留POST 500与多余`}`、简体混入改繁体。
-- [定] 画像政策（2026-10-15，用户决策，取代上传管线）：禁上传，武将画像一对一取自共用画像库（`web/kao`，621 PNG／11.2MB，编号命名；`manifest.js` 提交生成，lane 自核）；发包记ID＋SHA（`kao/<id>.png`，R2 取数），pack 不嵌字节。编辑器上传链已退役落地（`portraits.js` 唯读、worker 路由、pack 冻结、general 选择器、9 lane 删除、idor／publish_pack 20 项／shell 68 项／generals 6 项改绿、E-01 46 波 7/7 重跑绿）。残留：Trial 上传口（`trials.js`＋trial portrait lane）单独立项；其余重 lane（sql-freeze／bound／validated／waits／reference／management）待跑；R2 `kao/` 621／621 已传。
+- [定] 画像政策（2026-10-15，用户决策，取代上传管线）：禁上传，武将画像一对一取自共用画像库（`web/kao`，621 PNG／11.2MB，编号命名；`manifest.js` 提交生成，lane 自核）；发包记ID＋SHA（`kao/<id>.png`，R2 取数），pack 不嵌字节。编辑器上传链已退役落地（`portraits.js` 唯读、worker 路由、pack 冻结、general 选择器、9 lane 删除、idor／publish_pack 20 项／shell 68 项／generals 6 项改绿、E-01 46 波 7/7 重跑绿）。后继Trial服务上传口已退役；残留客户端上传／裁剪／图库在[R2§2.60](r2-player-connection.md#260-固定库新身份与trial选边修复library-refresh-1)清除并复验真实启动；其余重 lane（sql-freeze／bound／validated／waits／reference／management）待跑；R2 `kao/` 621／621 已传。
 - [定] R2布局（用户已建 `dragon` 桶）：`kao/<id>.png` 共用库（一次上传永不覆盖）；`artifacts/<gameId>/<releaseId>/<sha>/…` 发版包（画像只记ID不嵌字节）；`projections/<generation>/<digest>/…` 目录/公告/release索引快照；`control/current.json` CAS根。桶保持私有、无公开域；读经Worker binding。需用户授权见journal。
 - [定] V5切换/上线：全部开发完成后进行。——任一有效会话存在时新登录一律409（码`SINGLE_USER_ONLINE`，非401）；同key重放、同会话续用不受影响；退出/过期释放座位。Q9/Q20/Q45多角色并存验收收窄为单用户流；workerd开发后端是否跟进该门另议（已封存 lanes 不动）。已实现：`vps/auth-server.mjs`经`EDITOR_SINGLE_USER=1`开启（默认关，S3十九项不受影响），`tools/verify_vps_single_user.mjs`七项（拒/重放/释放/过期）全绿。
 

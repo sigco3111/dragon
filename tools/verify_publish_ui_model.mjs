@@ -4,15 +4,15 @@ import { readFileSync } from 'node:fs';
 
 let passed = 0;
 const check = (name, cond, extra = '') => {
-  if (cond) { passed++; console.log(`ok ${name}`); return; }
-  console.error(`FAIL ${name} ${extra}`); process.exitCode = 1;
+  if (cond) { passed++; process.stdout.write(`ok ${name}\n`); return; }
+  process.stderr.write(`FAIL ${name} ${extra}\n`); process.exitCode = 1;
 };
 
 class Element {
   children = []; textContent = ''; hidden = false; disabled = false;
   onclick = null; onsubmit = null; type = ''; value = '';
-  append(...v) { this.children.push(...v); }
-  replaceChildren(...v) { this.children = [...v]; }
+  append(...v) { this.children.push(...v); if (this.isSelect && !this.value) this.value = v[0]?.value ?? ''; }
+  replaceChildren(...v) { this.children = [...v]; if (this.isSelect) this.value = v[0]?.value ?? ''; }
 }
 const GAME = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', OTHER = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
 const gameRow = { gameId: GAME, metadata: { name: '臥龍', introduction: '自建' }, listed: false, draftRevision: '3' };
@@ -21,9 +21,12 @@ const pinRow = { gameId: GAME, name: '臥龍', revision: '3', sourceDigest: 'd'.
 const annRow = { announcementId: 7, gameId: GAME, releaseId: releaseRow.releaseId, ordinal: '1.2', name: '臥龍', creatorAccount: 'author1', publishedAt: releaseRow.createdAt, firstOnlineAt: '2026-10-15T02:00:00.000Z' };
 function setup({ games = [gameRow], releases = [releaseRow], publish = pinRow, publishError = null, announcements = [annRow], confirmValue = true } = {}) {
   const nodes = {};
-  for (const id of ['publish-editor', 'publish-game', 'publish-name', 'publish-button', 'publish-games-refresh', 'publish-versions-refresh', 'publish-versions', 'publish-form', 'publish-result', 'publish-message', 'publish-ann-preview', 'publish-announcement']) {
+  for (const id of ['publish-editor', 'publish-game', 'publish-name', 'publish-button', 'publish-games-refresh', 'publish-versions-refresh', 'publish-versions', 'publish-form', 'publish-result', 'publish-message', 'publish-ann-preview', 'publish-announcement', 'publish-operation', 'publish-query', 'publish-retry', 'publish-forget']) {
     nodes[id] = new Element();
   }
+  nodes['publish-game'].isSelect = true;
+  const journal = new Map();
+  globalThis.sessionStorage = { getItem: key => journal.get(key) ?? null, setItem: (key, value) => journal.set(key, value), removeItem: key => journal.delete(key) };
   const calls = [];
   globalThis.document = { querySelector: q => nodes[q.slice(1)] ?? null, createElement: () => new Element() };
   globalThis.confirm = () => confirmValue;
@@ -36,6 +39,7 @@ function setup({ games = [gameRow], releases = [releaseRow], publish = pinRow, p
       if (value?.gameId !== GAME) { const e = new Error('GAME_NOT_FOUND'); e.status = 404; e.code = 'GAME_NOT_FOUND'; throw e; }
       return publish;
     }
+    if (path.startsWith(`/api/games/${GAME}/publish-operations/`)) return { version: 1, gameId: GAME, releaseId: releaseRow.releaseId, pin: publish, distribution: { gameId: GAME, operationId: releaseRow.releaseId, generation: 1, kind: 'publish', state: 'pending', visibleAt: null, recoveryRequired: false } };
     if (path === '/api/announcements') return { revision: 5, announcements, nextCursor: null };
     throw new Error(`unexpected ${path}`);
   };
@@ -43,9 +47,9 @@ function setup({ games = [gameRow], releases = [releaseRow], publish = pinRow, p
 }
 const source = readFileSync('server/public/publish.txt', 'utf8');
 const module = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
-const author = { user: { id: 'a', role: 'author', version: 1, mustChangePassword: false } };
-const admin = { user: { id: 'u', role: 'admin', version: 1, mustChangePassword: false } };
-const stale = { user: { id: 'a', role: 'author', version: 1, mustChangePassword: true } };
+const author = { user: { id: '11111111-1111-4111-8111-111111111111', role: 'author', version: 1, mustChangePassword: false } };
+const admin = { user: { id: '22222222-2222-4222-8222-222222222222', role: 'admin', version: 1, mustChangePassword: false } };
+const stale = { user: { id: '11111111-1111-4111-8111-111111111111', role: 'author', version: 1, mustChangePassword: true } };
 const work = fn => fn();
 {
   const { nodes, api } = setup();
@@ -139,8 +143,8 @@ const work = fn => fn();
 {
   const { nodes, api } = setup();
   const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  check('canLeave always true', ui.canLeave() === true);
+  check('canLeave true without a tracked operation', ui.canLeave() === true);
   check('empty versions text', nodes['publish-versions'].children.length === 0);
 }
 
-console.log(`passed ${passed} checks`);
+process.stdout.write(`passed ${passed} checks\n`);

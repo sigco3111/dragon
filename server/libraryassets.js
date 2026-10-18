@@ -53,7 +53,8 @@ export class PrivateLibraryAssets {
     // Deliberately full-source and all-role verification, not a cached DTO/manifest fast path.
     context.capture = await this.#catalog.loadFull(tokenHash, definition.registryId); this.#assert(tokenHash, context);
     const raw = context.capture.readWeb('available-library-manifest.json');
-    if (raw.length !== 93530 || sha(raw) !== this.#policy.manifestDigest) fail(503, 'LIBRARY_MANIFEST_CORRUPT');
+    const manifestRole = this.#policy.roles.find(role => role.path === 'available-library-manifest.json');
+    if (raw.length !== manifestRole?.byteLength || sha(raw) !== this.#policy.manifestDigest) fail(503, 'LIBRARY_MANIFEST_CORRUPT');
     let manifest; try { manifest = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)); } catch { fail(503, 'LIBRARY_MANIFEST_CORRUPT'); }
     const binding = { gameId: path.gameId, draftRevision: revision, sourceDigest: reference.sourceDigest, registryId: definition.registryId, catalogRoot: context.capture.rootDigest, admission, mode: this.#policy.mode };
     if (assetIndex === undefined) {

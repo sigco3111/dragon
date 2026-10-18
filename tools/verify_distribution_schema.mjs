@@ -20,6 +20,7 @@ import { EditorMetadata } from '../../server/worker.js';
 import { GameDeletionJobFreeze } from '../../server/deletionjobfreeze.js';
 import { GameDeletionDraftFreeze } from '../../server/deletiondraftfreeze.js';
 import { assertDeletionDefinitions } from '../../server/deletiondefinitions.js';
+import { verifyDistributionSchema } from '../../tools/fixtures/distribution-schema.mjs';
 export class SchemaFixture extends EditorMetadata {
   constructor(ctx, env) {
     super(ctx, env);
@@ -30,12 +31,13 @@ export class SchemaFixture extends EditorMetadata {
   async fetch() {
     const facts = assertDeletionDefinitions(this.sql);
     const columns = this.sql.exec("SELECT name FROM sqlite_master WHERE type='table'").toArray().reduce((n, t) => n + this.sql.exec('PRAGMA table_xinfo(' + t.name + ')').toArray().length, 0);
-    return Response.json({ ...facts, columns, pending: this.distribution.pending().length });
+    const rowChecks = ${process.argv.includes('--rows')} ? await verifyDistributionSchema(this.ctx.storage, this.frozenDistribution) : null;
+    return Response.json({ ...facts, columns, pending: this.distribution.pending().length, rowChecks });
   }
 }
 export default { fetch(request, env) { return env.TEST_ROOT.get(env.TEST_ROOT.idFromName('owned')).fetch(request); } };
 `, { flag: 'wx' });
-let mf;
+let mf, outbound = 0;
 try {
   mf = new Miniflare({
     modules: true, scriptPath: join(own, 'fixture.mjs'),
@@ -45,17 +47,23 @@ try {
     r2Buckets: ['EDITOR_BLOBS'],
     bindings: { EDITOR_ORIGIN: 'https://schema.test', EDITOR_REQUEST_KEY: randomBytes(32).toString('hex') },
     host: '127.0.0.1', port: 0,
+    outboundService: () => { outbound++; throw new Error('owned schema fixture outbound denied'); },
   });
   const response = await mf.dispatchFetch('https://schema.test/');
   assert.equal(response.status, 200, await response.clone().text());
   const facts = await response.json();
-  assert.equal(facts.tablesVerified, 47);
-  assert.equal(facts.indexesVerified, 47);
-  assert.equal(facts.foreignKeyDeclarationsVerified, 3);
-  assert.equal(facts.columns, 318);
+  assert.equal(facts.tablesVerified, 50);
+  assert.equal(facts.indexesVerified, 49);
+  assert.equal(facts.foreignKeyDeclarationsVerified, 4);
+  assert.equal(facts.columns, 343);
   assert.equal(facts.pending, 0);
   assert.match(facts.schemaDigest, /^[a-f0-9]{64}$/);
-  process.stdout.write('distribution schema: actual Root 47 tables / 47 indexes / 318 columns; declarations, columns, FK and index attributes match frozen gate\n');
+  assert.equal(outbound, 0);
+  if (process.argv.includes('--rows')) {
+    assert.equal(facts.rowChecks.groups, 16);
+    process.stdout.write(JSON.stringify(facts.rowChecks, null, 2) + '\n');
+  }
+  process.stdout.write('distribution schema: actual Root 50 tables / 49 indexes / 343 columns; declarations, columns, FK and index attributes match frozen gate\n');
 } finally {
   await mf?.dispose();
   rmSync(own, { recursive: true, force: true });

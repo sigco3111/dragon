@@ -1,5 +1,5 @@
 // 共用画像庫讀取器（B 決策，V2 簡化）：禁上傳，武將一對一取自 `web/kao`
-// manifest（620 PNG，lane 核磁碟一致）。發版只記 ID＋SHA，玩家經 R2
+// manifest（獨立 lane 雙向核對清單與磁碟）。發版只記 ID＋SHA，玩家經 R2
 // `kao/<file>` 取數；pack 不嵌位元組。無 SQL 表、無解碼、無上傳管線。
 import { KAO_MANIFEST } from '../web/kao/manifest.js';
 import { fail } from './security.js';

@@ -1,0 +1,354 @@
+// Fresh browser -> actual editor gateway/auth/SQL/compiler -> actual owned
+// workerd R2 -> default publisher -> actual workerd reader. Browser requests are
+// bridged in-process, NOT API fixtures or a production TCP/TLS/S3 deployment.
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { createPublicationBrowserAuthority } from './fixtures/publication-browser-authority.mjs';
+import { makePublishRuntimeStage } from './fixtures/publish-runtime-stage.mjs';
+import { createRuntimeStager } from '../vps/runtime-stage.mjs';
+import { createDistributionPublisher } from '../vps/distribution-publisher.mjs';
+import { openStorage } from '../vps/sqlite-port.mjs';
+import { rootVisibleAt } from '../reader/firstonline.js';
+import { createPlayerClientBrowserProbe, assertCompletedStreamObservation } from './fixtures/player-client-browser.mjs';
+import { createPublishedAppBrowserProbe } from './fixtures/published-app-browser.mjs';
+import { createPublicPlayerBrowserProbe } from './fixtures/public-player-browser.mjs';
+const nodeService = process.argv.includes('--node-service');
+const managementUI = process.argv.includes('--management-ui');
+const deletionUI = process.argv.includes('--deletion-ui');
+const adminDeletionUI = process.argv.includes('--admin-deletion-ui');
+const playerClient = process.argv.includes('--player-client');
+const playerApp = process.argv.includes('--player-app');
+const publicPlayer = process.argv.includes('--public-player');
+const programPaths = process.argv.includes('--program-paths');
+assert.ok(!programPaths || publicPlayer, 'program paths require public entry mode');
+assert.ok(!publicPlayer || playerApp, 'public production entry requires App mode');
+assert.ok(!playerApp || playerClient, 'App stream observations require the player-client mode');
+assert.ok(!adminDeletionUI || managementUI && deletionUI, 'admin deletion requires both UI modes');
+assert.ok(process.argv.slice(2).every(arg => ['--node-service','--management-ui','--deletion-ui','--admin-deletion-ui','--player-client','--player-app','--public-player','--program-paths'].includes(arg)), 'unknown test option');
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/fczll/AppData/Roaming/npm/node_modules/@playwright/cli/node_modules/playwright');
+let modulePath;
+try { modulePath = require.resolve('miniflare'); }
+catch { modulePath = join(process.env.APPDATA ?? '', 'npm/node_modules/wrangler/node_modules/miniflare/dist/src/index.js'); }
+if (!existsSync(modulePath)) throw new Error('installed Miniflare required; no installation');
+const { Miniflare } = await import(pathToFileURL(modulePath).href);
+const own = mkdtempSync(join(tmpdir(), 'dragon-publication-browser-'));
+mkdirSync('.dragon-analysis/release-readiness', { recursive: true });
+const artifact = mkdtempSync('.dragon-analysis/release-readiness/publication-chain-browser-');
+const origin = 'https://owned-editor.invalid', playerOrigin = 'https://reader.test';
+const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(systemroot|windir|path|pathext|temp|tmp|comspec|appdata|localappdata)$/i.test(k)));
+const files = ['index.html','style.css','client.txt','draft.txt','stage.txt','library.txt','catalog.txt','management.txt','publish.txt','stronghold.txt','general.txt','mapview.txt','stageassets.txt'];
+const sources = Object.fromEntries(files.map(name => ['server/public/' + name, sha(readFileSync('server/public/' + name))]));
+for (const path of ['reader/site.js', 'reader/worker.js']) sources[path] = sha(readFileSync(path));
+const checks = [], calls = [], errors = [], consoleErrors = [], failed = [], failedDetails = [], completedStreamFailures = [], outside = [], posts = [];
+let browser, mf, authority, reopened, bucket, stage = 'bootstrap', outbound = 0, roots = 0, gets = 0, puts = 0, staticChecks = 0, lost = false, failReceipt = true;
+try {
+  // API requests exercise the deployed site entry; static files below still
+  // use the owned byte bridge, not this test's Assets routing configuration.
+  mf = new Miniflare({ modules: true, modulesRules: [{ type: 'ESModule', include: ['**/*.js'] }], scriptPath: resolve('reader/site.js'), compatibilityDate: '2024-01-01', host: '127.0.0.1', port: 0, r2Buckets: ['PUBLISH_BUCKET'], r2Persist: join(own, 'r2'), bindings: { PLAYER_ORIGIN: playerOrigin, PLAYER_ADMISSION_ACTIVE_KEY: 'owned', PLAYER_ADMISSION_KEYS: JSON.stringify({ owned: '11'.repeat(32) }) }, outboundService: () => { outbound++; return new Response('forbidden', { status: 403 }); } });
+  await mf.ready; bucket = await mf.getR2Bucket('PUBLISH_BUCKET');
+  const packaged = makePublishRuntimeStage({ root: join(own, 'static-package'), includePlayerModules: playerApp });
+  // Seed only the fixed shared image library, never a runtime/projection fixture.
+  for (const [key, row] of packaged.objects) {
+    const path = key.slice(packaged.prefix.length); assert.match(path, /^kao\/p?[0-9]{1,6}\.png$/);
+    await bucket.put(path, row.bytes, { httpMetadata: { contentType: 'image/png' } });
+  }
+  assert.equal(packaged.objects.size, 621);
+  const r2 = {
+    async get(key, { maxBytes }) {
+      assert.match(key, /^(artifacts|kao|projections|control)\//); gets++;
+      const row = await bucket.get(key); if (!row) return null;
+      assert.ok(row.size <= maxBytes);
+      return { bytes: new Uint8Array(await row.arrayBuffer()), headers: { 'content-type': row.httpMetadata.contentType, etag: row.httpEtag, 'last-modified': row.uploaded.toUTCString() } };
+    },
+    async putImmutable(key, bytes, contentType) {
+      assert.equal(arguments.length, 3); assert.match(key, /^(artifacts\/|projections\/|control\/(receipts|roots)\/)/);
+      if (failReceipt && key.startsWith('control/receipts/')) throw new Error('owned receipt outage');
+      puts++; return await bucket.put(key, bytes, { onlyIf: { etagDoesNotMatch: '*' }, httpMetadata: { contentType } }) !== null;
+    },
+    async putControl(key, bytes, etag) {
+      assert.equal(arguments.length, 3); assert.equal(key, 'control/current.json');
+      const value = await bucket.put(key, bytes, { onlyIf: etag === null ? { etagDoesNotMatch: '*' } : { etagMatches: etag.slice(1, -1) }, httpMetadata: { contentType: 'application/json' } });
+      if (value !== null) roots++; return value !== null;
+    },
+  };
+  const verifyStaticResources = async value => { staticChecks++; return packaged.verifyStaticResources(value); };
+  const runtimeStager = createRuntimeStager({ r2, verifyStaticResources });
+  authority = await createPublicationBrowserAuthority({ root: own, origin, runtimeStager, nodeService });
+  const { storage, app, gameId, ownerId } = authority, sql = storage.sql;
+  const publisher = createDistributionPublisher({ storage, r2, verifyStaticResources });
+  const tail = () => app.frozenDistribution.status().tailGeneration;
+  const confirmed = () => app.frozenDistribution.status().confirmedGeneration;
+  const drain = async () => { assert.equal((await publisher.drainOne()).state, 'VISIBLE_CONFIRMED'); };
+  assert.equal(tail(), 0); assert.equal(await bucket.get('control/current.json'), null);
+  assert.equal(packaged.stats().puts, 0, 'the in-memory staging fixture was never used');
+  browser = await chromium.launch({ headless: true, env });
+  const browserVersion = browser.version();
+  const context = await browser.newContext({ viewport: { width: 1280, height: 1000 }, serviceWorkers: 'block' });
+  await context.addInitScript(() => { window.__ownedIDB = 0; indexedDB.open = () => { window.__ownedIDB++; throw new Error('IDB forbidden in publication test'); }; });
+  const observeContext = ctx => ctx.on('page', page => {
+    page.on('pageerror', error => errors.push(String(error)));
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('requestfailed', request => { const path = new URL(request.url()).pathname; failed.push(path); failedDetails.push({ path, error: request.failure()?.errorText, sequence: request.headers()['x-owned-client-request'] ?? null }); });
+    page.on('dialog', dialog => { if (deletionUI && dialog.type() === 'prompt') return dialog.accept(sql.exec('SELECT draft_name FROM content_games WHERE game_id=?', gameId).toArray()[0].draft_name); return dialog.accept(); });
+  });
+  observeContext(context);
+  const managementPosts = [], deletionPosts = []; let lostManagement = false, playerProbe, appProbe;
+  const bridge = async route => {
+    const request = route.request(), url = new URL(request.url());
+    if (![origin, playerOrigin].includes(url.origin)) { outside.push(url.href); return route.abort(); }
+    if (url.pathname === '/favicon.ico') return route.fulfill({ status: 204 });
+    if (url.origin === playerOrigin && playerProbe && await playerProbe.serve(route, url)) return;
+    if (url.origin === playerOrigin && appProbe && await appProbe.serve(route, url)) return;
+    const headers = await request.allHeaders();
+    if (url.origin === playerOrigin) assert.equal(headers.cookie, undefined, 'editor cookie cannot reach player origin');
+    const init = { method: request.method(), headers };
+    if (request.method() === 'POST') init.body = request.postDataBuffer();
+    let response;
+    if (url.origin === origin) response = await authority.fetch(new Request(request.url(), init));
+    else response = await mf.dispatchFetch(request.url(), init);
+    const call = { origin: url.origin, path: url.pathname, method: request.method(), status: response.status, sequence: headers['x-owned-client-request'] ?? null };
+    calls.push(call);
+    if (url.pathname === '/api/publish') {
+      let body; try { body = JSON.parse(request.postData()); } catch (cause) { throw new Error('invalid browser JSON', { cause }); }
+      posts.push({ key: headers['idempotency-key'], body });
+      assert.equal(response.status, 200, await response.clone().text());
+      if (!lost) { lost = true; return route.abort('failed'); } // Only drop transport AFTER real commit.
+    }
+    if (managementUI && request.method() === 'POST' && /\/api\/games\/[^/]+\/(listing|restriction\/clear)$/.test(url.pathname)) {
+      managementPosts.push({ key: headers['idempotency-key'], revision: headers['if-match'], body: request.postData() });
+      assert.equal(response.status, 200, await response.clone().text());
+      if (!lostManagement) { lostManagement = true; return route.abort('failed'); }
+    }
+    if (deletionUI && request.method() === 'POST' && url.pathname === '/api/games/' + gameId + '/deletion') {
+      deletionPosts.push({ key: headers['idempotency-key'], body: request.postData() });
+      assert.equal(response.status, 200, await response.clone().text());
+      assert.equal(deletionPosts.length, 1, 'no repeated deletion POST'); return route.abort('failed');
+    }
+    const body = Buffer.from(await response.arrayBuffer()); call.bytes = body.length;
+    return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body });
+  };
+  await context.route('**/*', bridge);
+  const page = await context.newPage(); page.setDefaultTimeout(30000);
+  const show = async () => { await page.waitForSelector('#menu button[data-view="publish-editor"]'); await page.click('#menu button[data-view="publish-editor"]'); };
+  const idle = () => page.waitForFunction(() => !document.querySelector('#publish-games-refresh').disabled, null, { timeout: 180000 });
+  const journal = () => page.evaluate(key => sessionStorage.getItem(key), 'editor-publication-operation:' + ownerId);
+  stage = 'real browser password login and real game list';
+  await page.goto(origin); await page.waitForSelector('#login');
+  await page.fill('#login [name="account"]', authority.account); await page.fill('#login [name="password"]', authority.password); await page.locator('#login').getByRole('button', { name: '登入', exact: true }).click();
+  await show(); await page.click('#publish-games-refresh'); await idle();
+  assert.equal(await page.locator('#publish-game').inputValue(), gameId); checks.push(stage);
+  stage = 'lost browser response after actual compile, R2 stage and SQL commit';
+  await page.fill('#publish-name', '  瀏覽器首版  '); await page.click('#publish-button'); await idle();
+  assert.equal(posts.length, 1); assert.equal(tail(), 1); assert.equal(confirmed(), 0); assert.equal(roots, 0);
+  assert.equal(sql.exec('SELECT COUNT(*) AS n FROM published_pack_chapters').toArray()[0].n, 20);
+  let saved; try { saved = JSON.parse(await journal()); } catch (cause) { throw new Error('bad browser journal', { cause }); }
+  assert.equal(saved.key, posts[0].key); assert.equal(saved.name, posts[0].body.name); assert.equal(saved.name, '  瀏覽器首版  ');
+  assert.equal(await page.isDisabled('#publish-retry'), true); checks.push(stage);
+  stage = 'reload queries the actual permanent request without reposting';
+  const beforeReload = calls.length; await page.reload(); await show();
+  assert.equal(posts.length, 1); assert.equal(calls.slice(beforeReload).some(row => row.path.includes('/publish-operations/')), false);
+  await page.click('#publish-query'); await idle(); assert.match(await page.locator('#publish-result').textContent(), /本地已提交.*分發待確認/);
+  assert.equal(await page.isDisabled('#publish-retry'), true); await page.locator('#publish-editor').screenshot({ path: join(artifact, 'pending.png') }); checks.push(stage);
+  stage = 'actual R2 root without durable receipt remains pending in browser';
+  assert.equal((await publisher.drainOne()).state, 'COMMITTED_SYNC_PENDING'); assert.equal(roots, 1); assert.equal(confirmed(), 0);
+  await page.click('#publish-query'); await idle(); assert.match(await page.locator('#publish-result').textContent(), /分發待確認/);
+  const firstRoot = await bucket.get('control/current.json'), firstTime = rootVisibleAt(firstRoot.uploaded);
+  failReceipt = false; await drain(); assert.equal(roots, 1); assert.equal(confirmed(), 1);
+  await page.click('#publish-query'); await idle(); assert.ok((await page.locator('#publish-result').textContent()).includes(firstTime));
+  assert.match(await page.locator('#publish-result').textContent(), /不是目前上架/); await page.locator('#publish-editor').screenshot({ path: join(artifact, 'confirmed.png') }); checks.push(stage);
+  const player = await context.newPage(); player.setDefaultTimeout(30000);
+  if (playerClient) playerProbe = createPlayerClientBrowserProbe({ page: player, context, origin: playerOrigin, gameId, chapters: authority.chapters });
+  await player.goto(playerOrigin + '/play-api/v1/registry');
+  const playerJSON = path => player.evaluate(async path => { const response = await fetch(path); return { status: response.status, body: await response.json() }; }, path);
+  const registry = async () => { const result = await playerJSON('/play-api/v1/registry'); assert.equal(result.status, 200); return result.body; };
+  stage = 'hidden publish confirmed, actual reader directory still empty';
+  assert.deepEqual((await registry()).directory, []); checks.push(stage);
+  stage = 'actual administrator listing, then current admission and all 20 chapters';
+  let adminPage;
+  const adminIdle = () => adminPage.waitForFunction(() => !document.querySelector('#management-load').disabled);
+  const adminShow = async () => { await adminPage.waitForSelector('#menu button[data-view="admin"]'); await adminPage.click('#menu button[data-view="admin"]'); };
+  const adminQuery = async () => { await adminPage.click('#management-query'); await adminIdle(); };
+  const adminAction = async name => {
+    await adminPage.click('#management-forget'); await adminIdle();
+    await adminPage.click('#management-load'); await adminIdle();
+    await adminPage.locator('#management-games').getByRole('button', { name, exact: true }).click(); await adminIdle();
+  };
+  if (managementUI) {
+    const adminContext = await browser.newContext({ viewport: { width: 1280, height: 1000 }, serviceWorkers: 'block' });
+    await adminContext.addInitScript(() => { window.__ownedIDB = 0; indexedDB.open = () => { window.__ownedIDB++; throw new Error('IDB forbidden'); }; });
+    observeContext(adminContext); await adminContext.route('**/*', bridge); adminPage = await adminContext.newPage(); adminPage.setDefaultTimeout(30000);
+    await adminPage.goto(origin); await adminPage.fill('#login [name="account"]', 'tianyi'); await adminPage.fill('#login [name="password"]', authority.password);
+    await adminPage.locator('#login').getByRole('button', { name: '登入', exact: true }).click(); await adminShow();
+    await adminPage.click('#management-load'); await adminIdle();
+    await adminPage.locator('#management-games').getByRole('button', { name: '上架正式版本', exact: true }).click(); await adminIdle();
+    assert.equal(managementPosts.length, 1); assert.equal(await adminPage.isDisabled('#management-retry'), true);
+    const before = calls.length; await adminPage.reload(); await adminShow();
+    assert.equal(calls.slice(before).some(row => row.path.includes('/management-operations/')), false); assert.equal(managementPosts.length, 1);
+    await adminQuery(); assert.match(await adminPage.locator('#management-result').textContent(), /本地已提交.*分發待確認/);
+    assert.equal(await adminPage.isDisabled('#management-retry'), true);
+    await adminPage.locator('#management-editor').screenshot({ path: join(artifact, 'management-pending.png') });
+  } else await authority.manage('list');
+  assert.equal(tail(), 2); assert.deepEqual((await registry()).directory, []); await drain();
+  if (managementUI) {
+    await adminQuery(); assert.match(await adminPage.locator('#management-result').textContent(), /此次分發曾於.*不是目前上架/);
+    await adminPage.locator('#management-editor').screenshot({ path: join(artifact, 'management-confirmed.png') });
+  }
+  let publicState = await registry(); assert.equal(publicState.directory.length, 1); assert.equal(publicState.directory[0].ordinal, '1.0'); assert.equal(publicState.directory[0].chapters.length, 20);
+  assert.equal(publicState.announcements[0].firstOnlineAt, rootVisibleAt((await bucket.get('control/current.json')).uploaded));
+  const chapterId = authority.chapters[0], admissionPath = ordinal => `/play-api/v1/admissions?game=${gameId}&ordinal=${ordinal}&chapter=${encodeURIComponent(chapterId)}`;
+  const admission = await player.evaluate(async path => { const response = await fetch(path); const body = await response.json(); window.ownedTicket = body.ticket; return { status: response.status, ordinal: body.ordinal, chapterId: body.chapterId }; }, admissionPath('1.0'));
+  assert.deepEqual(admission, { status: 200, ordinal: '1.0', chapterId });
+  const readRole = role => player.evaluate(async role => { const response = await fetch('/play-api/v1/file?role=' + encodeURIComponent(role), { headers: { Authorization: 'Bearer ' + window.ownedTicket } }); const bytes = await response.arrayBuffer(); const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), n => n.toString(16).padStart(2, '0')).join(''); return { status: response.status, digest }; }, role);
+  const oldChapter = await readRole('chapter:' + chapterId); assert.equal(oldChapter.status, 200);
+  assert.equal(oldChapter.digest, sha(sql.exec('SELECT state_json FROM published_pack_chapters WHERE game_id=? AND chapter_id=?', gameId, chapterId).toArray()[0].state_json));
+  const chapterDigests = await player.evaluate(async ({ gameId, chapters }) => {
+    const rows = [];
+    for (const chapterId of chapters) {
+      const admission = await fetch('/play-api/v1/admissions?' + new URLSearchParams({ game: gameId, ordinal: '1.0', chapter: chapterId }));
+      if (!admission.ok) throw new Error('chapter admission rejected: ' + admission.status);
+      const { ticket } = await admission.json();
+      const response = await fetch('/play-api/v1/file?' + new URLSearchParams({ role: 'chapter:' + chapterId }), { headers: { Authorization: 'Bearer ' + ticket } });
+      if (!response.ok) throw new Error('chapter file rejected: ' + response.status);
+      const bytes = await response.arrayBuffer();
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), n => n.toString(16).padStart(2, '0')).join('');
+      rows.push({ chapterId, digest });
+    }
+    return rows;
+  }, { gameId, chapters: authority.chapters });
+  assert.equal(chapterDigests.length, 20);
+  for (const row of chapterDigests) assert.equal(row.digest, sha(sql.exec('SELECT state_json FROM published_pack_chapters WHERE game_id=? AND chapter_id=?', gameId, row.chapterId).toArray()[0].state_json));
+  const firstRuntime = app.frozenDistribution.entry(1); let payload; try { payload = JSON.parse(new TextDecoder().decode(firstRuntime.payload)); } catch (cause) { throw new Error('bad frozen fixture read', { cause }); }
+  const oldRuntimeKey = payload.runtime.runtime.key; assert.ok(await bucket.get(oldRuntimeKey)); checks.push(stage);
+  if (playerProbe) {
+    let index; try { index = JSON.parse(await (await bucket.get(oldRuntimeKey)).text()); } catch (cause) { throw new Error('owned runtime index', { cause }); }
+    await playerProbe.start(index, chapterDigests);
+    if (playerApp) {
+      appProbe = (publicPlayer ? createPublicPlayerBrowserProbe : createPublishedAppBrowserProbe)({ browser, origin: playerOrigin, gameId, chapterId, root: join(own, 'static-package'), bridge, observeContext, programPaths });
+      await appProbe.start(index, chapterDigests[0]);
+    }
+    const key = index.resources['chapter:' + chapterId].key, stored = await bucket.get(key);
+    const bytes = await stored.arrayBuffer(), httpMetadata = stored.httpMetadata;
+    await bucket.delete(key); // Owned fault injection only; never a deletion conclusion.
+    try { await playerProbe.unavailable(); if (appProbe) await appProbe.unavailable(); }
+    finally { await bucket.put(key, bytes, { httpMetadata }); }
+    await playerProbe.recovered();
+  }
+  stage = 'second browser publish updates current selection without replacing old ticket';
+  await page.click('#publish-forget'); await idle(); await page.click('#publish-games-refresh'); await idle(); await page.fill('#publish-name', '瀏覽器新版'); await page.click('#publish-button'); await idle();
+  assert.equal(posts.length, 2); assert.notEqual(posts[1].key, posts[0].key); assert.equal(tail(), 3); assert.equal(confirmed(), 2);
+  assert.equal((await registry()).directory[0].ordinal, '1.0'); assert.equal((await playerJSON(admissionPath('1.1'))).status, 409);
+  await drain(); await page.click('#publish-query'); await idle(); assert.match(await page.locator('#publish-result').textContent(), /版本 1.1.*此次分發曾於/);
+  publicState = await registry(); assert.equal(publicState.directory[0].ordinal, '1.1'); assert.equal(publicState.announcements.length, 2);
+  assert.equal((await playerJSON(admissionPath('1.0'))).status, 409); assert.equal((await playerJSON(admissionPath('1.1'))).status, 200);
+  assert.deepEqual(await readRole('chapter:' + chapterId), oldChapter); checks.push(stage);
+  if (playerProbe) await playerProbe.observe(true);
+  if (appProbe) await appProbe.observe(true);
+  stage = 'unlist denies new admissions but the existing browser ticket still reads';
+  if (managementUI) {
+    await adminQuery(); assert.match(await adminPage.locator('#management-result').textContent(), /此次分發曾於/);
+    await adminAction('管理下架並限制'); assert.match(await adminPage.locator('#management-result').textContent(), /分發待確認/);
+  } else await authority.manage('unlist');
+  await drain(); assert.equal(confirmed(), 4); assert.deepEqual((await registry()).directory, []);
+  assert.equal((await playerJSON(admissionPath('1.1'))).status, 403); assert.deepEqual(await readRole('chapter:' + chapterId), oldChapter); checks.push(stage);
+  if (playerProbe) await playerProbe.observe(false);
+  if (appProbe) await appProbe.observe(false);
+  if (managementUI) {
+    stage = 'administrator clear restriction remains down, with its own distribution status';
+    await adminQuery(); assert.match(await adminPage.locator('#management-result').textContent(), /此次分發曾於/);
+    await adminAction('解除管理限制（不自動上架）'); assert.equal(tail(), 5); assert.equal(confirmed(), 4);
+    assert.match(await adminPage.locator('#management-result').textContent(), /分發待確認/);
+    await drain(); await adminQuery(); assert.match(await adminPage.locator('#management-result').textContent(), /此次分發曾於/);
+    assert.deepEqual((await registry()).directory, []); assert.equal(sql.exec('SELECT listed FROM content_games WHERE game_id=?', gameId).toArray()[0].listed, 0);
+    assert.equal(managementPosts.length, 3); assert.equal(new Set(managementPosts.map(row => row.key)).size, 3);
+    assert.equal(await adminPage.evaluate(() => window.__ownedIDB), 0); checks.push(stage);
+  }
+  const generations = managementUI ? 6 : 5;
+  const deletionPage = adminDeletionUI ? adminPage : page;
+  const deletionActor = adminDeletionUI ? sql.exec("SELECT id FROM users WHERE account='tianyi'").toArray()[0].id : ownerId;
+  stage = 'explicit deletion fence returns 410, not physical purge';
+  if (deletionUI) {
+    const before = sql.exec('SELECT row_revision,draft_name FROM content_games WHERE game_id=?', gameId).toArray()[0];
+    await deletionPage.click('#menu button[data-view="deletion-editor"]'); await deletionPage.click(adminDeletionUI ? '#deletion-admin-load' : '#deletion-load');
+    await deletionPage.waitForFunction(() => !document.querySelector('#deletion-load').disabled);
+    await deletionPage.locator('#deletion-games').getByRole('button', {name:'提出刪除請求',exact:true}).click();
+    await deletionPage.waitForFunction(() => !document.querySelector('#deletion-load').disabled);
+    assert.equal(deletionPosts.length, 1); assert.equal(tail(), generations); assert.equal(confirmed(), generations-1);
+    let savedDeletion; try { savedDeletion = JSON.parse(await deletionPage.evaluate(key => sessionStorage.getItem(key), 'editor-deletion-operation:'+deletionActor)); } catch (cause) { throw new Error('owned deletion journal', {cause}); }
+    assert.equal(savedDeletion.key, deletionPosts[0].key); assert.equal(savedDeletion.expectedRowRevision,before.row_revision); assert.equal(savedDeletion.confirmationName,before.draft_name);
+    assert.equal(deletionPosts[0].body, JSON.stringify({gameId,expectedRowRevision:before.row_revision,confirmationName:before.draft_name}));
+    assert.equal(savedDeletion.actorId,deletionActor);
+    if(adminDeletionUI){assert.notEqual(deletionActor,ownerId);assert.equal(calls.filter(row=>row.path.endsWith('/deletion-preview')).length,1);assert.equal(sql.exec('SELECT actor_id FROM content_deletion_fences WHERE game_id=?',gameId).toArray()[0].actor_id,deletionActor);}
+    const reloadMark=calls.length; await deletionPage.reload(); await deletionPage.waitForSelector('#menu button[data-view="deletion-editor"]'); await deletionPage.click('#menu button[data-view="deletion-editor"]');
+    assert.equal(deletionPosts.length,1); assert.equal(calls.slice(reloadMark).some(row=>row.path.includes('/deletion-operations/')||row.path.endsWith('/deletion-preview')),false);
+    await deletionPage.click('#deletion-query'); await deletionPage.waitForFunction(() => !document.querySelector('#deletion-load').disabled);
+    assert.match(await deletionPage.locator('#deletion-result').textContent(),/非物理清理完成.*分發待確認/); assert.equal(await deletionPage.isDisabled('#deletion-retry'),true);
+    await deletionPage.locator('#deletion-editor').screenshot({path:join(artifact,'deletion-pending.png')});
+  } else await authority.manage('delete');
+  await drain(); assert.equal(confirmed(), generations); assert.equal((await readRole('chapter:' + chapterId)).status, 410);
+  if (playerProbe) {
+    const before = calls.length; await playerProbe.deleted();
+    assert.equal(calls.length - before, 1, 'deleted client does not fetch or re-admit again');
+    assert.equal(calls.at(-1).status, 410);
+  }
+  if (appProbe) {
+    const before = calls.length; await appProbe.deleted();
+    if (publicPlayer) {
+      const after = calls.slice(before);
+      assert.equal(after.filter(row => row.status === 410).length, 1);
+      assert.ok(after.every(row => row.status === 410 || row.path === '/play-api/v1/registry' && row.status === 200));
+    } else {
+      assert.equal(calls.length - before, 1, 'retired App does not re-admit or fetch');
+      assert.equal(calls.at(-1).status, 410);
+    }
+    await appProbe.screenshot(join(artifact, 'published-app-retired.png'));
+  }
+  if (deletionUI) {
+    await deletionPage.click('#deletion-query'); await deletionPage.waitForFunction(() => !document.querySelector('#deletion-load').disabled);
+    const text=await deletionPage.locator('#deletion-result').textContent(); assert.match(text,/此柵欄分發曾於.*不證明歷史內容/); assert.ok(text.includes(rootVisibleAt((await bucket.get('control/current.json')).uploaded)));
+    assert.equal(deletionPosts.length,1); await deletionPage.locator('#deletion-editor').screenshot({path:join(artifact,'deletion-confirmed.png')});
+  }
+  assert.ok(await bucket.get(oldRuntimeKey), 'retained bytes make this explicitly NOT physical deletion');
+  assert.equal(sql.exec("SELECT COUNT(*) AS n FROM content_operations WHERE method='publish'").toArray()[0].n, 2);
+  checks.push(stage);
+  assert.equal(await page.evaluate(() => window.__ownedIDB), 0); assert.equal(await player.evaluate(() => window.__ownedIDB), 0);
+  const traces = [...(playerProbe ? await playerProbe.traces() : []), ...(appProbe ? await appProbe.traces() : [])];
+  const unexpectedFailures = [];
+  for (const event of failedDetails) {
+    if (event.sequence === null) { unexpectedFailures.push(event.path); continue; }
+    assert.equal(playerClient, true);
+    assert.ok(!completedStreamFailures.some(row => row.sequence === event.sequence), 'duplicate stream event');
+    if (programPaths && event.path.startsWith('/program-assets/')) completedStreamFailures.push(appProbe.completedProgramStream(event));
+    else completedStreamFailures.push(assertCompletedStreamObservation(event, traces, calls, playerOrigin));
+  }
+  assert.deepEqual(errors, []); assert.deepEqual(outside, []); assert.deepEqual(unexpectedFailures, ['/api/publish', ...(managementUI ? ['/api/games/' + gameId + '/listing'] : []), ...(deletionUI ? ['/api/games/' + gameId + '/deletion'] : [])]); assert.equal(outbound, 0);
+  const expectedHTTP = calls.filter(row => row.status >= 400);
+  const expectedStatuses = [...(managementUI ? [401,401,403,409,409,410] : [401,403,409,409,410]), ...(playerClient ? [503,409,403,410] : []), ...(playerApp ? (publicPlayer ? [410] : [503,410]) : [])];
+  assert.deepEqual(expectedHTTP.map(row => row.status).sort((a,b) => a-b), expectedStatuses.sort((a,b) => a-b));
+  assert.equal(consoleErrors.length, expectedHTTP.length + (managementUI ? 2 : 1) + (deletionUI ? 1 : 0));
+  for (const message of consoleErrors) assert.match(message, playerClient ? /Failed to load resource: (net::ERR_FAILED|the server responded with a status of (401|403|409|410|503))/ : /Failed to load resource: (net::ERR_FAILED|the server responded with a status of (401|403|409|410))/);
+  assert.equal(calls.filter(row => row.path === '/api/auth/login').length, managementUI ? 2 : 1);
+  for (const path of ['/client.js','/publish.js','/draft.js','/management.js']) assert.ok(calls.some(row => row.path === path && row.status === 200));
+  const authorityId = app.frozenDistribution.status().authorityId;
+  for (let generation = 1; generation <= generations; generation++) {
+    const record = app.frozenDistribution.entry(generation);
+    assert.ok(await bucket.get(`control/receipts/${authorityId}/${generation}/${record.operationDigest}.json`));
+  }
+  stage = 'reopen actual file SQLite and resume publisher without another root write';
+  await browser.close(); browser = null; storage.close(); authority.storage = null;
+  reopened = openStorage(authority.dbPath); const afterRestart = createDistributionPublisher({ storage: reopened, r2, verifyStaticResources });
+  assert.equal((await afterRestart.drainOne()).state, 'IDLE'); assert.equal(roots, generations); assert.equal(afterRestart.ledger.status().confirmedGeneration, generations); checks.push(stage);
+  const result = { checks, publicPlayer, playerApp: appProbe ? appProbe.report() : null, playerClient: playerProbe ? { ...playerProbe.report(), traces, completedStreamFailures } : null, nodeService, managementUI, managementPosts, deletionUI, adminDeletionUI, deletionPosts, browser: browserVersion, posts: posts.length, roots, confirmed: generations, chapters: authority.chapters.length, r2: { gets, puts, outbound }, static: { ...packaged.stats(), checks: staticChecks }, expectedHTTP: expectedHTTP.map(row => ({ path: row.path, status: row.status })), expectedLostResponses: (managementUI ? 2 : 1) + (deletionUI ? 1 : 0), sources, screenshots: Object.fromEntries(['pending.png','confirmed.png', ...(managementUI ? ['management-pending.png','management-confirmed.png'] : []), ...(deletionUI ? ['deletion-pending.png','deletion-confirmed.png'] : []), ...(playerApp ? ['published-app-retired.png'] : [])].map(name => [name, sha(readFileSync(join(artifact,name)))])), scope: 'Actual browser UI/password login/gateway/SQLite/20-chapter compile/guarded immutable stage/default publisher/owned workerd R2 and reader, via in-process browser transport bridge. Full-copy bootstrap; optional managementUI mode uses an independent admin browser login and listing/unlist/clear UI (optional deletionUI exercises the author-owned deletion journal, or adminDeletionUI the cross-author confirmation preview and journal, with real post-fence status; otherwise deletion is a direct authenticated Request). Otherwise admin actions are direct authenticated Requests. Optional playerApp joins real admission to the same App, owned native IDB and real lifecycle host (warning/deletion confirmation), with test startup and a recording navigation port; without it the engine is not executed. The additional publicPlayer mode uses unmodified production HTML/boot and real title/chooser/page navigation instead of that test startup/recording port. Not author blank creation, Node TCP/TLS/cloud S3, full campaign, static-retention or physical-delete proof.' };
+  writeFileSync(join(artifact, 'result.json'), JSON.stringify(result, null, 2), { flag: 'wx' });
+  process.stdout.write(JSON.stringify({ ...result, sources: 'in artifact', artifact }) + '\n');
+} catch (error) {
+  writeFileSync(join(artifact, 'failure.json'), JSON.stringify({ stage, error: String(error), stack: error.stack, errors, consoleErrors, failed, failedDetails, outside, calls, posts: posts.length }, null, 2), { flag: 'wx' }); throw error;
+} finally {
+  await browser?.close(); reopened?.close(); authority?.storage?.close(); await mf?.dispose(); rmSync(own, { recursive: true, force: true });
+}

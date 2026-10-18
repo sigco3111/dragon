@@ -1,19 +1,25 @@
-// Current three declared FK edges only. No full row/ref integrity or delete permission.
+// Four fixed FK edges, with TEXT user IDs and INTEGER ledger generations.
+// No full row/ref integrity, distribution payload proof or delete permission.
 import {GameDeletionSchemaIntegrity} from './deletionschemaintegrity.js';
 import {fail,fields} from './security.js';
-const edges=Object.freeze([Object.freeze(['content_games','owner_id']),Object.freeze(['installed_sources','registered_by']),Object.freeze(['sessions','user_id'])]);
+const edges=Object.freeze([
+ Object.freeze(['content_games','owner_id','users','id','text']),
+ Object.freeze(['installed_sources','registered_by','users','id','text']),
+ Object.freeze(['sessions','user_id','users','id','text']),
+ Object.freeze(['content_distribution_chunks','generation','content_distribution_events','generation','integer']),
+]);
 // Names are fixed declaration constants, never request/metadata-derived identifiers.
 export function inspectDeclaredForeignKeyRows(sql,afterTable=()=>{}){
  let checked=0;
- for(const [table,column]of edges){
+ for(const [table,column,parent,parentColumn,kind]of edges){
   const limit=Math.min(10001,20001-checked);let rows;
-  try{rows=sql.exec('SELECT c.'+column+' AS childKey,p.id AS parentKey FROM '+table+' c LEFT JOIN users p ON p.id=c.'+column+' LIMIT ?',limit).toArray();}catch{fail(503,'DELETE_FOREIGN_KEY_QUERY');}
+  try{rows=sql.exec(`SELECT c.${column} AS childKey,p.${parentColumn} AS parentKey,typeof(c.${column}) AS childKind,typeof(p.${parentColumn}) AS parentKind FROM ${table} c LEFT JOIN ${parent} p ON p.${parentColumn}=c.${column} LIMIT ?`,limit).toArray();}catch{fail(503,'DELETE_FOREIGN_KEY_QUERY');}
   if(!Array.isArray(rows)||rows.length>limit)fail(503,'DELETE_FOREIGN_KEY_QUERY');
   if(rows.length>10000||checked+rows.length>20000)fail(503,'DELETE_FOREIGN_KEY_BUDGET');
-  for(const row of rows)if(!row||typeof row.childKey!=='string'||row.parentKey!==row.childKey)fail(503,'DELETE_FOREIGN_KEY_ROWS');
+  for(const row of rows)if(!row||row.childKind!==kind||row.parentKind!==kind||row.parentKey!==row.childKey||(kind==='text'?typeof row.childKey!=='string':!Number.isSafeInteger(row.childKey)||row.childKey<1))fail(503,'DELETE_FOREIGN_KEY_ROWS');
   checked+=rows.length;afterTable();
  }
- return Object.freeze({edgesVerified:3,rowsChecked:checked});
+ return Object.freeze({edgesVerified:edges.length,rowsChecked:checked});
 }
 export class GameDeletionForeignKeyRows{
  #storage;#principal;
@@ -27,7 +33,7 @@ export class GameDeletionForeignKeyRows{
    inspectDeclaredForeignKeyRows(this.#storage.sql,()=>gate.observe(tokenHash,target));
    const final=gate.observe(tokenHash,target);pinned(tokenHash);if(final.schemaDigest!==initial.schemaDigest)fail(503,'DELETE_FOREIGN_KEY_SCHEMA_CHANGED');
    // Deliberately no global session/user row counts or identifiers in the owner DTO.
-   return Object.freeze({...final,foreignKeyRowsVerified:true,foreignKeyEdgesVerified:3,rowIntegrityVerified:false,nativeDrainVerified:false,deleteAllowed:false,mode:'CURRENT_DECLARED_FOREIGN_KEY_ROWS_ONLY_LEGACY_UNKNOWN'});
+   return Object.freeze({...final,foreignKeyRowsVerified:true,foreignKeyEdgesVerified:edges.length,rowIntegrityVerified:false,nativeDrainVerified:false,deleteAllowed:false,mode:'CURRENT_DECLARED_FOREIGN_KEY_ROWS_ONLY_LEGACY_UNKNOWN'});
   });
  }
 }
