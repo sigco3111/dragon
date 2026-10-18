@@ -84,8 +84,10 @@ try{
  response={...payload(),directory:[],announcements:history};await page.evaluate(()=>window.__catalog.refresh());
  assert.equal(await select.locator('option').count(),1);assert.equal((await selection()).kind,'builtin');assert.equal(await notice.textContent(),'暫無發布資訊');checks++;
  response={generation:'invalid'};assert.equal(await page.evaluate(()=>window.__catalog.refresh()),false);
- assert.match(await page.getByRole('status').textContent(),/目錄暫不可用/);assert.equal((await selection()).kind,'builtin');assert.equal(await notice.textContent(),'通知暫不可用');checks++;
- response=payload();await page.getByRole('button',{name:'重新取得遊戲目錄及通知'}).click();await page.waitForFunction(()=>document.querySelector('select').options.length===2);checks++;
+ assert.equal(await page.getByRole('status').count(),0);assert.equal((await selection()).kind,'builtin');assert.equal(await notice.textContent(),'通知暫不可用');checks++;
+ await notice.click();await page.waitForFunction(()=>document.querySelector('[role=dialog] p').textContent==='通知暫不可用');
+ response=payload();await dialog.getByRole('button',{name:'重試',exact:true}).click();await page.waitForFunction(()=>document.querySelector('select').options.length===2);
+ await dialog.click({button:'right'});checks++;
  await select.selectOption(game);hold=true;await page.evaluate(()=>{window.__pending=window.__catalog.refresh();});await page.waitForFunction(()=>document.querySelector('select').options.length===1);
  assert.equal((await selection()).kind,'builtin');assert.equal(await select.isDisabled(),false);await held();checks++;
  // A later empty directory wins over the earlier held result.
@@ -98,13 +100,25 @@ try{
  await page.screenshot({path:join(artifact,'history.png')});
  hold=true;await page.evaluate(()=>{window.__last=window.__catalog.refresh();window.__catalog.close();});releaseAll();assert.equal(await page.evaluate(()=>window.__last),false);
  assert.equal(await page.locator('.player-catalog,[role=dialog]').count(),0);assert.equal(await selection(),null);assert.equal(await page.locator('#outside').textContent(),'原界面');checks++;
+ // Actual public wrapper: no panel background or lower controls; one centered selector.
+ await page.evaluate(async()=>{const {mountPublicCatalog}=await import('/src/player/playerpublic.js');window.__public=mountPublicCatalog(document.body);});
+ const layout=await page.locator('.player-public-catalog').evaluate(node=>{
+  const host=node.querySelector('.player-catalog'),label=host.querySelector('button'),select=host.querySelector('select');
+  const box=node.getBoundingClientRect(),a=label.getBoundingClientRect(),b=select.getBoundingClientRect();
+  return {background:getComputedStyle(node).backgroundColor,padding:getComputedStyle(node).padding,border:getComputedStyle(node).borderWidth,
+   labelBackground:getComputedStyle(label).backgroundColor,labelBorder:getComputedStyle(label).borderWidth,
+   children:host.children.length,width:b.width/box.width,center:b.x+b.width/2-innerWidth/2,gap:b.y-a.bottom,heights:[a.height,b.height]};
+ });
+ assert.deepEqual(layout,{background:'rgba(0, 0, 0, 0)',padding:'0px',border:'0px',labelBackground:'rgba(0, 0, 0, 0)',labelBorder:'0px',children:2,width:0.7,center:0,gap:12,heights:[28,28]});
+ assert.equal(await page.getByRole('button',{name:'重試',exact:true}).count(),0);
+ await page.screenshot({path:join(artifact,'catalog.png')});await page.evaluate(()=>window.__public.close());checks++;
  await page.waitForFunction(()=>window.__catalogTraces.every(trace=>trace.completed));
  const traces=await page.evaluate(()=>window.__catalogTraces),completedStreamFailures=[];
  assert.equal(traces.length,calls.length);assert.ok(traces.every(trace=>trace.completed&&!trace.cancelled&&trace.bytes>0));
  for(const event of failed){assert.ok(!completedStreamFailures.some(row=>row.sequence===event.sequence));completedStreamFailures.push(assertCompletedStreamObservation(event,traces,calls,api));}
  assert.equal(await page.evaluate(()=>window.__idb),0);assert.deepEqual(errors,[]);assert.deepEqual(forbidden,[]);
  assert.ok(calls.every(call=>!call.headers.authorization&&!call.headers.cookie&&!call.headers.referer&&call.method==='GET'));checks++;
- const paths=['web/src/player/playercatalog.js','web/src/player/playerclient.js','web/src/player/runtimecontract.js','tools/verify_player_catalog_browser.mjs'];
+ const paths=['web/src/player/playercatalog.js','web/src/player/playerpublic.js','web/src/player/playerclient.js','web/src/player/runtimecontract.js','tools/verify_player_catalog_browser.mjs'];
  const sources=Object.fromEntries(await Promise.all(paths.map(async p=>[p,sha(await readFile(p))])));
  await writeFile(join(artifact,'result.json'),JSON.stringify({checks,sources,calls:calls.map(({origin,path,method,sequence,status,bytes})=>({origin,path,method,sequence,status,bytes})),traces,completedStreamFailures,errors,failed,forbidden,screenshotSHA:sha(await readFile(join(artifact,'history.png'))),scope:'Actual DOM/catalog + real reader with controlled registry responses. No title/App mount, admission, stored data, recognized old releases, cloud or deploy.'},null,2));
  process.stdout.write(JSON.stringify({checks,artifact})+'\n');

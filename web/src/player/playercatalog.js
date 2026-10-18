@@ -7,14 +7,13 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   const document = root.ownerDocument;
   const make = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; };
   const host = make('section'), notice = make('button', '通知暫不可用'), select = make('select');
-  const status = make('span'), retry = make('button', '重試');
-  host.className = 'player-catalog'; notice.type = retry.type = 'button';
+  host.className = 'player-catalog'; notice.type = 'button';
   notice.className = 'player-catalog-notice'; select.setAttribute('aria-label', '選擇遊戲');
-  select.hidden = status.hidden = !selectionVisible;
-  status.setAttribute('role', 'status'); retry.setAttribute('aria-label', '重新取得遊戲目錄及通知');
-  Object.assign(host.style, { display: 'grid', gap: '6px', maxWidth: '100%' });
-  Object.assign(notice.style, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-  host.append(notice, select, status, retry); root.append(host);
+  select.hidden = !selectionVisible;
+  Object.assign(host.style, { display: 'grid', gap: '12px', maxWidth: '100%' });
+  Object.assign(notice.style, { height: '28px', padding: '0', border: '0', background: 'transparent', color: 'inherit', font: 'inherit', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+  Object.assign(select.style, { width: '70%', height: '28px', justifySelf: 'center', boxSizing: 'border-box' });
+  host.append(notice, select); root.append(host);
   let closed = false, epoch = 0, wanted = BUILTIN.gameId, entries = new Map(), announcements = [];
   let announcementError = true, directoryError = false, pending = false, modal = null;
   function options() {
@@ -31,9 +30,6 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
     else if (announcementError) message = '通知暫不可用';
     else if (announcements.length) message = `${announcements[0].name} ${announcements[0].ordinal}　${announcements[0].creatorAccount}`;
     notice.textContent = message;
-    status.textContent = '';
-    if (pending) status.textContent = '正在取得自建遊戲目錄；內置遊戲仍可選擇。';
-    else if (directoryError) status.textContent = '自建遊戲目錄暫不可用；內置遊戲仍可選擇。';
     if (!modal) return;
     const content = modal.content;
     content.replaceChildren();
@@ -76,7 +72,7 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   function dismiss() {
     if (!modal) return;
     modal.node.remove(); modal = null;
-    select.disabled = retry.disabled = notice.disabled = false;
+    select.disabled = notice.disabled = false;
     notice.focus();
   }
   function showAnnouncements() {
@@ -92,11 +88,10 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
     node.addEventListener('keydown', event => { event.stopPropagation(); if (event.key === 'Tab') { event.preventDefault(); again.focus(); } });
     again.addEventListener('click', () => { void refresh(); });
     modal = { node, content }; host.append(node);
-    select.disabled = retry.disabled = notice.disabled = true;
+    select.disabled = notice.disabled = true;
     node.focus(); void refresh();
   }
   select.addEventListener('change', () => { wanted = entries.has(select.value) ? select.value : BUILTIN.gameId; });
-  retry.addEventListener('click', () => { void refresh(); });
   notice.addEventListener('click', showAnnouncements);
   options(); paint();
   return Object.freeze({ refresh, showAnnouncements,

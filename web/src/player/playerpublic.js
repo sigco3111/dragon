@@ -34,7 +34,7 @@ export function mountPublicCatalog(root, { selectionVisible = true } = {}) {
   try { reader = createPlayerReader({ origin: location.origin }); }
   catch { reader = { async registry() { throw new Error('formal reader requires HTTPS'); } }; }
   const node = root.ownerDocument.createElement('div'); node.className = 'player-public-catalog';
-  Object.assign(node.style, { position: 'fixed', top: '8px', left: 'max(16px, calc((100vw - 560px) / 2))', width: 'min(560px, calc(100vw - 32px))', zIndex: '10000', fontSize: '14px', color: '#201800', background: '#f0d090', padding: '6px' });
+  Object.assign(node.style, { position: 'fixed', top: '8px', left: 'max(16px, calc((100vw - 560px) / 2))', width: 'min(560px, calc(100vw - 32px))', zIndex: '10000', fontSize: '14px', color: '#201800' });
   root.append(node);
   const view = mountPlayerCatalog({ root: node, reader, selectionVisible });
   void view.refresh();
