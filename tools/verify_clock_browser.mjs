@@ -146,7 +146,7 @@ try {
   });
   assert.deepEqual(initial.backing, [2048, 1536]);
   assert.equal(initial.dpr, 2);
-  assert.deepEqual(initial.steps, [30, 17.5, 10, 5, 1.5625]);
+  assert.deepEqual(initial.steps, [30 / 3, 17.5 / 3, 10 / 3, 5 / 3, 1.5625 / 3]);
   assert.equal(
     initial.rngStreamReused,
     true,
@@ -385,7 +385,7 @@ try {
     return { steps: STRATEGIC_SPEEDS, cap: MAX_TICKS_PER_FRAME, counts };
   });
   assert.deepEqual(trialEvidence.steps, initial.steps);
-  assert.equal(trialEvidence.cap, 12);
+  assert.equal(trialEvidence.cap, 36);
   for (let speed = 0; speed < 5; speed++) {
     assert.ok(Math.abs(trialEvidence.counts[speed] - 10000 / initial.steps[speed]) < 1.001);
   }

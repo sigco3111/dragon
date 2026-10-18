@@ -7,7 +7,7 @@ import {
 } from "../web/src/render/engagementpresentation.js";
 import { Clock } from "../web/src/game/clock.js";
 assert.equal(ENGAGEMENT_FRAME_MS, 30);
-assert.equal(ENGAGEMENT_SOUND_MS, 60);
+assert.equal(ENGAGEMENT_SOUND_MS, 20);
 const contact = () => ({
   faction: 0,
   x: 1,
@@ -42,10 +42,10 @@ for (let speed = 0; speed < 5; speed++) {
   );
   assert.deepEqual(pulses, [
     [0, 3],
+    [20, 3],
+    [40, 2],
     [60, 1],
-    [120, 3],
-    [180, 1],
-    [240, 3],
+    [80, 1],
   ]);
   runs.push({ frames, pulses });
 }
@@ -75,16 +75,16 @@ fx.update(scenario, 30);
 assert.equal(fx.frameOf(a), 2);
 a._engagement = { ...a._engagement, countdown: 2, target: { x: 30, y: 40 } };
 scenario.legions.push(b);
-fx.update(scenario, 45);
+fx.update(scenario, 35);
 assert.equal(
   fx.frameOf(a),
   2,
   "road-poll replacement cannot reset visual phase",
 );
 assert.equal(fx.frameOf(b), 2, "simultaneous contacts share the same clock");
-assert.equal(plays, 1, "new contacts cannot multiply shared-channel frequency");
+assert.equal(plays, 2, "new contacts cannot multiply shared-channel frequency");
 fx.update(scenario, 60);
-assert.equal(plays, 2);
+assert.equal(plays, 3);
 fx.update(scenario, 125, { paused: true });
 assert.equal(stops, 1);
 const frozen = fx.frameOf(a);
@@ -92,11 +92,11 @@ fx.update(scenario, 9000, { paused: true });
 assert.equal(fx.frameOf(a), frozen);
 assert.equal(stops, 1);
 fx.update(scenario, 9000);
-assert.equal(plays, 2, "no backlog or re-key when resuming mid-beat");
+assert.equal(plays, 3, "no backlog or re-key when resuming mid-beat");
 fx.update(scenario, 9200);
-assert.equal(plays, 3);
+assert.equal(plays, 4);
 fx.update(scenario, 14200);
-assert.equal(plays, 4, "a delayed RAF emits only one current pulse");
+assert.equal(plays, 5, "a delayed RAF emits only one current pulse");
 a._engagement = null;
 assert.equal(fx.frameOf(a), null, "clear is visible before next update");
 fx.update(scenario, 14201);
@@ -107,9 +107,9 @@ assert.equal(stops, 2, "last contact stops current sound and queued successor");
 assert.equal(fx.frameOf(b), null);
 scenario.legions = [contact()];
 fx.update(scenario, 15000, { paused: true });
-assert.equal(plays, 4);
+assert.equal(plays, 5);
 fx.update(scenario, 16000);
-assert.equal(plays, 5, "first contact created while held starts on release");
+assert.equal(plays, 6, "first contact created while held starts on release");
 fx.update(scenario, 16001, { enabled: false });
 assert.equal(
   stops,
@@ -136,9 +136,9 @@ const failed = new EngagementPresentation({
 });
 failed.update(scenario, 0);
 ready = true;
-failed.update(scenario, 50);
+failed.update(scenario, 10);
 assert.equal(audible, 0);
-failed.update(scenario, 100);
+failed.update(scenario, 20);
 assert.equal(audible, 1, "unready audio retries only at the next live beat");
 assert.doesNotThrow(() => failed.reset());
 for (const mode of ["false", "throw"]) {
@@ -164,5 +164,5 @@ for (const mode of ["false", "throw"]) {
   );
 }
 process.stdout.write(
-  "engagement presentation OK: fixed30ms/60ms, five-pulse cap, five speeds, first/last sync, holds/hidden, multi-contact, no rule writes or backlog\n",
+  "engagement presentation OK: fixed30ms/20ms, five-pulse cap, five speeds, first/last sync, holds/hidden, multi-contact, no rule writes or backlog\n",
 );

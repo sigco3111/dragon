@@ -7,10 +7,10 @@ const { Clock, STRATEGIC_SPEEDS, MAX_TICKS_PER_FRAME } = await import("../web/sr
 
 assert.deepEqual(
   STRATEGIC_SPEEDS,
-  [30, 17.5, 10, 5, 1.5625],
-  "本轮战略五档墙钟间隔再次减半，普通档每主更新10ms",
+  [30 / 3, 17.5 / 3, 10 / 3, 5 / 3, 1.5625 / 3],
+  "五档均为前一版3倍速，普通档每主更新10/3ms",
 );
-assert.equal(MAX_TICKS_PER_FRAME, 12);
+assert.equal(MAX_TICKS_PER_FRAME, 36);
 
 // Both entry points must consume the same source, including the generated
 // server trial bundle. Read only these explicit source/bundle paths; no saves.
@@ -20,7 +20,7 @@ try {
 } catch (cause) {
   throw new Error("Cannot read generated Trial bundle", { cause });
 }
-for (const path of ["src/game/clock.js", "src/editor/trialruleboundaries.js"]) {
+for (const path of ["src/game/clock.js", "src/editor/trialruleboundaries.js", "src/render/engagementpresentation.js"]) {
   const source = readFileSync(new URL(`../web/${path}`, import.meta.url));
   const packed = bundle.files.find((file) => file.path === path);
   assert.equal(packed.text, source.toString("utf8"), `${path}: trial bundle current`);
@@ -28,8 +28,8 @@ for (const path of ["src/game/clock.js", "src/editor/trialruleboundaries.js"]) {
   assert.equal(packed.sha256, createHash("sha256").update(source).digest("hex"));
 }
 
-// Simulated 60Hz: each speed delivers twice the old wall-clock throughput
-// (within one fractional update), without a six-step ceiling at top speed.
+// Simulated 60Hz: each speed delivers three times the previous throughput.
+// Whole-update rounding may differ by fewer than three updates.
 for (const speed of [0, 1, 2, 3, 4]) {
   const options = { startYear: 196, startMonth: 1 };
   const base = new Clock(options);
@@ -37,7 +37,7 @@ for (const speed of [0, 1, 2, 3, 4]) {
     ...options, gate: { canAdvanceRules: true, rulePermit: {} },
   });
   const old = new Clock(options);
-  old.SPEEDS = [60, 35, 20, 10, 3.125];
+  old.SPEEDS = [30, 17.5, 10, 5, 1.5625];
   for (const c of [base, trial, old]) c.strategicSpeed = speed;
   for (let frame = 0; frame < 600; frame++) {
     base.advanceFrame(1000 / 60);
@@ -46,7 +46,7 @@ for (const speed of [0, 1, 2, 3, 4]) {
   }
   const expected = 10000 / STRATEGIC_SPEEDS[speed];
   assert.ok(Math.abs(base.strategicTickSerial - expected) < 1.001);
-  assert.ok(Math.abs(base.strategicTickSerial - old.strategicTickSerial * 2) <= 1);
+  assert.ok(Math.abs(base.strategicTickSerial - old.strategicTickSerial * 3) < 3);
   assert.equal(trial.strategicTickSerial, base.strategicTickSerial);
   assert.deepEqual(trial.serialize(), base.serialize());
   assert.equal(trial.sub, base.sub);
@@ -128,7 +128,7 @@ const frameClock = new Clock({
   },
 });
 frameClock.strategicSpeed = 4;
-assert.equal(frameClock.advanceFrame(frameClock.currentStep * 20), true);
+assert.equal(frameClock.advanceFrame(frameClock.currentStep * 100), true);
 assert.equal(frameTicks, MAX_TICKS_PER_FRAME, "大dt单个RAF按上限执行后停");
 assert.ok(frameClock._acc < frameClock.currentStep, "超额欠账丢弃，只保留小于step的相位");
 assert.equal(frameClock.advanceFrame(frameClock.currentStep / 2), false);

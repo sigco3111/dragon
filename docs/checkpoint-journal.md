@@ -3,6 +3,12 @@
 > 本文件只记**当前状态、主线进度、阻塞与下一步**，供下一对话接续。长期事实/架构/命令/约定/坑点在 [`AGENTS.md`](../AGENTS.md)（含[编辑器开发待办](editor-dev-todo.md)）；机制原证在 `.agents/skills/*/SKILL.md` 与 `docs/re-notes-*.md`。历史逐轮细节（round 号、pin 计数、失败现场文件）只留 `.dragon-analysis/`（被忽略）与 Git 历史，本文件不复制。
 > 发布整理基点 `dev@4a68861`；本批版本 `0.1.7`。用户已授权完整提交、合并main、推送GitHub和创建Release；Gitea不在目标内。GitHub已有v0.1.6，故不覆盖旧标签。最终提交／推送状态以Git和Release实际结果为准。
 
+## 战略三倍速与接战急促音效（STRATEGIC-SPEED-3，本地）
+
+- 按用户要求，五档共享Clock间隔统一除以3、RAF上限36；接战发声60→20ms，换帧30ms及五响上限不变。玩家／编辑器试玩共用源码，230项Trial束已重建，详细合同见[行军表现](march-presentation-fixes.md)。
+- 已通过时钟过渡、玩家App＋生成Trial时钟浏览器、接战表现及真实WebAudio浏览器、战斗hold、接战过渡／轮询／状态、军团槽相位3组及战斗5组、真实战术浏览器31控件／五档矩阵。初测发现分数间隔逐次相减漏最后一步，已改为帧前计算完整预算并复验；更新旧音效测试对60ms相位的假设。战术浏览器首次缺Playwright模块，显式使用已安装路径后通过。
+- `verify_march_navigation.mjs`在未进入行军断言前报`invalid strategic road graph`，未放宽该门或计作通过；本批不宣称完整战役／全部回归通过。尚未提交、推送或部署。
+
 ## 发布就绪与VPS共同应用（VPS-EDITOR-READY-1，进行中）
 
 - 用户已授权补齐发布条件后提交／推送GitHub main，循环监测并修复Cloudflare部署至成功，再部署约定VPS／域名并测试；无需重复审批。当前尚未具备整链发布条件，未执行新的commit/push/deploy。

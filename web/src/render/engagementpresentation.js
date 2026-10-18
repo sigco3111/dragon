@@ -1,9 +1,9 @@
 // User-approved Web pacing, NOT KI:264A/286C/28B4 timing. One presentation-only
 // clock owns map/minimap phases and the single SFX channel. No rule writes/RNG.
 // 用户要求快速五响：每段连续接触最多五次请求，暂停/目标刷新不重置预算。
-// 配合本轮战略提速收紧为30ms换帧/60ms发声；不是原版IRQ或规则等待。
+// 用户要求发声间隔再缩短至1/3：30ms换帧不变、20ms发声；不是原版IRQ或规则等待。
 export const ENGAGEMENT_FRAME_MS = 30;
-export const ENGAGEMENT_SOUND_MS = 60;
+export const ENGAGEMENT_SOUND_MS = 20;
 export const ENGAGEMENT_SOUND_LIMIT = 5;
 
 function inContact(legion) {

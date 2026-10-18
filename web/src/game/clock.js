@@ -16,15 +16,15 @@ export const STRATEGIC_SPEED_LABELS = [
 ];
 // 5档每次0x1D0B主更新的Web墙钟间隔。原版CFA=4/3/2/1/0个
 // INT61计时回调，实测非零等待约13.731/10.299/6.866/3.433ms；Web仍
-// 使用便于观察的表现节奏。用户要求在60/35/20/10/3.125基础上再快一倍，
-// 间隔减半；仅墙钟等待变化，主更新顺序/日期/RNG/军团周期不变。
-export const STRATEGIC_SPEEDS = [30, 17.5, 10, 5, 1.5625];
+// 使用Web表现节奏。用户要求在30/17.5/10/5/1.5625ms基础上统一3倍速，
+// 间隔除以3；仅墙钟等待变化，主更新顺序/日期/RNG/军团周期不变。
+export const STRATEGIC_SPEEDS = [30 / 3, 17.5 / 3, 10 / 3, 5 / 3, 1.5625 / 3];
 
-// RAF入口每帧至多推进的战略主更新次数。60Hz可喂饱最高速1.5625ms
-// （16.7/1.5625≈10.7）；上限定死，后台恢复/卡顿不补旧债。每次更新后查hold：
+// RAF入口每帧至多推进的战略主更新次数。60Hz可喂饱最高速约0.521ms
+// （16.7/(1.5625/3)≈32）；上限定死，后台恢复/卡顿不补旧债。每次更新后查hold：
 // 接战四相任一置hold即停，战术开场/命运消息模态照常接管，不存在一次提交
 // 跨过未显示的战斗；同一军团多道路点由表现层lerp连续铺开，不瞬移。
-export const MAX_TICKS_PER_FRAME = 12;
+export const MAX_TICKS_PER_FRAME = 36;
 
 export class Clock {
   /**
@@ -126,12 +126,11 @@ export class Clock {
     this._acc = Math.min(this._acc + elapsed, step * MAX_TICKS_PER_FRAME);
     if (this._acc < step) return false;
     let advanced = false;
-    for (
-      let n = 0;
-      n < MAX_TICKS_PER_FRAME && this._acc >= step;
-      n++
-    ) {
-      this._acc -= step;
+    // Count before repeated fractional subtraction so the capped frame does not
+    // lose its last update to floating-point drift at the new /3 intervals.
+    const ticks = Math.min(MAX_TICKS_PER_FRAME, Math.floor(this._acc / step));
+    for (let n = 0; n < ticks; n++) {
+      this._acc = Math.max(0, this._acc - step);
       this._tick();
       this.onSyncHold?.();
       advanced = true;

@@ -109,6 +109,7 @@ try {
       state.records.push({
         t: performance.now(),
         frame: app.engagementFx.frameOf(army),
+        elapsed: app.engagementFx.elapsed,
         ok,
       });
       return ok;
@@ -154,7 +155,7 @@ try {
     });
     assert.equal(run.records.length, 5, "long contact stops at five requests");
     assert.ok(run.frames.length >= 9, "visual contact remains live after sound burst");
-    assert.ok(run.records.every((r) => r.ok && [1, 3].includes(r.frame)));
+    assert.ok(run.records.every((r) => r.ok && r.frame === 3 - (Math.floor(r.elapsed / 30) % 4)));
     assert.ok(
       Math.abs(run.records[0].t - run.frames[0].t) < 50,
       "audio and first visible frame share one RAF",
@@ -171,7 +172,7 @@ try {
       `speed${speed}: ${frameMs}ms frame`,
     );
     assert.ok(
-      Math.abs(soundMs - 60) < 30,
+      Math.abs(soundMs - 20) < 20,
       `speed${speed}: ${soundMs}ms sound`,
     );
     matrix.push({ speed, frameMs, soundMs });
