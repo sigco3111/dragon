@@ -30,7 +30,8 @@
 ## 验证范围
 
 - 原字节复核只认证上述周期/坐标消费者；Web回归锁定输入不变、显示连续与音频上限，不替代原版全战役对照。
-- `verify_march_navigation.mjs`覆盖横纵双向及斜向、周期2/3完整插值、到城/驻止锚点一致、只读投影。
+- `verify_march_navigation.mjs`覆盖横纵双向及斜向、周期2/3完整插值、到城/驻止锚点一致、只读投影。测试道路资源跟随 `DEFAULT_WORLD.assets.roadGraph`，不再匹配旧 `road_graph.json` 后给现行 `roads.json` 返回空对象；此次校验失败属于旧测试接线，不是实际道路图损坏。
+- `verify_native_road_movement.mjs`增加五档×周期2/3的新旧墙钟对照：真实Clock驱动16槽轮询并执行原生道路动作，比较首个道路点实际坐标提交、原始道路写回及耗时；新耗时为旧值1/3（0.125ms采样误差内），不只统计时钟tick。该受控单步验证不等于整段路线、真实设备帧率或完整战役证明；既有完整套件共33项。
 - `verify_engagement_presentation.mjs`与隔离浏览器覆盖五档、五响上限、共享通道、暂停/恢复、取消、音画相位及无RNG写入。
 - `verify_clock_transition.mjs`覆盖新档位、单RAF上限、即时hold及日历边界，并以600个模拟60Hz帧核五档相对上一版3倍吞吐、玩家/Trial等值及束内源码/长度/SHA一致；原生编成/槽/道路套件继续检查周期和规则。
 - 本轮实际完整回归、诊断限制与证据目录另记[checkpoint journal](checkpoint-journal.md)。历史100/200ms、60/120ms“响满全程”与八更新插值摘要均由本文取代，原始DOS音效次数仍为纯骑五次/混编三次，不混为Web五响政策。

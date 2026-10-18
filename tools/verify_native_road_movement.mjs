@@ -2,6 +2,7 @@
 // KI 2662..28CB/42AB/47BB static goldens; march notes §3.12. Not a CPU oracle.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Clock } from "../web/src/game/clock.js";
 import { attachSyntheticNativeFactionSource } from "./native_faction_fixture.mjs";
 import { createContentCatalog } from "../web/src/content/catalog.js";
 import { OriginalBattleRng } from "../web/src/game/battle/originalrng.js";
@@ -234,6 +235,39 @@ const state = (f) => [
   f.A.targetCity,
   f.A._markerFrame,
 ];
+test("all five speed settings move the real native legion in one third wall time; period 2/3 unchanged", async () => {
+  const previous = [30, 17.5, 10, 5, 1.5625];
+  for (const period of [2, 3]) {
+    for (let speed = 0; speed < 5; speed++) {
+      const runs = [];
+      for (const old of [true, false]) {
+        const f = await fixture({ legion: soldier({ moveDelay: period, movePeriod: period,
+          units: Array.from({ length: 6 }, () => ({ type: period === 2 ? 1 : 3, troops: 100 })),
+        }) });
+        const clock = new Clock({ startYear: 190, startMonth: 1,
+          onStrategicTick(c) {
+            aiTick(f.app, { legionBatchStart: ((c.strategicTickSerial - 1) % 8) * 16,
+              runCityDaily: false, settleDaily: false });
+          },
+        });
+        f.app.clock = clock;
+        if (old) clock.SPEEDS = previous;
+        clock.strategicSpeed = speed;
+        let elapsed = 0;
+        while (f.A.x === 5 && elapsed < 1000) { clock.advanceFrame(0.125); elapsed += 0.125; }
+        assert.equal(clock.hold, false, "no rule failure may masquerade as a completed timing sample");
+        assert.equal(f.A.x, 6, "real 2662/2708 commits the next road point");
+        assert.equal(f.A.movePeriod, period);
+        assert.equal(clock.strategicTickSerial, 1 + 8 * (period - 1));
+        runs.push({ elapsed, state: state(f) });
+      }
+      assert.deepEqual(runs[1].state, runs[0].state, "only wall time changes, not road writes");
+      assert.ok(Math.abs(runs[0].elapsed - runs[1].elapsed * 3) <= 0.375,
+        `period ${period}, speed ${speed}: ${JSON.stringify(runs)}`);
+    }
+  }
+});
+
 const plane = (f, x) => f.context.movement.readByte(240, x);
 function setWord(memory, at, value) {
   memory.writeByte(at, value & 255);

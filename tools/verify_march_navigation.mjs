@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { initializeLegionSlotState } from "../web/src/game/legionphase.js";
+import { DEFAULT_WORLD } from "../web/src/content/worlddefinition.js";
 
 let graph;
 try {
   graph = JSON.parse(
-    await readFile(new URL("../web/road_graph.json", import.meta.url)),
+    await readFile(new URL(`../web/${DEFAULT_WORLD.assets.roadGraph}`, import.meta.url)),
   );
 } catch (error) {
   throw new Error("cannot load generated road graph", { cause: error });
 }
 globalThis.fetch = async (url) => {
   const resource = String(url);
-  if (resource.endsWith("road_graph.json")) {
+  if (resource === DEFAULT_WORLD.assets.roadGraph) {
     return { ok: true, json: async () => graph };
   }
   return {
