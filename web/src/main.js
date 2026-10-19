@@ -150,6 +150,18 @@ const app = {
     if (this._formalEntry === entry) this.checkFormalCurrent();
   },
 
+  // Completed slot batches may repeat within one RAF. Keep the message/hold
+  // boundary synchronous; only the redundant DOM/Canvas work is coalesced.
+  refreshStrategicView() {
+    if (this._advancingStrategicFrame) {
+      this._strategicViewDirty = true;
+      this.gamebar?._drainStrategicMessages?.();
+      return;
+    }
+    this.hud?.buildLegend?.();
+    this.view?.draw?.();
+  },
+
   // 2533 is an explicit state-preparation boundary, never a Canvas side effect.
   prepareMapObjects(c = this.clock) {
     if (!c || c !== this.clock || c.hold || c.speed <= 0 || !this.scenario ||
@@ -1163,7 +1175,17 @@ export async function startApp(opening, { trial = null, formal = null } = {}) {
       pointerChanged = app.view.setPointer(pointerUpdate.x, pointerUpdate.y);
 
     app.gamebar?.syncClock?.(); // 模态弹窗开→计时冻结 (原版 [0xD2A]=1)
-    app.clock?.advanceFrame(dt);
+    app._advancingStrategicFrame = true;
+    try {
+      app.clock?.advanceFrame(dt);
+    } finally {
+      app._advancingStrategicFrame = false;
+      if (app._strategicViewDirty) {
+        app._strategicViewDirty = false;
+        mapRedrawRequested = true;
+        app.hud?.buildLegend?.();
+      }
+    }
 
     const c = app.clock;
     const effectsChanged = app.engagementFx.update(app.scenario, now, {

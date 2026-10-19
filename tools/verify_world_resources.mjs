@@ -79,6 +79,11 @@ try {
   assert.deepEqual(second.terrain.roadOffset(0, 0), [2, 0]);
   assert.equal(first.terrain.terrainTile(0, 0), 95);
   assert.equal(second.terrain.terrainTile(0, 0), 202);
+  assert.equal(first.terrain.terrainIdentity(), '5f'.repeat(384 * 256));
+  assert.equal(second.terrain.terrainIdentity(), 'ca'.repeat(384 * 256));
+  const copy = await first.terrain.loadTerrain();
+  copy[0] = 202;
+  assert.equal(first.terrain.terrainIdentity(), '5f'.repeat(384 * 256), 'Scenario copy cannot invalidate resource identity');
   assert.equal(first.terrain.passable(0, 0), true);
   assert.equal(second.terrain.passable(0, 0), false);
   await first.terrain.loadTerrain();

@@ -5440,8 +5440,11 @@ function runLegionSlotBatch(app, batch) {
         app._legionSlotBatch = null;
         app.gamebar?.syncClock?.();
         if (batch.changed) {
-          app.hud?.buildLegend?.();
-          app.view?.draw?.();
+          if (app.refreshStrategicView) app.refreshStrategicView();
+          else {
+            app.hud?.buildLegend?.();
+            app.view?.draw?.();
+          }
         }
         return batch.changed;
       }

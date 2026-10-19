@@ -30,6 +30,7 @@ export function createPathfinder(definition, roads, { fetcher, assertCurrent = (
   ]);
 
   let terrain = null; // Uint8Array(384*256) tile 索引 (保留供地形查询)
+  let initialTerrainHex = null; // Private immutable resource, not Scenario terrain.
   let roadCost = null; // Uint8Array(W*H) 0=不可走, 1=可走
   let roadOff = null; // {tileId: [ox,oy]} 道路线质心偏移
 
@@ -75,7 +76,9 @@ export function createPathfinder(definition, roads, { fetcher, assertCurrent = (
   function terrainIdentity() {
     if (!terrain || terrain.length !== W * H)
       throw new TypeError("Invalid initial terrain resource");
-    return Array.from(terrain, (value) =>
+    // loadTerrain exposes only copies and installs this resource once per world.
+    // MapView asks on every draw; do not encode all W*H bytes again per tick.
+    return initialTerrainHex ??= Array.from(terrain, (value) =>
       value.toString(16).padStart(2, "0"),
     ).join("");
   }

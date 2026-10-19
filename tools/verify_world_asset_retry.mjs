@@ -35,6 +35,7 @@ try {
     assert.equal(calls.size, 0, "construction lazy");
     await assert.rejects(world.terrain.loadTerrain());
     assert.equal(world.terrain.terrainTile(0, 0), null, "failure cannot install partial terrain");
+    assert.throws(() => world.terrain.terrainIdentity(), /Invalid initial terrain resource/);
     const pass = cost.findIndex((byte) => byte !== 0);
     assert.equal(world.terrain.passable(pass % 384, Math.floor(pass / 384)), false, "failure cannot install partial cost");
     const before = new Map(calls);
@@ -42,7 +43,19 @@ try {
     assert.deepEqual(Buffer.from(a), plane); assert.deepEqual(Buffer.from(b), plane);
     assert.notEqual(a, b, "mutable callers never alias resource plane");
     for (const key of ["terrain", "cost", "offset"]) assert.equal(calls.get(key), before.get(key) + 1, "retry single-flight");
-    a[0] ^= 255;
+    const arrayFrom = Array.from;
+    let encodes = 0;
+    Array.from = function(source, ...args) {
+      if (source instanceof Uint8Array && source.length === plane.length) encodes++;
+      return arrayFrom.call(this, source, ...args);
+    };
+    try {
+      const identity = world.terrain.terrainIdentity();
+      assert.equal(identity, plane.toString('hex'), 'exact bytes, not a lossy hash');
+      a[0] ^= 255; b[1] ^= 255;
+      for (let draw = 0; draw < 100; draw++) assert.equal(world.terrain.terrainIdentity(), identity);
+      assert.equal(encodes, 1, 'encode once per admitted world, never once per draw');
+    } finally { Array.from = arrayFrom; }
     assert.equal(world.terrain.terrainTile(0, 0), plane[0]);
     const cell = plane.indexOf(16);
     assert.deepEqual(world.terrain.roadOffset(cell % 384, Math.floor(cell / 384)), [1, 0]);

@@ -112,8 +112,28 @@ try {
       HTMLCanvasElement.prototype,
       "height",
     );
-    const verify = { writes: { width: 0, height: 0 }, pointerCalls: 0 };
+    const verify = { writes: { width: 0, height: 0 }, pointerCalls: 0,
+      refreshes: 0, mapDraws: 0, legends: 0, strategicFrames: [] };
     window.__clockVerify = verify;
+    for (const [object, key, counter] of [[app, 'refreshStrategicView', 'refreshes'],
+      [app.view, 'draw', 'mapDraws'], [app.hud, 'buildLegend', 'legends']]) {
+      const original = object[key];
+      object[key] = function(...args) { verify[counter]++; return original.apply(this, args); };
+    }
+    // Real App callbacks remain installed: city AI, native slots, hourly events,
+    // weather and message holds. Check the actual RAF, not an isolated slot pump.
+    const advance = app.clock.advanceFrame;
+    app.clock.advanceFrame = function(dt) {
+      const before = { refreshes: verify.refreshes, mapDraws: verify.mapDraws,
+        legends: verify.legends, hold: this.hold };
+      const result = advance.call(this, dt);
+      if (!before.hold && !this.hold) verify.strategicFrames.push({
+        refreshes: verify.refreshes - before.refreshes,
+        mapDraws: verify.mapDraws - before.mapDraws,
+        legends: verify.legends - before.legends,
+      });
+      return result;
+    };
     Object.defineProperty(canvas, "width", {
       configurable: true,
       get: () => proto.get.call(canvas),
@@ -264,6 +284,10 @@ try {
   assert.equal(uiHoverEvidence.hit, true, "fixture coordinate must be UI");
   assert.equal(uiHoverEvidence.hold, false);
   assert.ok(uiHoverEvidence.tick > tickBeforeUiHover);
+  const batches = await page.evaluate(() => window.__clockVerify.strategicFrames.filter(f => f.refreshes > 1));
+  assert.ok(batches.length > 0, 'full App advances multiple completed slot batches per RAF');
+  assert.ok(batches.every(f => f.mapDraws === 0 && f.legends === 0),
+    'ordinary rule batches do not repeat Canvas/DOM work inside advanceFrame');
 
   // Global UI input locks do not erase exposed-map pointer movement.
   for (const mode of ["settings", "submenu"]) {
@@ -341,6 +365,30 @@ try {
   });
   assert.deepEqual(resized.backing, [1600, 1200]);
   assert.deepEqual(resized.writes, { width: 1, height: 1 });
+  const outsideFrame = await page.evaluate(() => {
+    const app = window.__app, v = window.__clockVerify;
+    const before = [v.mapDraws, v.legends];
+    app.refreshStrategicView();
+    return [v.mapDraws - before[0], v.legends - before[1], app._advancingStrategicFrame];
+  });
+  assert.deepEqual(outsideFrame, [1, 1, false], 'async completions outside RAF retain immediate refresh');
+  const messageBarrier = await page.evaluate(() => {
+    const app = window.__app, v = window.__clockVerify;
+    if (!app.gamebar._canShowStrategicMessage()) throw new Error('message fixture requires an idle UI');
+    v.messageReturns = 0;
+    app.gamebar._strategicMessageQueue.push({ text: '刷新邊界測試', onClose: () => v.messageReturns++ });
+    app._advancingStrategicFrame = true;
+    try {
+      app.refreshStrategicView();
+      return { hold: app.clock.hold, active: app.gamebar._strategicMessageActive, returns: v.messageReturns };
+    } finally { app._advancingStrategicFrame = false; }
+  });
+  assert.deepEqual(messageBarrier, { hold: true, active: true, returns: 0 },
+    'deferring pixels must still take the queued message hold synchronously');
+  await page.waitForFunction(() => window.__app.gamebar.generalCard?.lines?.includes('刷新邊界測試'));
+  await page.mouse.click(400, 400, { button: 'right' });
+  await page.waitForFunction(() => !window.__app.gamebar._strategicMessageActive);
+  assert.equal(await page.evaluate(() => window.__clockVerify.messageReturns), 1);
   assert.deepEqual(errors, []);
 
   // Fresh realm imports the actual generated Trial bundle, not /web sources.
