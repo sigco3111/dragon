@@ -4,9 +4,10 @@
 import { request as httpsRequest } from 'node:https';
 import { MAX_RESOURCE_BYTES } from '../reader/runtimecontract.js';
 
-export function requestHTTPSBytes({ url, method, headers, body = null, maxBytes, timeoutMs, errorPrefix }) {
+export function requestHTTPSBytes({ url, method, headers, body = null, maxBytes, maxErrorBytes = maxBytes, timeoutMs, errorPrefix }) {
   if (!['R2', 'STATIC'].includes(errorPrefix)) throw new TypeError('HTTPS error namespace invalid');
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_RESOURCE_BYTES) throw new TypeError(`${errorPrefix} response budget invalid`);
+  if (!Number.isSafeInteger(maxErrorBytes) || maxErrorBytes < 1 || maxErrorBytes > MAX_RESOURCE_BYTES) throw new TypeError(`${errorPrefix} error response budget invalid`);
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new TypeError(`${errorPrefix} deadline invalid`);
   let parsed;
   try { parsed = new URL(url); }
@@ -27,6 +28,10 @@ export function requestHTTPSBytes({ url, method, headers, body = null, maxBytes,
       req = httpsRequest(url, { method, headers, rejectUnauthorized: true }, res => {
         response = res;
         if (settled) { res.destroy(); return; }
+        // S3 error XML can exceed a tiny missing object's expected length.
+        // Only HTTP errors get their own bounded envelope; successful object
+        // bytes retain the caller's exact, pre-allocation budget.
+        const budget = res.statusCode >= 400 ? maxErrorBytes : maxBytes;
         let length = 0, ended = false, declared = null;
         res.on('error', fail);
         res.on('aborted', () => fail(new Error(`${errorPrefix}_RESPONSE_ABORTED`)));
@@ -35,12 +40,12 @@ export function requestHTTPSBytes({ url, method, headers, body = null, maxBytes,
         if (header !== undefined) {
           if (typeof header !== 'string' || !/^[0-9]+$/.test(header) || !Number.isSafeInteger(Number(header))) { fail(new Error(`${errorPrefix}_RESPONSE_LENGTH`)); return; }
           declared = Number(header);
-          if (declared > maxBytes) { fail(new Error(`${errorPrefix}_RESPONSE_BUDGET`)); return; }
+          if (declared > budget) { fail(new Error(`${errorPrefix}_RESPONSE_BUDGET`)); return; }
         }
         res.on('data', bytes => {
           if (settled) return;
           if (!(bytes instanceof Uint8Array)) { fail(new Error(`${errorPrefix}_RESPONSE_CHUNK`)); return; }
-          if (bytes.byteLength > maxBytes - length) { fail(new Error(`${errorPrefix}_RESPONSE_BUDGET`)); return; }
+          if (bytes.byteLength > budget - length) { fail(new Error(`${errorPrefix}_RESPONSE_BUDGET`)); return; }
           length += bytes.byteLength;
           if (declared !== null && length > declared) { fail(new Error(`${errorPrefix}_RESPONSE_LENGTH`)); return; }
           chunks.push(Buffer.from(bytes));

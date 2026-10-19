@@ -27,6 +27,8 @@ server/available-library.txt -text
 web/index.html text eol=crlf
 tools/stage_editor_trial_assets.mjs text eol=lf
 tools/editor_builtin_source.mjs text eol=lf
+# Linux deployment operator scripts must remain executable by /bin/sh.
+vps/*.sh text eol=lf
 # Server vendor bytes/licenses are SHA-pinned; retain upstream trailing spaces.
 # Keep normal textual diffs, exempt only imported blank-at-eol (not our code).
 server/vendor/jpeg-js/decoder.js -text whitespace=-blank-at-eol

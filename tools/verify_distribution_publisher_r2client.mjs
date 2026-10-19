@@ -11,7 +11,7 @@ import { createDistributionPublisher } from '../vps/distribution-publisher.mjs';
 const original = https.request, objects = new Map(), requests = [];
 const host = '00000000000000000000000000000000.r2.cloudflarestorage.com';
 const prefix = 'test/r2client-contract/', pathPrefix = '/owned-fixture/' + prefix;
-let forcedGetStatus = null, checks = 0;
+let forcedGetStatus = null, errorBytes = null, declareErrorLength = true, checks = 0;
 https.request = (url, options, callback) => {
   assert.equal(options.rejectUnauthorized, true);
   assert.ok(typeof url === 'string' && url.startsWith('https://' + host + pathPrefix));
@@ -37,8 +37,10 @@ https.request = (url, options, callback) => {
       value = { bytes, headers: { etag: '"' + createHash('sha256').update(bytes).digest('hex') + '"', 'content-type': headers['content-type'], 'last-modified': 'Tue, 01 Jan 2030 00:00:00 GMT' } };
       objects.set(path, value); status = 200;
     }
-    const response = new EventEmitter(); response.statusCode = status; response.headers = value?.headers ?? {};
+    const response = new EventEmitter(); response.statusCode = status; response.headers = { ...value?.headers };
+    if (status >= 400 && errorBytes && declareErrorLength) response.headers['content-length'] = String(errorBytes.length);
     callback(response);
+    if (status >= 400 && errorBytes) response.emit('data', errorBytes);
     if (status === 200 && options.method === 'GET') response.emit('data', Buffer.from(value.bytes));
     response.emit('end');
   });
@@ -63,6 +65,18 @@ try {
     await assert.rejects(() => r2.get(prefix + 'control/current.json'), new RegExp('R2 get ' + status)); checks++;
   }
   forcedGetStatus = 404; assert.equal(await r2.get(prefix + 'missing.json'), null); checks++;
+  // A real S3 missing-object XML envelope can exceed the tiny object's budget.
+  // It is not object data; only 404 means absence, not 403/500 or a short 200.
+  errorBytes = Buffer.alloc(512, 120);
+  assert.equal(await r2.get(prefix + 'missing.json', { maxBytes: 1 }), null); checks++;
+  forcedGetStatus = 403;
+  await assert.rejects(r2.get(prefix + 'missing.json', { maxBytes: 1 }), /R2 get 403/); checks++;
+  forcedGetStatus = 200;
+  await assert.rejects(r2.get(prefix + 'control/current.json', { maxBytes: 1 }), /R2_RESPONSE_BUDGET/); checks++;
+  forcedGetStatus = 404; errorBytes = Buffer.alloc(64 * 1024 + 1);
+  for (declareErrorLength of [true, false]) {
+    await assert.rejects(r2.get(prefix + 'missing.json', { maxBytes: 1 }), /R2_RESPONSE_BUDGET/); checks++;
+  }
 } finally { storage.close(); https.request = original; syncBuiltinESMExports(); }
-assert.equal(checks, 8);
-process.stdout.write('distribution actual r2client: 8 groups green; signed requests intercepted in process, no sockets/cloud; resource-verifier seam\n');
+assert.equal(checks, 13);
+process.stdout.write('distribution actual r2client: 13 groups green; signed requests intercepted in process, no sockets/cloud; resource-verifier seam\n');

@@ -1,0 +1,55 @@
+# Merge ONLY into the existing editor-domain server block. Keep its TLS/ACME.
+# Replace RELEASE_SHA256 and install the independently verified public dist at
+# /home/web/html/dragon-editor-bootstrap/RELEASE_SHA256 on the host.
+# Explicit byte serving avoids Workers Static Assets' HTML canonical redirects.
+location ^~ /deployment-assets/static-v1/RELEASE_SHA256/ {
+    alias /var/www/html/dragon-editor-bootstrap/RELEASE_SHA256/;
+    autoindex off;
+    # Explicit representation types; minimal nginx images omit e.g. FLAC/WOFF2.
+    default_type application/octet-stream;
+    types {
+        application/javascript js mjs;
+        application/json json;
+        text/html html;
+        text/css css;
+        text/plain txt;
+        text/markdown md;
+        image/png png;
+        image/jpeg jpg jpeg;
+        image/gif gif;
+        image/svg+xml svg;
+        image/webp webp;
+        image/x-icon ico;
+        font/woff2 woff2;
+        audio/flac flac;
+        audio/mpeg mp3;
+        audio/wav wav;
+        audio/midi mid;
+    }
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    add_header X-Content-Type-Options nosniff always;
+}
+# The installed available library currently has stale consumer fingerprints.
+# Do not approve it or issue new Trial sessions until its independent review.
+location = /api/admin/library/install {
+    default_type application/json;
+    add_header Cache-Control no-store always;
+    return 503 '{"error":"LIBRARY_REVIEW_REQUIRED"}';
+}
+location ~ ^/api/games/[^/]+/trials$ {
+    default_type application/json;
+    add_header Cache-Control no-store always;
+    return 503 '{"error":"LIBRARY_REVIEW_REQUIRED"}';
+}
+# Deployment maintenance gates: remove only after the publication/deletion
+# requirements are independently satisfied. Never use HTTP liveness as that gate.
+location ~ ^/api/(publish|unpublish)$ {
+    default_type application/json;
+    add_header Cache-Control no-store always;
+    return 503 '{"error":"PUBLICATION_NOT_READY"}';
+}
+location ~ ^/api/games/[^/]+/(listing|restriction/clear|deletion.*)$ {
+    default_type application/json;
+    add_header Cache-Control no-store always;
+    return 503 '{"error":"PUBLICATION_NOT_READY"}';
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Dragon editor local publication state every minute
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=1m
+AccuracySec=15s
+Unit=dragon-editor-publication-monitor.service
+
+[Install]
+WantedBy=timers.target

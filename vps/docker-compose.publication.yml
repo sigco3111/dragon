@@ -1,0 +1,59 @@
+# Install an allowlisted source package at ./app; keep secrets outside it.
+# HTTP health is liveness ONLY; distribution faults need intervention.
+name: dragon-editor-publication
+services:
+  editor:
+    build:
+      context: ./app
+      dockerfile: vps/Dockerfile.publication
+    image: dragon-editor-publication:${EDITOR_DEPLOYMENT_ID:?}
+    user: "1000:1000"
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 1536m
+    cpus: 1.5
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777
+    env_file:
+      - ./publication.env
+    environment:
+      EDITOR_DATA_DIR: /data
+      EDITOR_LISTEN_HOST: 0.0.0.0
+      EDITOR_LISTEN_PORT: "8788"
+    ports:
+      - "127.0.0.1:8788:8788"
+    volumes:
+      - ./publication-data:/data
+    restart: unless-stopped
+    stop_grace_period: 5m
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - |-
+          import { get } from 'node:http';
+          const q = get({
+            hostname: '127.0.0.1', port: 8788, path: '/api/health',
+            headers: { Host: new URL(process.env.EDITOR_ORIGIN).host }
+          }, r => {
+            r.resume();
+            r.on('end', () => process.exit(r.statusCode === 200 ? 0 : 1));
+            r.on('error', () => process.exit(1));
+          });
+          q.on('error', () => process.exit(1));
+          q.setTimeout(4000, () => q.destroy());
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

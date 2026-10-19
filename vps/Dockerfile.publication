@@ -1,0 +1,13 @@
+# Full shared application, NOT the historical authentication sidecar.
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+WORKDIR /app
+COPY server/ ./server/
+COPY vps/ ./vps/
+COPY reader/ ./reader/
+# Runtime copy adapters plus the library's independently fingerprinted consumer.
+COPY tools/editor_trusted_copy.mjs tools/editor_builtin_source.mjs tools/editor_entity_source.mjs tools/stage_editor_trial_assets.mjs ./tools/
+COPY web/ ./web/
+USER node
+EXPOSE 8788
+STOPSIGNAL SIGTERM
+CMD ["node", "vps/publication-main.mjs"]

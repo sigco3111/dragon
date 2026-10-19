@@ -78,6 +78,21 @@ try {
   assert.equal(options.r2.bucket, 'dragon'); assert.equal(options.prefix, 'test/owned-cli/'); assert.equal(options.port, 8788);
   assert.ok(Object.isFrozen(options) && Object.isFrozen(options.env) && Object.isFrozen(options.r2));
   assert.equal(existsSync(env.EDITOR_DATA_DIR), false); assert.equal(calls, 0); check();
+  for (const key of ['EDITOR_INSTALLED_SOURCE_ROOT', 'EDITOR_AVAILABLE_LIBRARY_ROOT']) {
+    const descriptor = { registryId: 'owned-fixed-source-1', root: { sha256: 'e'.repeat(64), byteLength: 1024 } };
+    const encoded = JSON.stringify(descriptor);
+    const staged = parsePublicationEnvironment({ ...env, [key]: encoded });
+    assert.equal(staged.env[key], encoded); assert.ok(Object.isFrozen(staged.env)); check();
+    for (const invalid of ['', 'null', '[]', '{}', '{', JSON.stringify({ ...descriptor, extra: true }),
+      JSON.stringify({ ...descriptor, registryId: '../escape' }),
+      JSON.stringify({ ...descriptor, root: { sha256: 'E'.repeat(64), byteLength: 1 } }),
+      JSON.stringify({ ...descriptor, root: { sha256: 'e'.repeat(64), byteLength: 0 } }),
+      JSON.stringify({ ...descriptor, root: { sha256: 'e'.repeat(64), byteLength: 1024 * 1024 + 1 } }),
+      JSON.stringify({ ...descriptor, root: { ...descriptor.root, extra: true } }), encoded + ' '.repeat(4096)]) {
+      assert.throws(() => parsePublicationEnvironment({ ...env, [key]: invalid })); check();
+    }
+  }
+  assert.equal(calls, 0); assert.equal(existsSync(env.EDITOR_DATA_DIR), false);
   for (const key of ['EDITOR_ORIGIN', 'EDITOR_REQUEST_KEY', 'EDITOR_DEFAULT_PASSWORD', 'EDITOR_DATA_DIR', 'EDITOR_LISTEN_HOST', 'EDITOR_LISTEN_PORT', 'EDITOR_DRAIN_INTERVAL_MS', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PREFIX', 'STATIC_ORIGIN', 'STATIC_RELEASE_SHA256', 'STATIC_SOURCE_SHA256']) {
     const bad = { ...env }; delete bad[key]; assert.throws(() => parsePublicationEnvironment(bad)); check();
   }

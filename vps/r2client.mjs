@@ -13,7 +13,7 @@ function call({ accountId, accessKeyId, secretAccessKey, method, key, query = {}
   const signed = signR2({ accountId, accessKeyId, secretAccessKey, method, key, query, headers, payloadSha256: payloadSha });
   return requestHTTPSBytes({
     url: `https://${signed.host}${signed.path}`, method,
-    headers: { ...signed.headers, ...headers }, body, maxBytes, timeoutMs, errorPrefix: 'R2',
+    headers: { ...signed.headers, ...headers }, body, maxBytes, maxErrorBytes: 64 * 1024, timeoutMs, errorPrefix: 'R2',
   });
 }
 

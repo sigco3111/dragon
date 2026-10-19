@@ -1,0 +1,27 @@
+# Dedicated full-editor build context. Real data/credentials live outside app/.
+**
+!server/
+!server/**
+!vps/
+!vps/**
+!reader/
+!reader/**
+!web/
+!web/**
+!tools/
+!tools/editor_trusted_copy.mjs
+!tools/editor_builtin_source.mjs
+!tools/editor_entity_source.mjs
+!tools/stage_editor_trial_assets.mjs
+**/node_modules
+**/.git
+**/.dragon-analysis
+**/dist
+**/publication-data
+**/auth-data
+**/SAVE.DAT
+**/*.env
+**/.env
+**/.env.*
+**/*.key
+**/*.pem

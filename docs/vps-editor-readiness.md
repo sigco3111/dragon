@@ -177,8 +177,18 @@ HTTPS仍为严格进程内替身：232对象是当前229份JS、CSS、一项自�
 
 ## 5. 剩余与连接信息
 
-- [R2接线维护源](r2-player-connection.md)记录后继实际共同Request／20章编译／预上传与永久幂等验证，不再把它们全称未接。可选冻结生产者及发布共同提交已有实际本地验证，§4.4已接Node构造选项，§4.6已接受信HTTP／drainer生命周期，§4.7已关闭冻结模式旧玩家读取面，§4.8已有独立CLI／信号退出／状态事件的本地验证；玩家正式入口／保存身份后继已取得本地接线证据（R2§2.53），§4.9补了Linux进程边界；实际生产配置／监督告警、备份恢复、版本清理及完整资源闭包仍缺。50表初始化不等于这些接线完成；七条历史删除lane后继复验范围见R2接线§2.17，不冒物理内容清理完成。
+- [R2接线维护源](r2-player-connection.md)记录后继实际共同Request／20章编译／预上传与永久幂等验证，不再把它们全称未接。可选冻结生产者及发布共同提交已有实际本地验证，§4.4已接Node构造选项，§4.6已接受信HTTP／drainer生命周期，§4.7已关闭冻结模式旧玩家读取面，§4.8已有独立CLI／信号退出／状态事件的本地验证；玩家正式入口／保存身份后继已取得本地接线证据（R2§2.53），§4.9补了Linux进程边界；后继§6已完成受限容器配置、同机停服备份／隔离恢复及journal巡检（实际收据见journal§12）；异地灾备／外部告警、版本清理及完整资源闭包仍缺。50表初始化不等于这些接线完成；七条历史删除lane后继复验范围见R2接线§2.17，不冒物理内容清理完成。
 - 作者发布／Trial的公共地图读取已按上节修复；作者新建和公共库／引擎角色读取仍需独立核验，不放宽管理员原版复制或旧私有固定库边界。后继 TEMPLATE-PORTRAIT-1 已修 R2运行索引拒绝 `p` 模板ID的问题；完整621项画像元数据和实际workerd固定角色路径已验证，详见[R2接线维护源](r2-player-connection.md#3-本地验证不是端到端上线证明)。这不替代作者创建或完整浏览器发布认证。
-- Compose／反向代理／进程监督装配、受控来源和库安装、两端引擎修订门、Linux隔离／备份／恢复尚未验证。历史`vps/server-main.mjs`仍仅auth sidecar；新的显式入口为§4.8的`vps/publication-main.mjs`，未自动替换既有部署或接触其数据。
-- 约定域 `dragon-editor.720108.xyz`、隔离目录 `/srv/dragon-editor`，不得影响 `/home/web` 现有栈；详情见[平台方案](editor-vps-cloudflare-plan.md)。当前文档和本机 SSH config 未提供该 VPS 的目标 IP／SSH 用户／端口／密钥选择，已向用户询问；没有猜测目标或尝试无关主机。
-- 尚未提交／推送／云部署／VPS部署。SSH 信息缺口不阻塞其余本地工作；达到完整发布条件后按用户授权继续，而不是以本文切片通过提前交付上线。
+- 历史`vps/server-main.mjs`仍仅auth sidecar；新的显式入口为§4.8的`vps/publication-main.mjs`。后继受限容器装配与运维边界见§6，当前执行结果统一查journal，不以历史本地测试冒生产成绩。
+- 约定域 `dragon-editor.720108.xyz`、隔离目录 `/srv/dragon-editor`，保留 `/home/web` 现有栈；详情见[平台方案](editor-vps-cloudflare-plan.md)。用户已提供连接／凭据并核对主机指纹；只读基线见[journal §11](checkpoint-journal.md#11-编辑器vps部署前只读盘点)，实际部署接续见[journal §12](checkpoint-journal.md#12-受限编辑器容器部署)。SSH信息已不再阻塞，服务可访问不解除完整发布条件。
+
+## 6. 受限容器装配与运维边界
+
+- 使用[`Dockerfile.publication`](../vps/Dockerfile.publication)和[独立Compose](../vps/docker-compose.publication.yml)，不是auth sidecar。只打包受信源码；专用dockerignore排除凭据／运行数据／缓存。`publication.env`在`app/`外由root以0600管理，数据目录由服务uid1000以0700拥有；只读根、去能力、no-new-privileges、资源限额及宿主loopback端口。已有probe保留，仅切换编辑器域upstream，不更改其它站点。Compose健康检查使用原生HTTP显式传受信Host；不要换成会丢弃该Host的fetch或放宽服务Host校验。
+- 静态预检仍要求独立可信清单／源码树SHA及逐文件全量读回。Workers HTML规范化跳转不能靠放宽重定向门解决；[Nginx片段](../vps/nginx.publication.locations.conf.example)在编辑器域提供版本化、精确MIME的公开构建字节。原始创作源、私有对象、数据库和env不能放进该alias目录。两端核心一致与素材库消费者指纹是不同检查。
+- 可选`EDITOR_INSTALLED_SOURCE_ROOT`／`EDITOR_AVAILABLE_LIBRARY_ROOT`只转交操作员装配的严格描述；共享目录仍校验固定角色／摘要并要求正常管理员API登记，不自动批准。当前可用库的`main.js`、`render/mapview.js`、`render/disasterpresentation.js`、`render/weatherpresentation.js`、`ui/gamebar.js`消费者摘要过期，必须审差异并建立新身份，不得覆写旧登记或改预期hash自证。未完成前不装配／登记该库，Nginx关闭其安装及新Trial入口。
+- 同一Nginx片段还关闭发布／上下架／限制解除／删除入口；完整新政策联合复验、物理清理和作者准入未闭合前不得移除。它是部署维护门，不是机制、认证替代品或产品放行证；服务原始loopback端口不得另行公开。
+- [`backup-publication.sh`](../vps/backup-publication.sh)仅限root在固定部署目录执行：只停止本项目，等待退出后将SQLite与全部私有对象按同一边界备份，校验tar及独立副本的SQLite完整性，再恢复原先运行的本项目。只读数据库检查允许修改独立恢复副本的SQLite旁文件，不碰在线库。启动重做严格归档预检，不能承诺立即恢复服务。
+- 备份位于root私有目录，含凭据，**只是同机恢复材料，不是异地灾备、供应商快照或完整删除保留策略**。当前不自动轮转历史草稿备份；后续物理删除必须纳入全部备份引用。真实恢复须先隔离验证并审SQL权威／远端根代次，不倒写R2根、不自动清锁、不覆盖来源不明数据。
+- [`monitor-publication.sh`](../vps/monitor-publication.sh)只读检查容器、loopback健康及最近白名单生命周期／分发事件；blocked／faulted报错，不自动解锁。systemd timer的journal记录仍需外部告警接收端；HTTP健康不证明发布就绪、当前根、素材完整或备份新鲜。
+- 反代切换只修改该域upstream，在`nginx -t`通过后reload；保留probe和切换前站点配置可立即回退HTTP入口，**回退入口不回滚SQL／R2／新用户数据**。每次生产状态、恢复验证和未完成项以journal的独立批次收据为准。

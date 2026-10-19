@@ -22,6 +22,23 @@ export function parsePublicationEnvironment(input) {
   for (const key of ['EDITOR_SESSION_MS', 'EDITOR_IDLE_MS', 'EDITOR_RATE_MS', 'EDITOR_ACCOUNT_LIMIT', 'EDITOR_SOURCE_LIMIT']) {
     if (input[key] !== undefined) env[key] = String(integer(key, Number.MAX_SAFE_INTEGER));
   }
+  // Optional operator-staged, private fixed-source roots. These are not author
+  // uploads or approvals: the shared catalogs still verify every pinned byte
+  // and require an authenticated admin to register them through the normal API.
+  for (const key of ['EDITOR_INSTALLED_SOURCE_ROOT', 'EDITOR_AVAILABLE_LIBRARY_ROOT']) {
+    if (input[key] === undefined) continue;
+    const value = required(key);
+    let descriptor;
+    try { descriptor = JSON.parse(value); } catch { throw new TypeError(`invalid ${key}`); }
+    const exact = (object, keys) => object && !Array.isArray(object) && typeof object === 'object' &&
+      Object.keys(object).length === keys.length && keys.every(name => Object.hasOwn(object, name));
+    if (value.length > 4096 || !exact(descriptor, ['registryId', 'root']) ||
+        typeof descriptor.registryId !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(descriptor.registryId) ||
+        !exact(descriptor.root, ['sha256', 'byteLength']) || typeof descriptor.root.sha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(descriptor.root.sha256) || !Number.isSafeInteger(descriptor.root.byteLength) ||
+        descriptor.root.byteLength < 1 || descriptor.root.byteLength > 1024 * 1024) throw new TypeError(`invalid ${key}`);
+    env[key] = value;
+  }
   // There is no VPS player host in this deployment, even if a legacy env file
   // still contains one. Do not silently accept an incompatible deployment mode.
   if (input.EDITOR_PLAY_ORIGIN !== undefined && input.EDITOR_PLAY_ORIGIN !== '') throw new TypeError('legacy play origin unsupported');
