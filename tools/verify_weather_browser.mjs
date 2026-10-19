@@ -95,12 +95,13 @@ try {
       Math.max(...probe.serials) - Math.min(...probe.serials) >= 32 &&
       new Set(probe.frames.filter(Number.isInteger)).size >= 3;
   }, null, { timeout: 15000 });
-  const slowBudget = await page.evaluate(() => {
+  const slowBudget = await page.evaluate(async () => {
     window.__weatherSlowRestore();
+    const { MAX_TICKS_PER_FRAME } = await import('./src/game/clock.js');
     const serials = window.__weatherRunning.serials;
-    return serials.slice(1).every((serial, i) => serial - serials[i] <= 8);
+    return serials.slice(1).every((serial, i) => serial - serials[i] <= MAX_TICKS_PER_FRAME);
   });
-  assert.equal(slowBudget, true, 'visible slow frames discard backlog, at most eight updates');
+  assert.equal(slowBudget, true, 'visible slow frames respect the shared budget and discard excess backlog');
 
   const evidence = await page.evaluate(async () => {
     const app = window.__app;

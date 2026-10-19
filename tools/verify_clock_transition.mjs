@@ -15,9 +15,8 @@ assert.equal(soundDriver.subarray(0x8d7 - 0x100, 0x8e4 - 0x100).toString("hex"),
 assert.equal(ki.subarray(0x1dd1 + 0x200, 0x1dec + 0x200).toString("hex"),
   "a3f00ce88135fe06f00cc606f30c00fe06f30cc606f20c00e88b75");
 assert.equal(STRATEGIC_TIMER_MS, 1000 * 256 * 16 / 1193182);
-assert.deepEqual(STRATEGIC_SPEEDS.slice(0, 4), [4, 3, 2, 1].map(n => n * STRATEGIC_TIMER_MS));
-assert.equal(MAX_TICKS_PER_FRAME, 8, "Web budget: at most one 128-slot sweep per visible frame");
-assert.equal(STRATEGIC_SPEEDS[4], 1000 / (60 * 8), "Web top-speed ceiling, not original zero-wait hardware");
+assert.deepEqual(STRATEGIC_SPEEDS, [6.5, 5.0, 4.8, 1.8, 1.0], "user-approved Web intervals, not DOS timer rounding");
+assert.equal(MAX_TICKS_PER_FRAME, 16, "two slot sweeps; at most one normal period-2/3 movement per RAF");
 
 // Both entry points must consume the same source, including the generated
 // server trial bundle. Read only these explicit source/bundle paths; no saves.
@@ -48,8 +47,9 @@ for (const speed of [0, 1, 2, 3, 4]) {
     base.advanceFrame(1000 / 60);
     trial.advanceFrame(1000 / 60);
   }
-  const expected = 10000 / STRATEGIC_SPEEDS[speed];
+  const expected = Math.min(10000 / STRATEGIC_SPEEDS[speed], 600 * MAX_TICKS_PER_FRAME);
   assert.ok(Math.abs(base.strategicTickSerial - expected) < 1.001);
+  if (speed === 4) assert.equal(base.strategicTickSerial, 9600, "60Hz top speed doubles the previous 4800 updates/10s");
   if (speed > 0) assert.ok(STRATEGIC_SPEEDS[speed] < STRATEGIC_SPEEDS[speed - 1]);
   assert.equal(trial.strategicTickSerial, base.strategicTickSerial);
   assert.deepEqual(trial.serialize(), base.serialize());
@@ -96,7 +96,7 @@ for (const ClockType of [Clock, TrialStrategicClock]) {
   }
   c.hold = false;
   gate.canAdvanceRules = true;
-  c.advanceFrame(c.currentStep * 8);
+  c.advanceFrame(c.currentStep * MAX_TICKS_PER_FRAME);
   assert.equal(c.dayProgress(), 0);
 }
 for (const hz of [30, 60, 144]) {
@@ -105,9 +105,11 @@ for (const hz of [30, 60, 144]) {
   for (let frame = 0; frame < hz; frame++) {
     const before = sampled.strategicTickSerial;
     sampled.advanceFrame(1000 / hz);
-    assert.ok(sampled.strategicTickSerial - before <= 8);
+    assert.ok(sampled.strategicTickSerial - before <= MAX_TICKS_PER_FRAME);
   }
-  assert.ok(sampled.strategicTickSerial <= 480, "high refresh never accelerates top speed without bound");
+  const expected = Math.min(1000, hz * MAX_TICKS_PER_FRAME);
+  assert.ok(Math.abs(sampled.strategicTickSerial - expected) < 1.001,
+    "30/60/144Hz respect both the frame budget and the 1000 updates/s ceiling");
 }
 
 let days = 0;
@@ -168,7 +170,7 @@ assert.equal(transitionClock.sub, 1, "仅当前0x1D0B完成，后续日历追赶
 assert.equal(transitionClock._acc, 0);
 
 // 浏览器RAF不得追赶整帧欠账；即使最高速遇到大dt，每次Canvas提交前
-// 单个RAF至多执行MAX_TICKS_PER_FRAME次（60Hz喂饱最高速），超额欠账丢弃；
+// 单个RAF至多执行MAX_TICKS_PER_FRAME次（60Hz最高约960次/秒），超额欠账丢弃；
 // hold在每次更新后检查，任一接战即停（advanceFrame内单测用hold变体另覆盖）。
 let frameTicks = 0;
 const frameClock = new Clock({

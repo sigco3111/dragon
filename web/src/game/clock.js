@@ -15,21 +15,16 @@ export const STRATEGIC_SPEED_LABELS = [
   "最高速",
 ];
 // YNSOUND:08D7/0930..093D：PIT除数256，每16 IRQ调用KI:0356。
-// KI:1DF8以CFA=4/3/2/1/0等待累计回调；非零档按此关系投影到墙钟。
+// KI:1DF8以CFA=4/3/2/1/0等待累计回调；保留原时基证据，不作为Web档位。
 export const STRATEGIC_TIMER_MS = (1000 * 256 * 16) / 1193182;
 
-// Web显示预算（非DOS机制）：每RAF最多一次128槽轮转，正常周期2/3
-// 的动作至少跨2/3个显示帧；迟到时减速，不用批量跳点追赶。
-// 原最高档无等待；现代上限按60Hz×8更新设定，高刷也不无限加速。
-// 依据及旧三倍速政策撤换见 docs/re-notes-strategic-time.md §6。
-export const MAX_TICKS_PER_FRAME = 8;
-export const STRATEGIC_SPEEDS = [
-  4 * STRATEGIC_TIMER_MS,
-  3 * STRATEGIC_TIMER_MS,
-  2 * STRATEGIC_TIMER_MS,
-  STRATEGIC_TIMER_MS,
-  1000 / (60 * MAX_TICKS_PER_FRAME),
-];
+// Web产品决定：用户指定五档墙钟间隔（ms），不是原DOS等待值。
+// 每RAF最多两次128槽轮转；正常周期2/3动作相隔16/24次主更新，
+// 因而单帧至多提交一个常规道路步点。迟到时丢超额债务，不跳点追赶。
+// 60Hz最高约960更新/秒，高刷仍受1.0ms档位约束（1000更新/秒）。
+// 依据及旧速度政策撤换见 docs/re-notes-strategic-time.md §6。
+export const MAX_TICKS_PER_FRAME = 16;
+export const STRATEGIC_SPEEDS = [6.5, 5.0, 4.8, 1.8, 1.0];
 
 export class Clock {
   /**

@@ -141,7 +141,7 @@ try {
     const draw = app.view._drawEngagement;
     app.view._drawEngagement = function (ctx, x, y, frame) {
       if (state.frames.at(-1)?.frame !== frame)
-        state.frames.push({ t: performance.now(), frame });
+        state.frames.push({ t: performance.now(), frame, countdown: state.army._engagement.countdown });
       draw.call(this, ctx, x, y, frame);
     };
   });
@@ -180,7 +180,10 @@ try {
     });
     assert.deepEqual(run.records.map(r => r.tick), period === 2 ? [17, 33, 49, 65, 81] : [25, 49, 73]);
     assert.ok(run.records.every(r => r.ok), "real unlocked WebAudio accepts every due request");
-    assert.ok(new Set(run.frames.map(r => r.frame)).size === 4, "all four rule phases are displayed");
+    // At the new 16-update RAF cap, a frame may span two own-slot visits.
+    // Verify exact sampled rule phases, not invented replay of skipped phases.
+    assert.ok(run.frames.every(r => r.frame === (r.countdown & 3)), "display matches the actual rule countdown");
+    assert.ok(new Set(run.frames.map(r => r.frame)).size >= 2, "contact remains visibly animated at the highest speed");
     assert.equal(run.countdown, 1);
     assert.deepEqual(run.rng, run.initialRng);
     const median = (items) =>

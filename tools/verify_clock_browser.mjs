@@ -146,9 +146,7 @@ try {
   });
   assert.deepEqual(initial.backing, [2048, 1536]);
   assert.equal(initial.dpr, 2);
-  assert.deepEqual(initial.steps, [
-    ...[4, 3, 2, 1].map(n => n * (1000 * 4096 / 1193182)), 1000 / 480,
-  ]);
+  assert.deepEqual(initial.steps, [6.5, 5.0, 4.8, 1.8, 1.0]);
   assert.equal(
     initial.rngStreamReused,
     true,
@@ -387,10 +385,12 @@ try {
     return { steps: STRATEGIC_SPEEDS, cap: MAX_TICKS_PER_FRAME, counts };
   });
   assert.deepEqual(trialEvidence.steps, initial.steps);
-  assert.equal(trialEvidence.cap, 8);
+  assert.equal(trialEvidence.cap, 16);
   for (let speed = 0; speed < 5; speed++) {
-    assert.ok(Math.abs(trialEvidence.counts[speed] - 10000 / initial.steps[speed]) < 1.001);
+    const expected = Math.min(10000 / initial.steps[speed], 600 * trialEvidence.cap);
+    assert.ok(Math.abs(trialEvidence.counts[speed] - expected) < 1.001);
   }
+  assert.equal(trialEvidence.counts[4], 9600, "generated Trial reaches doubled 60Hz top-speed throughput");
   assert.deepEqual(errors, []);
   await trialContext.close();
   process.stdout.write(

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { startBrowserTestServer } from "./browser_test_server.mjs";
+import { MAX_TICKS_PER_FRAME } from "../web/src/game/clock.js";
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "C:/Users/fczll/AppData/Roaming/npm/node_modules/@playwright/cli/node_modules/playwright");
 const server = await startBrowserTestServer();
@@ -156,7 +157,7 @@ try {
       app.clock.onMonthEnd = null;
       const state = window.__nativeMarch = { rows: [], ticks: [], sounds: 0, contacts: 0,
         running: false, done: false, pause: false, paused: false, contact: false, removed: false,
-        origin: 0, rng: null };
+        origin: 0, rng: null, startedAt: 0, elapsedMs: 0 };
       const draw = app.view._drawMarchingIcon;
       app.view._drawMarchingIcon = function(ctx, x, y, style, frame) {
         if (state.running) {
@@ -199,7 +200,7 @@ try {
         app.engagementFx.reset();
         Object.assign(state, { rows: [], ticks: [], sounds: 0, contacts: 0, running: true,
           done: false, pause, paused: false, contact, removed: false, origin: app.clock.strategicTickSerial,
-          rng: app.originalRng.snapshot() });
+          rng: app.originalRng.snapshot(), startedAt: performance.now(), elapsedMs: 0 });
         app.clock.strategicSpeed = speed;
         app.clock._acc = 0;
         app.gamebar.settingsOpen = false;
@@ -228,6 +229,7 @@ try {
           app.gamebar.syncClock();
         }
         if (tick >= 160) {
+          state.elapsedMs = performance.now() - state.startedAt;
           state.done = true; state.running = false;
           app.gamebar.settingsOpen = true; app.gamebar.syncClock();
         }
@@ -255,7 +257,7 @@ try {
       const trace = await page.evaluate(() => {
         const state = window.__nativeMarch, app = window.__app;
         return { rows: state.rows, ticks: state.ticks, sounds: state.sounds, contacts: state.contacts,
-          initialRng: state.rng, rng: app.originalRng.snapshot(),
+          elapsedMs: state.elapsedMs, initialRng: state.rng, rng: app.originalRng.snapshot(),
           contactEnded: !app.scenario.legions[0]._engagement, failure: Boolean(app._strategicBattleFailure) };
       });
       assert.equal(trace.failure, false);
@@ -271,8 +273,9 @@ try {
         }
         for (const tick of changes) {
           assert.equal(addresses[tick - 1] - addresses[tick - 2], 4, 'native action consumes one original point');
-          if (tick < 150) assert.ok(visible.some(row => row.tick >= tick && row.tick < tick + 8),
-            'each army point submission has a Canvas draw within one slot sweep');
+          if (tick < 160 - MAX_TICKS_PER_FRAME) assert.ok(
+            visible.some(row => row.tick >= tick && row.tick < tick + MAX_TICKS_PER_FRAME),
+            'each army point submission has a Canvas draw within the shared frame budget');
         }
         assert.ok(changes.length >= 5);
       }
@@ -281,7 +284,7 @@ try {
         assert.ok(trace.contacts > 0); assert.equal(trace.sounds, 1);
         assert.equal(trace.contactEnded, true, 'removed native opponent cancels contact and movement resumes');
       }
-      runs.push({ run, draws: trace.rows.length, sounds: trace.sounds });
+      runs.push({ run, draws: trace.rows.length, sounds: trace.sounds, elapsedMs: Math.round(trace.elapsedMs) });
     }
     process.stdout.write(`native march RAF five speeds, two periods, hold/speed/cancel: ${JSON.stringify(runs)}\n`);
   }

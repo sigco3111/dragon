@@ -6,10 +6,10 @@
 
 - 原生 JavaScript ES Modules＋Canvas 2D 重写1995 DOS《臥龍傳》，无模拟器、框架、npm运行时依赖；完整`web/`可直接静态服务，部署打包另有工具。
 - 仓库`E:/Dragon/web-port`；原程序`E:/Dragon/Dragon/`，官方基准`E:/Dragon/原版/`，改版库`上/中/下/后/`。自动化禁止访问真实`SAVE.DAT`、用户存档/profile；只用内存、mock或新隔离profile。
-- 软件版本由`VERSION`维护（当前`0.1.7`），规则基线`web-0.1.1`；游戏正式版本`1.n`与软件版本、source修订、程序摘要相互独立。
+- 软件版本以`VERSION`为准，规则基线`web-0.1.1`；游戏正式版本`1.n`与软件版本、source修订、程序摘要相互独立。
 - fresh／restore走v2原生道路与固定表，生产v1路径已退役；未知消费点fail-closed，保已提交前缀、hold和禁存。不凭现代码、体验或测试补公式，不宣称完整战役已经认证。
-- 当前主线是自建游戏发布、当前版本唯一政策及VPS落地。共同业务、冻结分发、正式玩家入口、程序绑定资源、本地存档清理与旧会话退休已接线；**完整发布条件仍未满足**，见[R2接线](docs/r2-player-connection.md)和[VPS就绪审计](docs/vps-editor-readiness.md)。Workers已取得一次真实部署成功，不能当作所有后续提交或自建游戏链上线证明。
-- 用户要求控制边界、避免过度工程化和过量辅助测试；优先最小修改、复用现有验证。保留他人改动；commit／push分别需明确授权，目标显式使用GitHub `github`，不误推Gitea `origin`。不提交秘密、缓存、临时报告、截图或本地运行数据。
+- 当前主线：自建游戏发布、当前版本唯一政策及VPS落地。共同业务／冻结分发／正式玩家入口／程序绑定资源／旧档清理与旧会话退休已接线，**完整发布仍未就绪**；尚需新政策联合复验、物理回收／作者准入审计及生产装配。维护源：[R2接线](docs/r2-player-connection.md)、[VPS就绪](docs/vps-editor-readiness.md)；本轮修改、提交／部署状态和连接阻塞只记journal。
+- 优先最小修改、复用现有验证，不堆框架或辅助测试。保留他人改动；commit／push分别需明确授权，推送显式使用GitHub `github`，不误推Gitea `origin`。不提交秘密、缓存、临时报告、截图或本地运行数据。
 
 ## 2. 架构与数据流
 
@@ -53,7 +53,7 @@
 
 - 内置游戏始终可用，管理员也不能经编辑器修改／下架／删除；独立完整复制不含对局／存档。普通新建仅复制地图／道路／中立据点，不复制人物／势力／章节；复制固定修订，不追踪模板更新。副本不改原件或共享资源。
 - 作者仅编辑／发布自己的内容；管理员全局上下架、限制及删除，但不能替他人编辑／发布。停用账户不自动下架。编辑器桌面繁体界面，不转换用户文本，允许常规保存／取消／关闭；玩家界面仍遵循游戏交互。
-- 内置／正式自建／Trial共享源合同、编译、规则／AI／地图引擎，稳定实体ID与原运行槽分开。VPS与Cloudflare是同引擎两份副本，更新须两端分别验证；部署版本不同步时不开放新Trial／发布，不热换正在运行的数据。
+- 内置／正式自建／Trial共享源合同、编译及规则／AI／地图引擎，稳定实体ID与原运行槽分开。VPS／Cloudflare两端分别验证；引擎版本不同步时不开放新Trial／发布，不热换运行数据。
 - 草稿可不完整；试玩／发布必须验证所需依赖，发布绑定精确已保存修订，陈旧写入拒绝。发布与上架分离；版本`1.0、1.1…1.10`按整数序号递增，不回滚／复用。公开公告历史不授历史游戏准入。
 - **新版上线，旧游戏版本全部作废**：已确认更新的旧对局停止且禁存；旧档提示不能加载并自动清除，新版保存与同游戏旧档清除同事务，失败不先删旧档。同版其它槽／其它游戏保留；缺身份、损坏、网络失败、下架、删除不能冒充版本更新。仅下架且未更新的会话可继续；明确整游戏删除后提示并确认回初始页。旧“选择A续玩／单档确认清理”政策已撤销。
 - Trial固定已保存、校验过的草稿快照，仅窗口内存，不读写正式存档／回写草稿／发布；可选完整章但不能跳过共享依赖。断网暂停，认证明确失效终止，重新登录须新开Trial；新窗口不等于安全隔离。
@@ -63,7 +63,7 @@
 - 无关闭按钮、羽扇唯一开关、右键逐层回退、地图锁／行军目标指示例外、强制多步右键无效，按[全局约定](../AGENTS.md)及[军师UI技能](../.agents/skills/re-ui-advisor-menu/SKILL.md)。菜单／模态／场景／战斗／鼠标hold取并集，不用速度档模拟暂停；地图鼠标移动暂停，静止1秒释放自己的hold。
 - 新局／标题读档后默认展开军师条、势力信息、小地图，未选子项不额外锁图。列表右侧滚动条、24px表头、选中`#4a7828`；排序绑定原对象。
 - 标题只用一个游戏下拉框，默认“卧龙传·三国制霸之计（内置）”，自建显示名称／版本，公告入口保留；远端目录失败不阻断内置游戏。姓名／字号确认后加载期间保持只读可见并提示等待，不伪造进度百分比，见[开场合同](docs/opening-scene.md)。
-- 战略Clock现行时序：非零四档按原回调周期×4/3/2/1（约13.731/10.299/6.866/3.433ms），最高档Web预算2.083ms、每RAF最多8更新，变速保留子步相位、每步查hold、不补后台债务；取代旧统一三倍速／36更新。玩家与Trial共用Clock；战术不变。原证与现代差异见[战略时序](docs/re-notes-strategic-time.md)。
+- 战略Clock（用户指定的Web产品决定）：五档6.5／5.0／4.8／1.8／1.0ms，每RAF最多16更新；60Hz预算上限约960更新/秒，高刷上限1000，实际受负载／hold影响。变速保留子步相位、每步查hold、不补后台债务；玩家与Trial共用，战术独立。原证与现代差异见[战略时序](docs/re-notes-strategic-time.md)。
 - 军团按`8×movePeriod`插值，六队全骑周期2、其余3；城／军团中心`(16x+8,16y+8)`，不按道路视觉补偿。段内X优先定向，段末用权威方向／驻守帧；只读绘制。接战按原+03相位显示、原生道路到期且count>1时请求声音；无固定墙钟节拍或共享五响上限，不补播。详见[行军表现](docs/march-presentation-fixes.md)、[锚点原证](docs/re-notes-map-marker-anchor.md)。
 - CITY-4064-WEB-1是明确批准的Web差异：四候选且随机低两位0时选第4项、不额外耗RNG，不模拟未知动态外栈；其它规则不放宽，见[原证边界](docs/re-notes-march-pathfinding.md#3156-p394064-外栈读取闭合为永久工程边界)。
 - 云雨原八帧PNG由32槽timer／dirty及显式2533准备驱动，位置按战略serial／对象interval插值；无独立100ms节拍，hold冻结。季节按换季月前16日渐变，月结消息返回前不推进day1／季节／对象准备。Canvas仅尺寸／DPR变时重建，绘制只读；细节见[表现合同](docs/presentation-modernization.md)和[战略时序](docs/re-notes-strategic-time.md)。
@@ -113,7 +113,7 @@ git diff --check
 - UI用全新浏览器profile核流程和console/page/request错误；保存另测守卫、真实JSON、事务失败及跨窗口CAS。已有Playwright可显式传`PLAYWRIGHT_MODULE`，不擅自安装依赖。完整EOF后的CDP失败只能逐请求严格关联，不泛化忽略。
 - 公开发布联合链使用`verify_publication_chain_browser.mjs`的`--node-service --management-ui --deletion-ui --admin-deletion-ui --player-client --player-app --public-player`，程序路径另加`--program-paths`（重入口600秒）。**旧续玩断言须按当前版本唯一政策修正后复验**，历史成功不代表新政策整链通过。
 - 程序资源验证复用`verify_program_entry.mjs`／`verify_program_assets.mjs`及各自`--workerd`；静态整包用`verify_static_release_package.mjs --archive --archive-read`，只能操作自有包，不覆盖共享dist。真桶测试限定自有`test/`前缀并清理；生产数据写入另依授权执行。
-- 每次交付核实际diff、支持文件主动LSP及`lens_diagnostics mode=all`；空缓存／push-only／inconclusive不算clean。纯文档只查链接、元数据与职责一致性，不跑无关游戏回归。
+- 每次交付核实际diff、支持文件主动LSP及`lens_diagnostics mode=all`；空缓存／push-only／inconclusive不算clean。纯文档核职责、链接／锚点及元数据，不跑无关游戏回归；保留被引用的journal锚点或提供归档索引。
 - 验证先固定显式入口／依赖／源码SHA与I/O白名单，串行跑重入口，禁止`verify_*`通配。仅关闭自有监听／profile，子进程用必要环境白名单；改动后重新核证据，不拼接过期成绩。
 - Workers原生GitHub Builds目标`main`、根`/`；构建`node tools/prepare_deploy.mjs`，部署`npx wrangler@4.96.0 deploy --config wrangler.jsonc`。只有明确授权才commit／`git push github HEAD:main`；推送成功、构建成功、运行数据可用是三项不同证据。
 
