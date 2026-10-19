@@ -71,7 +71,8 @@ export async function exerciseReleaseHistory({ call, bucket, bindings, source, n
   const object = bytes => ({ size: bytes.length, arrayBuffer: async () => Uint8Array.from(bytes).buffer });
   for (const mode of ['changed', 'unlisted', 'deleted', 'unknown']) {
     let readIndex = false;
-    const p = { ...projection, directory: [], releases: [], gameStates: mode === 'unknown' ? [] : [{ gameId: old.gameId, listed: false, ...(mode === 'deleted' ? { deleted: true } : {}) }] };
+    const gameState = { gameId: old.gameId, listed: false, ...(mode === 'deleted' ? { deleted: true } : {}) };
+    const p = { ...projection, directory: [], releases: [], gameStates: mode === 'unknown' ? [] : [gameState] };
     const bytes = Buffer.from(JSON.stringify(p)), digest = sha(bytes);
     const changedRoot = mode === 'changed' ? { ...root, operationDigest: 'e'.repeat(64) } : { ...root, digest };
     const transport = (url, options) => reader.fetch(new Request(url, options), { ...bindings, PUBLISH_BUCKET: { async get(key) {

@@ -31,7 +31,8 @@ try {
   const install = async (projection, frozen) => {
     const bytes = Buffer.from(JSON.stringify(projection)), digest = sha(bytes);
     generation++;
-    const control = frozen ? { version: 2, authorityId: 'dddddddd-dddd-4ddd-addd-dddddddddddd', generation, operationId: 'eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee', operationDigest: 'a'.repeat(64), payloadDigest: 'b'.repeat(64), previousOperationDigest: generation === 1 ? null : 'c'.repeat(64), digest } : { generation, digest };
+    const previousOperationDigest = generation === 1 ? null : 'c'.repeat(64);
+    const control = frozen ? { version: 2, authorityId: 'dddddddd-dddd-4ddd-addd-dddddddddddd', generation, operationId: 'eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee', operationDigest: 'a'.repeat(64), payloadDigest: 'b'.repeat(64), previousOperationDigest, digest } : { generation, digest };
     const key = `projections/${generation}/${digest}/projection.json`;
     await bucket.put(key, bytes); await bucket.put('control/current.json', JSON.stringify(control));
     return { key, control };
@@ -96,6 +97,7 @@ try {
     check('missing projection remains unavailable', (await call('/play-api/v1/registry')).status === 503);
   }
   check('no worker outbound network', outbound === 0);
+  // pi-lens-ignore: no-console-except-error-js
   console.log(`reader announcements: ${checks} checks green; actual workerd/R2, legacy and frozen roots; no UI/first-online/production proof`);
   if (clientMode) process.stdout.write(JSON.stringify({ clientChecks, outbound }) + '\n');
 } finally { try { await mf?.dispose(); } finally { rmSync(own, { recursive: true, force: true }); } }

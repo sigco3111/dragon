@@ -1,6 +1,6 @@
 // KI.EXE 2B3C/2B88: the minimap contact marker switches square colours using
-// legion +3 bit0. Web now uses the user-approved shared fixed audio/visual beat,
-// not that original timing. 2BA8 restores the marker on contact end.
+// legion +3 bit0. Web projects the same rule countdown via EngagementPresentation;
+// no independent flash timer. 2BA8 restores the marker on contact end.
 // Web product choice (user request): reuse selected/other-faction styles and
 // anchor sieges at the city, field contacts at the encounter target. Original
 // hardware uses AH=3F/FA at the attacking legion's position (see re-notes-audio).

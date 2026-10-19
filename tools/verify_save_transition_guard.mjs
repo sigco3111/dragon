@@ -85,8 +85,12 @@ assert.deepEqual(
 const restoredState = restoreSnapshotState(app.saves.slots[0]);
 assert.equal(restoredState.factions[0].strategic_city_primary, 17);
 assert.equal(restoredState.factions[0].strategic_city_secondary, 23);
-app.clock._pendingDayAdvance = true;
-assert.equal(canSnapshotState(app), false);
+for (const phase of ['_pendingDayAdvance', '_pendingMonthAdvance']) {
+  app.clock[phase] = true;
+  assert.equal(canSnapshotState(app), false);
+  assert.throws(() => snapshotState(app, 0, 'pending-calendar'), /cannot save/);
+  app.clock[phase] = false;
+}
 
 process.stdout.write(
   "save transition guard OK: active/pending states cannot snapshot or mutate slot; finished state can save\n",

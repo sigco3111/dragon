@@ -2,6 +2,7 @@
 import { DEFAULT_WORLD } from "../content/worlddefinition.js";
 import { loadSeasonTile, loadImage, loadBytes } from "../core/assets.js";
 import { createChunkedTerrain } from "../render/chunkedterrain.js";
+import { SEASONS } from "./world.js";
 import { createRoadGraph } from "./navigation/roadgraph.js";
 import { createPathfinder } from "./navigation/pathfinder.js";
 
@@ -38,18 +39,55 @@ export function createWorldResources(definition = DEFAULT_WORLD, {
   return Object.freeze({
     definition, roads, terrain,
     // Lazy: constructing a world or displaying the title must not load bitmaps.
-    loadSeason: async (season) => {
+    loadSeason: async (season, day = 16) => {
       assertCurrent();
+      const index = SEASONS.indexOf(season);
+      if (index < 0 || !Number.isInteger(day) || day < 0 || day > 16)
+        throw new TypeError("Invalid season phase");
+      const from = SEASONS[(index + 3) % 4];
       const atlas = definition.assets.seasonAtlases?.[season];
       if (!atlas) {
-        const image = await seasonLoader(season, definition);
+        const [image, previous] = await Promise.all([
+          seasonLoader(season, definition),
+          day < 16 ? seasonLoader(from, definition) : null,
+        ]);
         assertCurrent();
-        return image;
+        if (day === 16) return image;
+        // Legacy full-image port: blend at draw time, never allocate two full maps.
+        return Object.freeze({ draw(ctx, x, y, scale) {
+          assertCurrent();
+          const w = definition.width * 16 * scale, h = definition.height * 16 * scale;
+          ctx.drawImage(previous, x, y, w, h);
+          ctx.save();
+          ctx.globalAlpha *= day / 16;
+          ctx.drawImage(image, x, y, w, h);
+          ctx.restore();
+        }});
       }
-      const [image, layout] = await Promise.all([
-        imageLoader(atlas), bytesLoader(definition.assets.terrain),
+      const [target, previous, layout] = await Promise.all([
+        imageLoader(atlas),
+        day < 16 ? imageLoader(definition.assets.seasonAtlases[from]) : null,
+        bytesLoader(definition.assets.terrain),
       ]);
       assertCurrent();
+      let image = target;
+      if (day < 16) {
+        // KI:9336/9377 dates; modern RGB interpolation, NOT a VGA/DAC emulator.
+        // One small immutable atlas per date also colors the native terrain overlay.
+        image = document.createElement('canvas');
+        image.width = target.width; image.height = target.height;
+        if (previous.width !== image.width || previous.height !== image.height)
+          throw new TypeError("Season atlas dimensions differ");
+        const ctx = image.getContext('2d');
+        ctx.drawImage(previous, 0, 0);
+        const pixels = ctx.getImageData(0, 0, image.width, image.height);
+        ctx.clearRect(0, 0, image.width, image.height);
+        ctx.drawImage(target, 0, 0);
+        const next = ctx.getImageData(0, 0, image.width, image.height).data;
+        for (let i = 0; i < next.length; i++)
+          pixels.data[i] = Math.round(pixels.data[i] + (next[i] - pixels.data[i]) * day / 16);
+        ctx.putImageData(pixels, 0, 0);
+      }
       const chunked = createChunkedTerrain(image, layout, definition);
       // M2：只读投影需要当季图集绘制 8A1E 差分；附加引用，不改规则权威。
       return Object.freeze({ ...chunked, atlasImage: image });

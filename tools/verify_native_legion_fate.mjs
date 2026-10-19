@@ -2,6 +2,7 @@
 // KI static goldens: fate notes §7; true Scenario/caller/JSON integration, not CPU execution.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Clock } from "../web/src/game/clock.js";
 import { attachSyntheticNativeFactionSource } from "./native_faction_fixture.mjs";
 import { createContentCatalog } from "../web/src/content/catalog.js";
 import { createWorldResources } from "../web/src/game/worldresources.js";
@@ -601,12 +602,11 @@ test("native save rejects lossy explicit fate fields while missing inputs stay u
       "battle_rating",
     ]) {
       const f = await fixture();
-      const target =
-        field === "nativeGeneralCount"
-          ? f.sc.factions[1]
-          : field === "battle_rating"
-            ? f.sc.generals[0]
-            : f.sc;
+      const target = {
+        nativeGeneralCount: f.sc.factions[1],
+        battle_rating: f.sc.generals[0],
+        nativeFateDisplayFlags: f.sc,
+      }[field];
       target[field] = value;
       assert.throws(() => snapshotState(f.app, 0, "invalid"), /native fate/);
     }
@@ -910,18 +910,14 @@ test("native3485 strict same-general and own input validation; no active/raw/cap
       general.status,
       ["event", "index", "identity"].includes(kind) ? 1 : 0,
     );
-    assert.equal(
-      general.origFaction,
-      ["event", "index", "identity"].includes(kind)
-        ? 1
-        : kind === "origin"
-          ? undefined
-          : null,
-    );
-    assert.equal(
-      f.sc.factions[1].nativeGeneralCount,
-      kind === "count" ? undefined : kind === "player" ? 11 : 10,
-    );
+    let expectedOrigin = null;
+    if (["event", "index", "identity"].includes(kind)) expectedOrigin = 1;
+    else if (kind === "origin") expectedOrigin = undefined;
+    assert.equal(general.origFaction, expectedOrigin);
+    let expectedCount = 10;
+    if (kind === "count") expectedCount = undefined;
+    else if (kind === "player") expectedCount = 11;
+    assert.equal(f.sc.factions[1].nativeGeneralCount, expectedCount);
     assert.equal(f.sc.factions[1].n_generals, 99);
     assert.equal(f.app.clock.hold, true);
     assert.equal(canSnapshotState(f.app), false);
@@ -1111,10 +1107,10 @@ test("native5899 no-target fixed22 and rare F23 use stored bytes, not live-city/
     // citiesOf(0) can be anything; the rare gate reads explicit F23=0/F18=10.
     assert.deepEqual(processMonthlyGeneralFates(f.app), []);
     const selection = (random & 63) + 1;
-    assert.equal(
-      f.sc.generals[0].faction,
-      selection >= 48 ? null : selection >= 24 ? 21 : (21 + selection - 1) % 22,
-    );
+    let expectedFaction = (21 + selection - 1) % 22;
+    if (selection >= 48) expectedFaction = null;
+    else if (selection >= 24) expectedFaction = 21;
+    assert.equal(f.sc.generals[0].faction, expectedFaction);
     assert.equal(f.randomCalls, 1);
   }
 });
@@ -1307,12 +1303,25 @@ test("native5990 player notice defers;598A/续扫严格在消息返回后", asyn
     f.sc.player_faction = 1;
     Object.assign(f.sc.generals[1], { attr: 128, appear_months: 9 });
     const messages = [];
-    f.app.gamebar = { enqueueTalkMessage: (m) => messages.push(m) };
-    let tail = 0;
-    assert.equal(
-      processMonthlyGeneralFates(f.app, () => tail++),
-      "suspended",
-    );
+    f.app.gamebar = { enqueueTalkMessage(m) { messages.push(m); f.app.clock.hold = true; } };
+    let tail = 0, hourReturns = 0, objectReturns = 0;
+    const clock = f.app.clock = new Clock({ startYear: 196, startMonth: 2, startDay: 28,
+      onMonthEnd() {
+        assert.equal(processMonthlyGeneralFates(f.app, () => {
+          assert.deepEqual([clock.month, clock.day, clock.hour, clock.sub], [3, 0, 23, 8]);
+          tail++;
+        }), 'suspended');
+      },
+      onHour() { hourReturns++; },
+      onStrategicUpdateComplete() { objectReturns++; },
+    });
+    clock.hour = 23; clock.sub = 8;
+    clock.advance(clock.currentStep);
+    assert.deepEqual([clock.month, clock.day, clock.hour, clock.sub], [3, 0, 23, 8]);
+    assert.equal(hourReturns, 0);
+    assert.equal(objectReturns, 0);
+    clock.advanceFrame(100000);
+    assert.equal(tail, 0);
     assert.equal(f.sc.generals[0].faction, 1);
     assert.equal(f.sc.factions[1].nativeGeneralCount, random === 32 ? 11 : 10);
     assert.equal(f.randomCalls, 1);
@@ -1347,6 +1356,14 @@ test("native5990 player notice defers;598A/续扫严格在消息返回后", asyn
     assert.equal(f.app._nativeMonthlyFateContinuation, null);
     assert.equal(f.app._strategicEventPostMessageRngPending, false);
     assert.equal(tail, 1);
+    assert.equal(canSnapshotState(f.app), false, 'message finished, but 1DD7 still pending');
+    clock.hold = false;
+    clock.advance(clock.currentStep);
+    assert.deepEqual([clock.month, clock.day, clock.hour, clock.sub], [3, 1, 1, 0]);
+    assert.equal(clock.strategicTickSerial, 1);
+    assert.equal(f.randomCalls, 1);
+    assert.equal(hourReturns, 1);
+    assert.equal(objectReturns, 1);
     assert.equal(canSnapshotState(f.app), true);
   }
 });

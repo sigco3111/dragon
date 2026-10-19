@@ -337,6 +337,34 @@ export function tickOriginalStrategicWeather(scenario, rng) {
   return changed;
 }
 
+/** KI:2533..2565 map-object preparation, after 2459 AND the calendar return.
+ * Capture the OLD frame, then consume dirty and store its successor. The next
+ * outer draw may observe that successor without another 2459 update. Kept
+ * separate from both the rule tick and pure Canvas drawing; no RNG here.
+ * Returns fixed-slot frame indices, including the first 16 disaster objects.
+ */
+export function prepareOriginalStrategicMapObjects(scenario) {
+  const frames = Array(32).fill(null);
+  for (let slot = 0; slot < 32; slot++) {
+    const object = slot < 16
+      ? scenario.disasterMapObjects?.[slot]
+      : scenario.weatherClouds?.[slot - 16];
+    const status = object?.status;
+    if (!Number.isInteger(status) || status < 0 || status > 255)
+      throw new RangeError(`Web engineering Uncovered weather slot ${slot} status at 2541`);
+    if (status < 0x80) continue;
+    const frame = object.frame;
+    if (!Number.isInteger(frame) || frame < 0 || frame > 255)
+      throw new RangeError(`Web engineering Uncovered weather slot ${slot} frame at 2551`);
+    frames[slot] = frame;
+    if (status & 1) {
+      object.status = status & 0xfe;
+      object.frame = (frame + 1) & 7;
+    }
+  }
+  return frames;
+}
+
 export function tickStrategicWeather(scenario, rng) {
   if (!scenario) return false;
   let changed = false;

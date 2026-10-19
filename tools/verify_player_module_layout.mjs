@@ -10,7 +10,7 @@ function visit(file){
  assert.ok(local&&!local.startsWith('..')&&!local.includes(':'),'browser dependency stays in web/src');
  if(visited.has(path))return;visited.add(path);
  const source=readFileSync(path,'utf8');
- for(const match of source.matchAll(/^\s*(?:import|export)\b\s*(?:[^;'\"]*?\bfrom\s*)?['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]/gm)){
+ for(const match of source.matchAll(/^\s*(?:import|export)\b\s*(?:[^;'"]*?\bfrom\s*)?['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]/gm)){
   const spec=match[1]??match[2];assert.ok(spec.startsWith('.'),'native relative browser import: '+spec);
   visit(resolve(dirname(path),spec));
  }

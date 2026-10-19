@@ -5553,6 +5553,8 @@ function buildNativeSiegeBlocks(app, sc, A, context) {
   if (!context) return undefined;
   const captor = A?.faction;
   return {
+    // KI:286C/28B4; emitted by the due native poll, never by a RAF timer.
+    onContactSound: () => app.engagementFx?.requestSound(sc),
     onDiplomatBlock: (deadOwner, diplomat, diplomatTail, captureTail) =>
       suspendNativeDiplomatReport(
         app,

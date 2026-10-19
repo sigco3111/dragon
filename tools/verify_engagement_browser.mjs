@@ -1,4 +1,5 @@
-// Fresh browser and static web root only. Synthetic in-memory contacts; no SAVE/API.
+// Fresh browser/static root. Synthetic rule-poll input + real Clock/RAF/Canvas/audio;
+// actual native 286C/28B4 integration is covered by verify_native_road_movement. No SAVE/API.
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
@@ -12,8 +13,10 @@ const { chromium } = require(
     "C:/Users/fczll/AppData/Roaming/npm/node_modules/@playwright/cli/node_modules/playwright",
 );
 const root = fileURLToPath(new URL("../web/", import.meta.url));
+// pi-lens-ignore: hardcoded-url-js
 const server = http.createServer(async (request, response) => {
   try {
+    // pi-lens-ignore: hardcoded-url-js
     const url = new URL(request.url, "http://127.0.0.1");
     const file = path.resolve(
       root,
@@ -103,13 +106,29 @@ try {
       rng: app.originalRng.snapshot(),
     };
     const state = window.__engagementVerify;
+    app.clock.onStrategicTick = c => {
+      if (!state.running) return;
+      const tick = c.strategicTickSerial - state.origin;
+      if ((tick - 1) % 8) return;
+      const visit = (tick - 1) / 8;
+      if (visit === 12) {
+        state.running = false;
+        state.done = true;
+        app.gamebar.settingsOpen = true;
+        app.gamebar.syncClock();
+        return;
+      }
+      if (visit > 0 && visit % state.period === 0) app.engagementFx.requestSound(app.scenario);
+      army._engagement.countdown = Math.max(1, 11 - visit);
+    };
     const play = app.engagementFx.playSound;
     app.engagementFx.playSound = () => {
       const ok = play();
       state.records.push({
         t: performance.now(),
         frame: app.engagementFx.frameOf(army),
-        elapsed: app.engagementFx.elapsed,
+        tick: app.clock.strategicTickSerial - state.origin,
+        countdown: army._engagement.countdown,
         ok,
       });
       return ok;
@@ -129,17 +148,22 @@ try {
   // Let the existing pointer-motion hold expire; do not bypass product input holds.
   await page.waitForFunction(() => !window.__app.clock.hold);
   const matrix = [];
-  for (let speed = 0; speed < 5; speed++) {
-    await page.evaluate((value) => {
+  for (const period of [2, 3]) for (let speed = 0; speed < 5; speed++) {
+    await page.evaluate(({ value, period }) => {
       const app = window.__app,
         state = window.__engagementVerify;
       app.engagementFx.reset();
       state.records = [];
       state.frames = [];
       app.clock.strategicSpeed = value;
+      state.origin = app.clock.strategicTickSerial;
+      state.period = period;
+      state.done = false;
+      state.running = true;
+      state.army._engagement.countdown = 11;
       app.scenario.legions = [state.army];
-    }, speed);
-    await page.waitForFunction(() => window.__app.engagementFx.elapsed >= 850);
+    }, { value: speed, period });
+    await page.waitForFunction(() => window.__engagementVerify.done);
     const run = await page.evaluate(() => {
       const app = window.__app,
         state = window.__engagementVerify;
@@ -151,41 +175,33 @@ try {
         countdown: state.army._engagement.countdown,
         rng: app.originalRng.snapshot(),
         initialRng: state.rng,
+        step: app.clock.currentStep,
       };
     });
-    assert.equal(run.records.length, 5, "long contact stops at five requests");
-    assert.ok(run.frames.length >= 9, "visual contact remains live after sound burst");
-    assert.ok(run.records.every((r) => r.ok && r.frame === 3 - (Math.floor(r.elapsed / 30) % 4)));
-    assert.ok(
-      Math.abs(run.records[0].t - run.frames[0].t) < 50,
-      "audio and first visible frame share one RAF",
-    );
-    assert.equal(run.countdown, 11);
+    assert.deepEqual(run.records.map(r => r.tick), period === 2 ? [17, 33, 49, 65, 81] : [25, 49, 73]);
+    assert.ok(run.records.every(r => r.ok), "real unlocked WebAudio accepts every due request");
+    assert.ok(new Set(run.frames.map(r => r.frame)).size === 4, "all four rule phases are displayed");
+    assert.equal(run.countdown, 1);
     assert.deepEqual(run.rng, run.initialRng);
     const median = (items) =>
       items.toSorted((a, b) => a - b)[Math.floor(items.length / 2)];
     const intervals = (items) => items.slice(1).map((x, i) => x.t - items[i].t);
     const frameMs = median(intervals(run.frames)),
       soundMs = median(intervals(run.records));
-    assert.ok(
-      Math.abs(frameMs - 30) < 25,
-      `speed${speed}: ${frameMs}ms frame`,
-    );
-    assert.ok(
-      Math.abs(soundMs - 20) < 20,
-      `speed${speed}: ${soundMs}ms sound`,
-    );
-    matrix.push({ speed, frameMs, soundMs });
+    const expectedSoundMs = 8 * period * run.step;
+    assert.ok(soundMs >= expectedSoundMs * 0.65 && soundMs < expectedSoundMs * 3,
+      `period${period}/speed${speed}: ${soundMs}ms request interval vs ${expectedSoundMs}ms budget`);
+    matrix.push({ period, speed, frameMs, soundMs });
     await page.waitForFunction(() => window.__app.engagementFx.paused);
     const held = await page.evaluate(() => ({
-      elapsed: window.__app.engagementFx.elapsed,
+      phase: window.__app.engagementFx.frameOf(window.__engagementVerify.army),
       count: window.__engagementVerify.records.length,
       stops: window.__engagementVerify.stops,
     }));
     await page.waitForTimeout(250);
     assert.deepEqual(
       await page.evaluate(() => ({
-        elapsed: window.__app.engagementFx.elapsed,
+        phase: window.__app.engagementFx.frameOf(window.__engagementVerify.army),
         count: window.__engagementVerify.records.length,
         stops: window.__engagementVerify.stops,
       })),
@@ -197,7 +213,7 @@ try {
     });
   }
   await page.screenshot({
-    path: path.join(os.tmpdir(), "dragon-fixed-engagement.png"),
+    path: path.join(os.tmpdir(), "dragon-rule-engagement.png"),
   });
   await page.evaluate(() => {
     window.__app.scenario.legions = [];
@@ -222,7 +238,7 @@ try {
   assert.deepEqual(errors, []);
   process.stdout.write(
     JSON.stringify(matrix) +
-      "\nengagement browser OK: real RAF/Canvas/WebAudio fixed five-speed cadence, hold/end/title, no RNG/countdown mutation\n",
+      "\nengagement browser OK: real RAF/Canvas/WebAudio, five speeds × period2/3 rule-poll input, hold/end/title and unchanged RNG\n",
   );
 } finally {
   await browser.close();

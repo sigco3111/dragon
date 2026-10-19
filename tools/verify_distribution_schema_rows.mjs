@@ -15,5 +15,6 @@ try {
   const app=new (createEditorApplication(class {}))({storage},{EDITOR_ORIGIN:'https://owned-schema.invalid',EDITOR_REQUEST_KEY:'a'.repeat(64),EDITOR_BLOBS:new FileBucket({root:join(own,'blobs')})});
   const options={storage,principal:()=>{throw new Error('unused fixture principal');},requestKey:'a'.repeat(64)};
   new GameDeletionJobFreeze(options); new GameDeletionDraftFreeze(options);
+  // pi-lens-ignore: no-console-except-error-js
   console.log(JSON.stringify(await verifyDistributionSchema(storage,app.frozenDistribution),null,2));
 } finally { storage.close(); rmSync(own,{recursive:true,force:true}); }

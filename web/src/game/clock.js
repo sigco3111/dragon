@@ -14,23 +14,29 @@ export const STRATEGIC_SPEED_LABELS = [
   "高速",
   "最高速",
 ];
-// 5档每次0x1D0B主更新的Web墙钟间隔。原版CFA=4/3/2/1/0个
-// INT61计时回调，实测非零等待约13.731/10.299/6.866/3.433ms；Web仍
-// 使用Web表现节奏。用户要求在30/17.5/10/5/1.5625ms基础上统一3倍速，
-// 间隔除以3；仅墙钟等待变化，主更新顺序/日期/RNG/军团周期不变。
-export const STRATEGIC_SPEEDS = [30 / 3, 17.5 / 3, 10 / 3, 5 / 3, 1.5625 / 3];
+// YNSOUND:08D7/0930..093D：PIT除数256，每16 IRQ调用KI:0356。
+// KI:1DF8以CFA=4/3/2/1/0等待累计回调；非零档按此关系投影到墙钟。
+export const STRATEGIC_TIMER_MS = (1000 * 256 * 16) / 1193182;
 
-// RAF入口每帧至多推进的战略主更新次数。60Hz可喂饱最高速约0.521ms
-// （16.7/(1.5625/3)≈32）；上限定死，后台恢复/卡顿不补旧债。每次更新后查hold：
-// 接战四相任一置hold即停，战术开场/命运消息模态照常接管，不存在一次提交
-// 跨过未显示的战斗；同一军团多道路点由表现层lerp连续铺开，不瞬移。
-export const MAX_TICKS_PER_FRAME = 36;
+// Web显示预算（非DOS机制）：每RAF最多一次128槽轮转，正常周期2/3
+// 的动作至少跨2/3个显示帧；迟到时减速，不用批量跳点追赶。
+// 原最高档无等待；现代上限按60Hz×8更新设定，高刷也不无限加速。
+// 依据及旧三倍速政策撤换见 docs/re-notes-strategic-time.md §6。
+export const MAX_TICKS_PER_FRAME = 8;
+export const STRATEGIC_SPEEDS = [
+  4 * STRATEGIC_TIMER_MS,
+  3 * STRATEGIC_TIMER_MS,
+  2 * STRATEGIC_TIMER_MS,
+  STRATEGIC_TIMER_MS,
+  1000 / (60 * MAX_TICKS_PER_FRAME),
+];
 
 export class Clock {
   /**
    * @param opts
-   *   onTick      每24刻度(游戏一天)结束
-   *   onMonthEnd  每月结束 (year, month) — 对应 KI.EXE call 0x5358 月度结算
+   *   onStrategicTick  每次主更新；9次更新进一时刻，新日从hour=1开始
+   *   onDay       旧日结束（日期尚未进位）
+   *   onMonthEnd  新年月已写、day=0时，对应 KI.EXE call 0x5358 月结
    *   onYearEnd   每年结束
    */
   constructor({
@@ -38,6 +44,7 @@ export class Clock {
     startMonth,
     startDay = 1,
     onStrategicTick = null,
+    onStrategicUpdateComplete = null,
     onSyncHold = null,
     onHour = null,
     onDay = null,
@@ -54,14 +61,17 @@ export class Clock {
     this._legacyPaused = false;
     this.SPEEDS = STRATEGIC_SPEEDS;
     this._acc = 0;
-    this._lastStep = STRATEGIC_SPEEDS[2];
+    this._renderPhase = 0; // 已发布的显示相位，不是待执行规则的毫秒预算。
     // 单调战略更新序号仅供表现层插值；不参与任何规则、RNG 或存档状态。
     this.strategicTickSerial = 0;
     this.hold = false;
     this._pendingDayAdvance = false;
+    this._pendingMonthAdvance = false;
     this._pendingStrategicAdvance = false;
 
     this.onStrategicTick = onStrategicTick;
+    this.onStrategicUpdateComplete = onStrategicUpdateComplete;
+    this._pendingPresentation = false;
     this.onSyncHold = onSyncHold;
     this.onHour = onHour;
     this.onDay = onDay;
@@ -76,7 +86,10 @@ export class Clock {
   set strategicSpeed(value) {
     const idx = Number(value);
     if (Number.isFinite(idx)) {
+      const phase = Math.min(1, Math.max(0, this._acc / this.currentStep));
       this._strategicSpeed = Math.max(0, Math.min(4, Math.trunc(idx)));
+      // 变速只改后续墙钟步长，不能把旧毫秒余额放大成规则欠账或插值跳跃。
+      this._acc = phase * this.currentStep;
     }
   }
 
@@ -106,9 +119,7 @@ export class Clock {
 
   /** 获取当前主更新间的插值进度0..1，供军团单步移动平滑显示。 */
   dayProgress() {
-    const step = this.currentStep || this._lastStep || STRATEGIC_SPEEDS[2];
-    this._lastStep = step;
-    return Math.min(1, Math.max(0, this._acc / step));
+    return this._renderPhase;
   }
 
   /**
@@ -117,6 +128,7 @@ export class Clock {
    * 接战置hold即停（见MAX_TICKS_PER_FRAME注释）。
    */
   advanceFrame(dtMs) {
+    this._finishStrategicUpdate();
     if (this.hold || this._legacyPaused) {
       this._acc = 0;
       return false;
@@ -124,26 +136,34 @@ export class Clock {
     const step = this.currentStep;
     const elapsed = Number.isFinite(dtMs) ? Math.max(0, dtMs) : 0;
     this._acc = Math.min(this._acc + elapsed, step * MAX_TICKS_PER_FRAME);
-    if (this._acc < step) return false;
+    if (this._acc < step) {
+      this._renderPhase = Math.max(this._renderPhase, this._acc / step);
+      return false;
+    }
     let advanced = false;
     // Count before repeated fractional subtraction so the capped frame does not
-    // lose its last update to floating-point drift at the new /3 intervals.
+    // lose its last update to floating-point drift at fractional intervals.
     const ticks = Math.min(MAX_TICKS_PER_FRAME, Math.floor(this._acc / step));
     for (let n = 0; n < ticks; n++) {
       this._acc = Math.max(0, this._acc - step);
       this._tick();
       this.onSyncHold?.();
+      this._finishStrategicUpdate();
       advanced = true;
       if (this.hold || this._legacyPaused) {
         this._acc = 0;
         break;
       }
     }
+    // hold仍丢弃规则欠账，但同一serial的显示不得倒退。恢复后预算重新
+    // 累积，直到追上冻结相位；新主更新才从0起。中途draw不看未来预算。
+    this._renderPhase = Math.max(this._renderPhase, this._acc / step);
     return advanced;
   }
 
   /** 推进子刻度组；受控测试/离线调度可消费完整dt。 */
   advance(dtMs) {
+    this._finishStrategicUpdate();
     if (this.hold || this._legacyPaused) {
       // 菜单/弹窗或旧模态调用暂停战略时钟
       this._acc = 0;
@@ -160,13 +180,25 @@ export class Clock {
       // GameBar.syncClock才写hold，否则高速档同一RAF的catch-up循环会继续
       // 推进战略时间，且过渡动画自身没有获得重绘/冻结边界。
       this.onSyncHold?.();
+      this._finishStrategicUpdate();
       // onDay 可能打开战术层或委任过渡；立即终止本次大 dt 的追赶循环。
       if (this.hold || this._legacyPaused) {
         this._acc = 0;
         break;
       }
     }
+    this._renderPhase = Math.max(this._renderPhase, this._acc / step);
     return ticked;
+  }
+
+  // KI:1D0B returns through the calendar before 1CC9/2533 prepares objects.
+  // A Web message may suspend that return; flush it once, before the next tick.
+  _finishStrategicUpdate() {
+    if (!this._pendingPresentation || this.hold || this._legacyPaused ||
+        this._pendingStrategicAdvance || this._pendingDayAdvance ||
+        this._pendingMonthAdvance) return;
+    this._pendingPresentation = false;
+    this.onStrategicUpdateComplete?.(this);
   }
 
   _tick() {
@@ -175,16 +207,19 @@ export class Clock {
       this._advanceStrategicCalendar();
       return;
     }
-    if (this._pendingDayAdvance) {
+    if (this._pendingDayAdvance || this._pendingMonthAdvance) {
       this._pendingDayAdvance = false;
-      this._advanceDayCalendar();
+      if (!this._advanceDayCalendar()) return;
       this.hour = 1;
+      this.sub = 0;
       if (this.onHour) this.onHour(this);
       return;
     }
 
     // 只在实际执行0x1D0B时递增；延后日历进位不能被当作军团移动帧。
     this.strategicTickSerial++;
+    this._renderPhase = 0;
+    this._pendingPresentation = true;
 
     // KI.EXE 0x1D0B：每次现实时间步先处理一个城槽、16个军团槽和
     // 其它战略状态，再由0x1D8E推进CF2/CF3。战斗在其中打开时，日历推进
@@ -202,28 +237,36 @@ export class Clock {
       this.sub++;
       return;
     }
-    this.sub = 0;
     if (this.hour < 23) {
       this.hour++;
     } else {
       // 1DD7 increments the day, 1DDB clears CF3, then 1DE0 increments it:
       // every subsequent day starts at hour 1, not hour 0.
-      this.hour = 0;
+      // Keep CF3=23 and CF2=8 throughout the suspended 5358 call.
+      // Their resets at 1DDB/1DE4 occur only after its real return.
       if (this.onDay) this.onDay(this);
       if (this.hold || this._legacyPaused) {
         this._pendingDayAdvance = true;
         return;
       }
-      this._advanceDayCalendar();
+      if (!this._advanceDayCalendar()) return;
       this.hour = 1;
     }
+    this.sub = 0;
     if (this.onHour) this.onHour(this);
   }
 
   _advanceDayCalendar() {
+    if (this._pendingMonthAdvance) {
+      // The UI has finished the remaining 5358 steps. Resume at 1DD7,
+      // without replaying settlement, RNG, or the current city/legion batch.
+      this._pendingMonthAdvance = false;
+      this.day = (this.day + 1) & 0xff;
+      return true;
+    }
     if (this.day < this.daysInMonth) {
       this.day++;
-      return;
+      return true;
     }
     // 1DA3..1DD7: year/month and the new month length are committed before
     // 5358; the day low byte is zero during that call and increments after RET.
@@ -236,9 +279,13 @@ export class Clock {
       yearEnded = true;
     }
     this.month++;
+    this._pendingMonthAdvance = true;
     if (yearEnded && this.onYearEnd) this.onYearEnd(this);
     if (this.onMonthEnd) this.onMonthEnd(this);
+    if (this.hold || this._legacyPaused) return false;
+    this._pendingMonthAdvance = false;
     this.day = (this.day + 1) & 0xff;
+    return true;
   }
 
   serialize() {

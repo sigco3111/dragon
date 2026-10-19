@@ -9,7 +9,9 @@ import { openStorage } from '../vps/sqlite-port.mjs';
 
 let passed = 0;
 const check = (name, cond) => {
+  // pi-lens-ignore: no-console-except-error-js
   if (!cond) { console.error(`FAIL ${name}`); process.exitCode = 1; }
+  // pi-lens-ignore: no-console-except-error-js
   else { passed++; console.log(`ok ${name}`); }
 };
 
@@ -113,4 +115,5 @@ check('restart persistence', reopen.sql.exec("SELECT name FROM sqlite_master WHE
 reopen.close();
 rmSync(dir, { recursive: true, force: true });
 
+// pi-lens-ignore: no-console-except-error-js
 console.log(`passed ${passed} checks`);

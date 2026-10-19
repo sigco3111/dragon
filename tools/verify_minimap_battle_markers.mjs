@@ -63,7 +63,7 @@ sc.legions[2]._engagement.countdown--;
 assert.deepEqual(
   markers(),
   first,
-  "rule countdown no longer determines the visual phase",
+  "frame snapshot changes only on explicit presentation update, never during draw",
 );
 fx.update(sc, 100);
 for (const marker of markers().values())

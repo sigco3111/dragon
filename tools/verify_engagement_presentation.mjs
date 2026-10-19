@@ -1,168 +1,83 @@
-// User-approved presentation only; original rule-countdown proof stays in verify_engagement_poll.
+// Original countdown/request branch is covered by verify_native_road_movement.
+// This test covers only the read-only presentation and audio lifecycle adapter.
 import assert from "node:assert/strict";
-import {
-  EngagementPresentation,
-  ENGAGEMENT_FRAME_MS,
-  ENGAGEMENT_SOUND_MS,
-} from "../web/src/render/engagementpresentation.js";
-import { Clock } from "../web/src/game/clock.js";
-assert.equal(ENGAGEMENT_FRAME_MS, 30);
-assert.equal(ENGAGEMENT_SOUND_MS, 20);
-const contact = () => ({
-  faction: 0,
-  x: 1,
-  y: 2,
-  _engagement: { kind: "field", countdown: 11, target: { x: 3, y: 4 } },
+import { EngagementPresentation } from "../web/src/render/engagementpresentation.js";
+const contact = (countdown = 11) => ({
+  faction: 0, x: 1, y: 2,
+  _engagement: { kind: "field", countdown, target: { x: 3, y: 4 } },
 });
-const runs = [];
-for (let speed = 0; speed < 5; speed++) {
-  const army = contact();
-  const scenario = { legions: [army] };
-  const before = structuredClone(scenario);
-  const pulses = [];
-  const frames = [];
-  let now = 0;
-  const fx = new EngagementPresentation({
-    playSound: () => {
-      pulses.push([now, fx.frameOf(army)]);
-      return true;
-    },
-  });
-  const clock = new Clock({ startYear: 190, startMonth: 1 });
-  clock.strategicSpeed = speed;
-  for (now = 0; now <= 1000; now += 10) {
-    clock.advanceFrame(10);
-    fx.update(scenario, now);
-    if (now % 100 === 0) frames.push(fx.frameOf(army));
-  }
-  assert.deepEqual(
-    scenario,
-    before,
-    "presentation does not change routes/countdown/data",
-  );
-  assert.deepEqual(pulses, [
-    [0, 3],
-    [20, 3],
-    [40, 2],
-    [60, 1],
-    [80, 1],
-  ]);
-  runs.push({ frames, pulses });
-}
-for (const run of runs)
-  assert.deepEqual(
-    run,
-    runs[0],
-    "all five strategy speeds share identical visual/audio timestamps",
-  );
-
-const a = contact(),
-  b = contact();
+const a = contact(), b = contact(10);
 const scenario = { legions: [a] };
-let plays = 0,
-  stops = 0;
+let plays = 0, stops = 0;
 const fx = new EngagementPresentation({
-  playSound: () => {
-    plays++;
-  },
-  stopSound: () => {
-    stops++;
-  },
+  playSound: () => { plays++; return true; },
+  stopSound: () => { stops++; },
 });
 fx.update(scenario, 0);
-assert.equal(plays, 1, "first visible contact starts sound immediately");
-fx.update(scenario, 30);
-assert.equal(fx.frameOf(a), 2);
+assert.equal(plays, 0, "first visible contact does not invent an ID3 request");
+assert.equal(fx.frameOf(a), 3);
+const before = structuredClone(scenario);
+for (const now of [20, 30, 100, 9000]) fx.update(scenario, now);
+assert.equal(plays, 0, "RAF/wall time never creates a rule sound event");
+assert.equal(fx.frameOf(a), 3, "no timer-driven animation on a stationary countdown");
+assert.deepEqual(scenario, before);
+
+for (const count of [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]) {
+  a._engagement.countdown = count;
+  fx.update(scenario, 9001);
+  assert.equal(fx.frameOf(a), count & 3);
+}
 a._engagement = { ...a._engagement, countdown: 2, target: { x: 30, y: 40 } };
 scenario.legions.push(b);
-fx.update(scenario, 35);
-assert.equal(
-  fx.frameOf(a),
-  2,
-  "road-poll replacement cannot reset visual phase",
-);
-assert.equal(fx.frameOf(b), 2, "simultaneous contacts share the same clock");
-assert.equal(plays, 2, "new contacts cannot multiply shared-channel frequency");
-fx.update(scenario, 60);
-assert.equal(plays, 3);
-fx.update(scenario, 125, { paused: true });
+fx.update(scenario, 9010);
+assert.equal(fx.frameOf(a), 2);
+assert.equal(fx.frameOf(b), 2);
+b._engagement.countdown = 9;
+fx.update(scenario, 9020);
+assert.equal(fx.frameOf(b), 1, "each contact owns its original counter phase");
+for (let n = 0; n < 7; n++) fx.requestSound(scenario);
+assert.equal(plays, 7, "no shared five-sound budget; the audio driver owns same-ID retriggering");
+fx.update(scenario, 9021, { paused: true });
 assert.equal(stops, 1);
 const frozen = fx.frameOf(a);
-fx.update(scenario, 9000, { paused: true });
+fx.update(scenario, 50000, { paused: true });
 assert.equal(fx.frameOf(a), frozen);
 assert.equal(stops, 1);
-fx.update(scenario, 9000);
-assert.equal(plays, 3, "no backlog or re-key when resuming mid-beat");
-fx.update(scenario, 9200);
-assert.equal(plays, 4);
-fx.update(scenario, 14200);
-assert.equal(plays, 5, "a delayed RAF emits only one current pulse");
+fx.update(scenario, 50001);
+assert.equal(plays, 7, "resuming does not replay missed wall-time beats");
+fx.requestSound(scenario);
+assert.equal(plays, 8);
 a._engagement = null;
-assert.equal(fx.frameOf(a), null, "clear is visible before next update");
-fx.update(scenario, 14201);
-assert.equal(stops, 1, "another contact still owns the shared sound");
+assert.equal(fx.frameOf(a), null);
+fx.update(scenario, 50002);
+assert.equal(stops, 1, "remaining contact still owns the sound");
 b.dead = true;
-fx.update(scenario, 14202);
-assert.equal(stops, 2, "last contact stops current sound and queued successor");
+fx.update(scenario, 50003);
+assert.equal(stops, 2);
 assert.equal(fx.frameOf(b), null);
-scenario.legions = [contact()];
-fx.update(scenario, 15000, { paused: true });
-assert.equal(plays, 5);
-fx.update(scenario, 16000);
-assert.equal(plays, 6, "first contact created while held starts on release");
-fx.update(scenario, 16001, { enabled: false });
-assert.equal(
-  stops,
-  3,
-  "tactical/title/runtime-disable removes audio and images together",
-);
-assert.equal(fx.contacts.size, 0);
-fx.update(scenario, 17000);
-fx.pause(); // visibilitychange before RAF suspension
-fx.update(scenario, 100000);
-assert.equal(fx.elapsed, 0, "hidden time is not elapsed presentation time");
 
-let ready = false,
-  audible = 0;
-const failed = new EngagementPresentation({
-  playSound: () => {
-    if (!ready) return false;
-    audible++;
-    return true;
-  },
-  stopSound: () => {
-    throw new Error("closed context fixture");
-  },
-});
-failed.update(scenario, 0);
-ready = true;
-failed.update(scenario, 10);
-assert.equal(audible, 0);
-failed.update(scenario, 20);
-assert.equal(audible, 1, "unready audio retries only at the next live beat");
-assert.doesNotThrow(() => failed.reset());
+// A request emitted during the first rule batch must survive the following RAF.
+const fresh = { legions: [contact()] };
+fx.requestSound(fresh);
+fx.update(fresh, 60000);
+assert.equal(stops, 2);
+assert.equal(plays, 9);
+fx.update(fresh, 60001, { enabled: false });
+assert.equal(stops, 3);
+assert.equal(fx.contacts.size, 0);
 for (const mode of ["false", "throw"]) {
-  let attempts = 0,
-    cleanup = 0;
+  let attempts = 0, cleanup = 0;
   const interrupted = new EngagementPresentation({
     playSound: () => {
       if (++attempts === 1) return true;
       if (mode === "throw") throw new Error("interrupted audio fixture");
       return false;
     },
-    stopSound: () => {
-      cleanup++;
-    },
+    stopSound: () => { cleanup++; },
   });
-  interrupted.update(scenario, 0);
-  assert.doesNotThrow(() => interrupted.update(scenario, 200));
+  interrupted.requestSound(fresh);
+  assert.doesNotThrow(() => interrupted.requestSound(fresh));
   interrupted.reset();
-  assert.equal(
-    cleanup,
-    1,
-    "a failed re-trigger cannot lose cleanup ownership of the older sound",
-  );
+  assert.equal(cleanup, 1, "failed retrigger retains cleanup ownership");
 }
-process.stdout.write(
-  "engagement presentation OK: fixed30ms/20ms, five-pulse cap, five speeds, first/last sync, holds/hidden, multi-contact, no rule writes or backlog\n",
-);
+process.stdout.write("engagement presentation OK: counter phases, event-driven sound, no invented beats/cap/backlog, lifecycle and audio failure isolation\n");

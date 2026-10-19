@@ -7,6 +7,7 @@
 来源：产品Q26及工程§1.1，实际`server/metadata.js` constructor的content_games/content_names/content_used_ids声明与`#names/#create/#save`：同作者BINARY草稿名和nullable当前formal名均占用，同游戏相同名只一行；不同作者可重名；创建记录永久不复用ID。不是DOS机制。本门不修改原写者/正规化、字符可玩域、正式发布或其它指针合同。
 
 低层`inspectGameNameBindings`仅对已经捕获的目标原生TEXT gameId核：
+
 - 实际parent owner/draft字段TEXT、formal为TEXT或NULL；不替name合法字符/trim/NFC检查。
 - NOT INDEXED used-ID投影LIMIT2恰一行；名称投影LIMIT3须恰等于SQL CASE导出的当前distinct名称数量（NULL/共享formal为1，否则2），不只依声明UNIQUE排除重复membership。
 - 两个实际SQL EXISTS谓词分别拒额外/foreign-owner/错误game/type占用与漏草稿/非NULL formal；全部BINARY原生比较，不拼JS复合键/大小写折叠。共享同名两EXISTS可指同一行，不要求两个重复占用。
@@ -21,6 +22,7 @@ exact13 facts：原schema11加nameBindingsVerified=true/usedIdBindingVerified=tr
 owned`.dragon-analysis/editor-phase/backend-name-bindings-session-r1` wx before/源码/log/report；OS白名单子环境、既有MF/OpenSSL/NodeSQLite、random owned tempSQLite-R2/loopbackHTTPS8787，producer1800s不延。所有492输入/102imports前后hash相同。父fixture只初始化原两freeze表；SQL skeleton不是Source/正常新建；手工formal字段及双名称是占用工程样本，current_release_id不因此成为有效发布。
 
 最终fresh main-r3 **29组97记录HTTP调用/8exact13 facts/11报告源/3wx源码**：
+
 - actual owner/admin/foreign/builtin/严格字段/UUID/mandatory fence/CAS及Cookie/Origin/CSRF，owner/admin相同最小facts；只读时全部35表行/目录fingerprint同。
 - native单草稿、formal同名一行/不同名两行/恢复NULL；不同真实作者相同拼写不污染目标。
 - native丢占用/额外名/foreign-owner/错误game/大小写/BLOBname均503、missing used-ID由原scope409；第三额外名拒，全部事务行/目录回滚。固定工程非法owner/game样本无FK声明，但不是用户授权写入口。

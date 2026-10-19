@@ -752,7 +752,8 @@ export class MapView {
 
     layers?.layer('environment');
     this.disasterFx ??= new DisasterPresentation(() => this.draw());
-    this.disasterFx.draw(ctx, sc, this.cam, world.tileSize, { width, height });
+    this.disasterFx.draw(ctx, sc, this.cam, world.tileSize, { width, height },
+      this.app?.weatherFx?.scenario === sc ? this.app.weatherFx : null);
 
     // Web表现层仍位于灾害之上、UI之下；只读已经采样的视觉状态。
     if (this.app?.weatherFx?.scenario === sc)

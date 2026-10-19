@@ -199,7 +199,6 @@
 
 新增focused入口先登记：`tools/verify_world_resource_ports.mjs`以相同192原生图/98304B（384×256）地形/成本与offset验证默认旧门、注入同世界/独立实例、坏输入/晚到lifecycle/拒绝promise可人工重试；不以模型授规则初始化。owned真实Root正常Source-copy/saved1/data+images两Job/当前2，freshChromium经已有privatebytes/privateresources到共同worldresources的road/terrain/chunked实际端口，Root全35SQL只读指纹/独立视觉像素核；只使用tempSQLite-R2/HTTPS8787/白OSenv/MF-OpenSSL-Playwright固定1800s、所有执行前源码-log-reportWX。不得读真实SAVE/用户profile-IDB、另设引擎、复制或重跑封存六阶段/namespace/wait/UI全套、云创建/部署/commit-push/installtrust。原schema/API/UI/其他代码保，失败原件/旧期待预算保，JSON/PNG解码复用现行模块，不提高通用PNG域或猜255/G127/空章初态。
 
-
 ## E-01-BACKEND-PRIVATE-FALLBACK-DECODE-1（固定整图opt-in，未运行准入）
 
 [维护源](editor-backend-private-fallback-decode.md)：newprivatefallback只4season matchingrole/固定6144×4096RGBA8、一owned/pending；原小图CRCenvelope提取共用但4Mi gate/35原模型保持，Root/API/schema/UI/player/Music/Rule不变。newmodel31/native-r3六检查17Node请求4browserGET，正常Source-library-copy/springJob/saved1-current2、全部100663296B RGBA同独立Pillow、oneowned/idempotentdispose/freshGET/actualepoch-fence401409有证；两新增测试locator/order错误只修newproducer再fullfresh，17执行前wx/failedpartials不拼成绩。525输入122imports375保；尚未装共同loader/RuntimeManifest/Trial/发布/删除/255原证，不关闭Q69或goal。
@@ -312,7 +311,6 @@ owned .dragon-analysis/editor-phase/backend-stage-asset-collection-session-r1/�
 
 owned backend-admin-management-session-r1登记全prior生产b605/支持namespacewait52fb SHA及原源，tempSQLiteR2/actualRootHTTPS8787-MF白OSenv1800s+wx实际源码/log/report；新工程Game是SQL metadata sample，不冒真实发布/Source。验证需actualauthor/admin、builtin/fence/CSRF/expired/capturedEpoch/CAS/same-key-differentactor-permanent-restart/query-before-afterchange/no-op、two-key并发CAS/真实triggerrollback/late actualsession及readonlywhole35rows、原账户API兼容；Node独立模型及所有source/input/import/SHA/schema/syntax/links73Q/LSP-sessionall与隐私最小preview→advisory，失败原件保后定位最小修、不放宽预算期待。无UI本批无需浏览器；上架/发布未接，所以不声称Q20完整客户端/registry/发布race已完成。无SAVE/profileIDB/shared清理/commit/push/deploy/cloud/install/trust。
 
-
 ## E-01-BACKEND-NAMESPACE-WAITS-1（当前namespace有限异步已验，生产不变）
 
 [维护源](editor-backend-namespace-waits.md)：产品/旧工具/旧fixture/505-112-375全部保持，新owned继承原wait23期待与16case，初始冻结实查48；fresh31检查522调用6最小8-7facts/22asynccases/12report13同期wx。新两入口前sameactor selecteddelete/auth collision全35行目录size无改、订阅后碰撞503/otheractor同key成功、timeout通知current503先于504而owncleanup-native仍paused/先合法seals不回滚有证。原Root native字段非R2HTTP/EOF/drain。r1pass31/513后newnestedternarystyle仅拆常量/wx保/finalderived字节等、r2fullfresh，业务期待/权限/预算不改。无native失败，505/112生产receipt不替换，其余fivefamily非空async/83-93/body-providerCPUlegacy/fullhistory/physicaldelete/runtime与主goal仍open；以下I/O保。
@@ -348,7 +346,6 @@ owned backend-admin-management-session-r1登记全prior生产b605/支持namespac
 [维护源](editor-backend-copy-command-links.md)：actual allocation actor/opaque op_key成对而非jobUUID，explicit/pairedreverse target-proofs-command native BINARY关系与原domain真实servicekey存在MAC核，缺proof保legacy1false不补签，command旧epoch不绑allocation/currentOwner；原Root先record再replay/cancel/claim/execute，不称执行成功或重造method-path-expected。一次CLI146检查1167调用/19exact46/46report4wx源，原130字符串/错误-hook-budget/全35行目录size-sealsrollback保，11真错配/逆game/孤立MAC拒，sealed/legacy/同key不同actor正例，两晚DELETEcommand拒，Node26分立；504声明501旧375玩家保/111imports109旧。无producer失败，既有waiter源码不改无新copy async覆盖，Root/其它提交未升级，全ref-row-native-deletefalse，以下I/O保，LSP另签。
 
 唯一生产前继61a1571e/503inputs110imports375玩家及所有原历史/文档SHA核过。现有ValidatedFreeze/原focused工具先wx归档，501旧inputs/109imports保，新纯copy关联helper计划纳首末共同事务/末callback-free actualscope-session；既有两waiter依现有类但不称本批异步wait覆盖，Root/其余提交未升级。实际Root.copyCommand256-282同SQL写command+target/proof先于replay/cancel/claim/execute，不把association当成功receipt；target为原allocation actor/op_key组合的op_key不是job UUID，原HTTP HMAC的method/path/expected未存不可重建；command storedEpoch不绑allocation旧epoch/currentowner。原binding JSON-array真实servicekey只核存在proof，missing保legacy unsealed不创建/reseal/repair；原130status-code-hook8/10-budget/35rows-catalog-size-sealsrollback保，新增工程copy请求+实际HttpCommandTargets.record来源/独立模型和samekey不同actor/坏关系MAC/逆关联/legacy/两晚边界。owned backend-copy-command-links-session-r1 全实际执行源wx/log/独立tempSQLiteR2/HTTPS8787/白OSenv已有MF-OpenSSL1800s，不延预算或盲重试，无Source-staging/normalcopy执行/PUT/新route-schema-delete410/UI-player-media-原机制/真实SAVE-profileIDB/共享清理/cloud-install-trust-commit-push-deploy。fullrefs/body-providerCPUlegacy/delete/runtime/73Q仍open；actualauthority非facts/hash/零数，LSP/session-all/syntax-diff-links与人工最小Jev另签。
-
 
 ## E-01-BACKEND-STAGE-COMMAND-LINKS-1（bound Stage关系/现存MAC已验，非preimage/run成功）
 

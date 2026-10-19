@@ -99,6 +99,11 @@ function clockState(c) {
 	equal(c.hold, true);
 	equal(c.nonTrialHold, true);
 	c.advanceFrame(100000);
+	// The comparator must discard the same held fractional budget. Old step
+	// sizes happened to divide 20ms exactly and hid this asymmetry.
+	base.hold = true;
+	base.advanceFrame(100000);
+	base.hold = false;
 	equal(c.hold, true);
 	c.hold = false;
 	equal(c.hold, false);
@@ -108,6 +113,9 @@ function clockState(c) {
 	g.pause("offline");
 	c.hold = false;
 	equal(c.hold, true, "foreign release cannot clear network hold");
+	base.hold = true;
+	base.advanceFrame(100000);
+	base.hold = false;
 	const before = clockState(c);
 	c._tick();
 	equal(clockState(c), before);
@@ -220,7 +228,7 @@ function clockState(c) {
 	c.advanceFrame(20);
 	equal(month, 0);
 	equal(c._pendingDayAdvance, true);
-	equal([c.day, c.month, c.year, c.hour], [31, 12, 264, 0]);
+	equal([c.day, c.month, c.year, c.hour], [31, 12, 264, 23]);
 	confirm(g);
 	c.advanceFrame(100000);
 	equal(month, 0);

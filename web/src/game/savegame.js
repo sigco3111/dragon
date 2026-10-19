@@ -51,7 +51,8 @@ export function canSnapshotState(app) {
     app?.gamebar?._strategicMessageActive ||
     app?.gamebar?.proposalAudience ||
     app?.clock?._pendingStrategicAdvance ||
-    app?.clock?._pendingDayAdvance
+    app?.clock?._pendingDayAdvance ||
+    app?.clock?._pendingMonthAdvance
   );
 }
 

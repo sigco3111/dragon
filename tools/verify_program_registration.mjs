@@ -71,7 +71,11 @@ try {
     await assert.rejects(f.run()); assert.equal(f.puts.length, 1); checks++;
   }
   for (const bad of ['bytes', 'mime', 'duplicate', 'source']) {
-    const f = fixture(); await f.raw.seed(f.key, bad === 'bytes' ? Buffer.from('bad') : bad === 'source' ? programRegistrationBytes(releaseDigest, 'c'.repeat(64)) : bytes, bad === 'mime' ? 'text/plain' : 'application/json');
+    const f = fixture();
+    let seededBytes = bytes;
+    if (bad === 'bytes') seededBytes = Buffer.from('bad');
+    else if (bad === 'source') seededBytes = programRegistrationBytes(releaseDigest, 'c'.repeat(64));
+    await f.raw.seed(f.key, seededBytes, bad === 'mime' ? 'text/plain' : 'application/json');
     if (bad === 'duplicate') f.options.r2.get = async (...args) => { const result = await f.raw.get(...args); result.headers['Content-Type'] = 'application/json'; return result; };
     const before = await f.raw.get(f.key); await assert.rejects(f.run()); assert.equal(f.puts.length, 0); assert.deepEqual(await f.raw.get(f.key), before); checks++;
   }

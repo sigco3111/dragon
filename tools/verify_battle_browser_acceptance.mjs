@@ -1858,10 +1858,13 @@ try {
     path.join(output, "battle-browser-results.json"),
     `${JSON.stringify(results, null, 2)}\n`,
   );
+  // pi-lens-ignore: no-console-except-error-js
   console.log(
     `PASS fresh ${results.browser}: real production BattleView/open, two-side A1C5 paints, 31 hit-tested controls, six commands, contextmenu invariants.`,
   );
+  // pi-lens-ignore: no-console-except-error-js
   console.log(`Fresh profile began empty: ${profile}`);
+  // pi-lens-ignore: no-console-except-error-js
   console.log(`Evidence: ${output}`);
 } finally {
   if (context) await context.close();

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Clock } from "../web/src/game/clock.js";
+import { EngagementPresentation } from "../web/src/render/engagementpresentation.js";
 import { attachSyntheticNativeFactionSource } from "./native_faction_fixture.mjs";
 import { createContentCatalog } from "../web/src/content/catalog.js";
 import { OriginalBattleRng } from "../web/src/game/battle/originalrng.js";
@@ -81,7 +82,7 @@ async function fixture({
     height: 256,
     nodes: Array.from({ length: 192 }, (_, id) => ({
       id,
-      x: id === 0 ? 1 : id === 1 ? 8 : id + 10,
+      x: [1, 8][id] ?? id + 10,
       y: id < 2 ? 10 : 20,
       edgeSlots: [0, 0, 0, 0],
     })),
@@ -106,7 +107,7 @@ async function fixture({
       points: Array.from({ length: 6 }, (_, i) => ({
         x: i + 2,
         y: 10,
-        flags: i === 0 ? 0x44 : i === 5 ? 4 : 0,
+        flags: [0x44, 0, 0, 0, 0, 4][i],
       })),
     });
   }
@@ -235,7 +236,7 @@ const state = (f) => [
   f.A.targetCity,
   f.A._markerFrame,
 ];
-test("all five speed settings move the real native legion in one third wall time; period 2/3 unchanged", async () => {
+test("all five clock rates preserve native road writes and period 2/3 under the new timing policy", async () => {
   const previous = [30, 17.5, 10, 5, 1.5625];
   for (const period of [2, 3]) {
     for (let speed = 0; speed < 5; speed++) {
@@ -259,11 +260,12 @@ test("all five speed settings move the real native legion in one third wall time
         assert.equal(f.A.x, 6, "real 2662/2708 commits the next road point");
         assert.equal(f.A.movePeriod, period);
         assert.equal(clock.strategicTickSerial, 1 + 8 * (period - 1));
+        assert.ok(Math.abs(elapsed - clock.strategicTickSerial * clock.currentStep) <= 0.125,
+          "sub-frame sampling follows the selected wall-clock step");
         runs.push({ elapsed, state: state(f) });
       }
       assert.deepEqual(runs[1].state, runs[0].state, "only wall time changes, not road writes");
-      assert.ok(Math.abs(runs[0].elapsed - runs[1].elapsed * 3) <= 0.375,
-        `period ${period}, speed ${speed}: ${JSON.stringify(runs)}`);
+      // The old threefold ratio was a superseded presentation policy, not KI evidence.
     }
   }
 });
@@ -460,14 +462,9 @@ test("2831/2880 deadline: field missing G1F stops4CD0; siege preserves 4AEC/4F92
         const siegePrefix = kind === "siege" && count === 1;
         assert.equal(f.A.status & 0x20, siegePrefix ? 0 : 0x20);
         assert.equal(plane(f, f.A.x), count === 1 ? 0 : 1);
-        assert.equal(
-          f.sc.legionSlotCounters[0],
-          count === 1
-            ? siegePrefix
-              ? 0
-              : 1
-            : (count || 12) - (viaSlot ? 1 : 0),
-        );
+        let expectedCounter = (count || 12) - (viaSlot ? 1 : 0);
+        if (count === 1) expectedCounter = siegePrefix ? 0 : 1;
+        assert.equal(f.sc.legionSlotCounters[0], expectedCounter);
         if (viaSlot && count === 1) {
           if (kind === "field") {
             assert.equal(
@@ -498,6 +495,45 @@ test("2831/2880 deadline: field missing G1F stops4CD0; siege preserves 4AEC/4F92
           assert.equal(f.A.moveDelay, 3);
         }
       }
+});
+
+test("real 286C/28B4 polls drive 5/3 sounds at all clock rates, never an independent RAF beat", async () => {
+  for (const kind of ["field", "siege"]) for (const period of [2, 3]) for (let speed = 0; speed < 5; speed++) {
+    const f = await fixture({
+      legion: soldier({ moveDelay: 1, movePeriod: period,
+        ...(kind === "siege" ? { x: 6, roadPointAddress: 0x2010, occupancyOffset: 6 } : {}),
+      }),
+      change: raw => {
+        if (kind === "siege") raw.cities[1].faction = 1;
+        else raw.legions.push(soldier({ slot: 4, faction: 1, x: 6, moveDelay: 255 }));
+      },
+    });
+    if (kind === "field") f.context.movement.writeByte(240, 6, 1);
+    f.context.movement.writeByte(240, f.A.x, 1);
+    const requests = [];
+    let now = 0;
+    const clock = new Clock({ startYear: 190, startMonth: 1, onStrategicTick(c) {
+      aiTick(f.app, { legionBatchStart: ((c.strategicTickSerial - 1) % 8) * 16,
+        runCityDaily: false, settleDaily: false });
+      if (c.strategicTickSerial === 89) c.hold = true; // before the fixture's uncovered battle entry
+    } });
+    f.app.clock = clock;
+    f.app.engagementFx = new EngagementPresentation({ playSound: () => {
+      requests.push({ tick: clock.strategicTickSerial, now }); return true;
+    } });
+    clock.strategicSpeed = speed;
+    while (!clock.hold && now < 3000) {
+      now += 1000 / 60;
+      clock.advanceFrame(1000 / 60);
+      f.app.engagementFx.update(f.sc, now);
+    }
+    assert.equal(f.app._strategicBattleFailure, undefined);
+    assert.equal(clock.strategicTickSerial, 89);
+    assert.deepEqual(requests.map(r => r.tick), period === 2 ? [17, 33, 49, 65, 81] : [25, 49, 73]);
+    assert.ok(Math.abs(requests[0].now - requests[0].tick * clock.currentStep) < 1000 / 60 + 0.001);
+    assert.equal(f.app.engagementFx.frameOf(f.A), 1);
+    assert.equal(f.A.movePeriod, period);
+  }
 });
 
 test("2831 low-slot friend wins; slot127 excluded; status/Y/X short circuits and self retained", async () => {
@@ -847,9 +883,10 @@ test("both flags gates: low classes and bit6 signed gates; at most one candidate
           const result = stepTo(f.sc, f.A);
           assert.equal(result, "moved");
           const node = low >= 2 && (high ? stride <= 0 : stride >= 0);
+          const arrivedNode = stride === 4 ? 8 : 0;
           assert.equal(
             f.A.roadEdgeOrNode,
-            node ? (stride === 4 ? 8 : 0) : 0x800,
+            node ? arrivedNode : 0x800,
             JSON.stringify({ first, low, high, stride }),
           );
           assert.equal(
@@ -1491,7 +1528,7 @@ test("real5130 unsupported aliases and DIV preserve precise prefixes/hold withou
     assert.equal(e.instruction, at);
     assert.equal(
       f.app.originalRng.calls,
-      at === "5263" ? 12 : at === "5171" ? 2 : 0,
+      { "5263": 12, "5171": 2 }[at] ?? 0,
     );
     if (at === "5263") {
       assert(f.A.troops > 500);

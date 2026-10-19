@@ -1,21 +1,11 @@
-// User-approved Web pacing, NOT KI:264A/286C/28B4 timing. One presentation-only
-// clock owns map/minimap phases and the single SFX channel. No rule writes/RNG.
-// 用户要求快速五响：每段连续接触最多五次请求，暂停/目标刷新不重置预算。
-// 用户要求发声间隔再缩短至1/3：30ms换帧不变、20ms发声；不是原版IRQ或规则等待。
-export const ENGAGEMENT_FRAME_MS = 30;
-export const ENGAGEMENT_SOUND_MS = 20;
-export const ENGAGEMENT_SOUND_LIMIT = 5;
-
+// KI:286C/28B4 request ID3 only when the real road-action poll is due;
+// KI:2B3F selects the visible phase from +03 & 3. No independent beat or
+// five-sound budget. Audio I/O never writes rules or consumes their RNG.
+const countdownOf = legion => legion?.engagementCountdown ?? legion?._engagement?.countdown;
 function inContact(legion) {
-  const countdown =
-    legion?._engagement?.countdown ?? legion?.engagementCountdown;
-  return (
-    !!legion?._engagement &&
-    !legion.dead &&
-    legion._active !== false &&
-    Number.isInteger(countdown) &&
-    countdown > 0
-  );
+  const countdown = countdownOf(legion);
+  return !!legion?._engagement && !legion.dead && legion._active !== false &&
+    Number.isInteger(countdown) && countdown > 0;
 }
 
 export class EngagementPresentation {
@@ -23,17 +13,13 @@ export class EngagementPresentation {
     this.playSound = playSound;
     this.stopSound = stopSound;
     this.contacts = new Set();
+    this.frames = new Map();
     this.scenario = null;
-    this.elapsed = 0;
-    this.lastTime = null;
-    this.needsPulse = false;
-    this.pulses = 0;
     this.sounding = false;
     this.paused = false;
   }
 
   pause() {
-    this.lastTime = null; // hidden-tab time must not become catch-up debt
     this.paused = true;
     if (this.sounding) {
       try {
@@ -49,15 +35,32 @@ export class EngagementPresentation {
     const changed = this.contacts.size > 0;
     this.pause();
     this.contacts.clear();
+    this.frames.clear();
     this.scenario = null;
-    this.elapsed = 0;
-    this.needsPulse = false;
-    this.pulses = 0;
     return changed;
   }
 
-  /** Called once by the map RAF, never by draw. All contacts share one beat,
-   * so simultaneous legions cannot multiply SFX volume or request frequency.
+  /** Called at the original sound-request branch, not inferred from RAF snapshots.
+   * Same-ID retriggering is owned by the existing single-channel audio driver.
+   * An unavailable audio context drops this request; no backlog or rule delay.
+   */
+  requestSound(scenario) {
+    if (scenario !== this.scenario) {
+      this.reset();
+      this.scenario = scenario;
+    }
+    // The rule poll itself is the running-time authority. A stale paused RAF
+    // snapshot must not suppress the first genuine request after resume.
+    try {
+      if (this.playSound() !== false) this.sounding = true;
+    } catch {
+      /* Retain ownership of an older sound for lifecycle cleanup. */
+    }
+  }
+
+  /** Web lifecycle policy: holds/retirement stop current and pending voices.
+   * Normal ending removes the effect immediately; never add a cosmetic battle
+   * delay or extra sounds to complete a guessed count.
    */
   update(scenario, now, { enabled = true, paused = false } = {}) {
     if (!enabled || !scenario || !Number.isFinite(now)) return this.reset();
@@ -68,50 +71,27 @@ export class EngagementPresentation {
     }
     const contacts = new Set((scenario.legions ?? []).filter(inContact));
     if (!contacts.size) return this.reset() || changed;
-    const first = !this.contacts.size;
-    changed ||=
-      contacts.size !== this.contacts.size ||
-      [...contacts].some((legion) => !this.contacts.has(legion));
+    changed ||= contacts.size !== this.contacts.size ||
+      [...contacts].some(legion => !this.contacts.has(legion));
     this.contacts = contacts;
-    if (first) {
-      this.elapsed = 0;
-      this.lastTime = now;
-      this.needsPulse = true;
+    for (const legion of this.frames.keys()) {
+      if (!contacts.has(legion)) this.frames.delete(legion);
     }
     if (paused) {
       this.pause();
       return changed;
     }
     this.paused = false;
-    const oldFrame = Math.floor(this.elapsed / ENGAGEMENT_FRAME_MS);
-    const oldPulse = Math.floor(this.elapsed / ENGAGEMENT_SOUND_MS);
-    this.elapsed +=
-      this.lastTime == null ? 0 : Math.max(0, now - this.lastTime);
-    this.lastTime = now;
-    if (
-      this.pulses < ENGAGEMENT_SOUND_LIMIT &&
-      (this.needsPulse ||
-        Math.floor(this.elapsed / ENGAGEMENT_SOUND_MS) !== oldPulse)
-    ) {
-      this.needsPulse = false;
-      this.pulses++;
-      // At most one request per RAF, even after a delayed frame; no audio queue.
-      try {
-        if (this.playSound() !== false) this.sounding = true;
-      } catch {
-        /* Retain ownership of any older sound so reset still stops it. */
-      }
+    for (const legion of contacts) {
+      const frame = countdownOf(legion) & 3;
+      if (this.frames.get(legion) !== frame) changed = true;
+      this.frames.set(legion, frame);
     }
-    return (
-      changed || Math.floor(this.elapsed / ENGAGEMENT_FRAME_MS) !== oldFrame
-    );
+    return changed;
   }
 
-  /** Read-only: refreshed _engagement objects/targets never restart the beat.
-   * A cleared contact disappears immediately, even before the next RAF update.
-   */
   frameOf(legion) {
     if (!this.contacts.has(legion) || !inContact(legion)) return null;
-    return 3 - (Math.floor(this.elapsed / ENGAGEMENT_FRAME_MS) % 4);
+    return this.frames.get(legion) ?? (countdownOf(legion) & 3);
   }
 }

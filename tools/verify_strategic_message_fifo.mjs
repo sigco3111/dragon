@@ -19,9 +19,9 @@ globalThis.fetch = async (url) => {
     strings[70] = ["\\2發生了暴風雨。"];
     strings[380] = ["交涉成功。"];
     strings[442] = ["個性第二段。"];
-    return { json: async () => ({ strings }) };
+    return { ok: true, json: async () => ({ strings }) };
   }
-  return { json: async () => ({}) };
+  return { ok: true, json: async () => ({}) };
 };
 globalThis.Image = class {
   set src(_value) {
@@ -30,6 +30,7 @@ globalThis.Image = class {
 };
 
 const { GameBar } = await import("../web/src/ui/gamebar.js");
+const { DEFAULT_WORLD } = await import("../web/src/content/worlddefinition.js");
 
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
@@ -63,6 +64,7 @@ function fixture() {
     },
   };
   const app = {
+    world: { definition: DEFAULT_WORLD },
     scenario: {
       player_faction: 0,
       factions: [

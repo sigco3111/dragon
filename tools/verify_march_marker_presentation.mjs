@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { MapView, preloadMarchMarkerImages } from "../web/src/render/mapview.js";
+import { GameBar } from "../web/src/ui/gamebar.js";
 
 const view = new MapView({ getContext: () => ({}) }, () => null);
 view.app = { clock: { strategicTickSerial: 0 } };
@@ -28,6 +29,34 @@ for (const period of [2, 3]) {
     }
   }
 }
+// The actual minimap route producer must share the big-map segment phase,
+// including fractional updates, rather than restarting at each clock substep.
+const mini = {
+  app: { view, scenario: { player_faction: 0, factions: [{ idx: 0 }], cities: [], legions: [] } },
+  imgs: {}, _banner() {}, panelRect: () => ({ frame: { x: 0, y: 0 }, w: 192, h: 128,
+    mapBox: { x: 0, y: 0, w: 192, h: 128 },
+    transform: { scale: 1 / 32, rect: { x: 0, y: 0 }, worldToDisplay: (x, y) => [x / 32, y / 32] } }),
+};
+const miniStarts = [];
+const miniCtx = { fillRect() {}, strokeRect() {}, setLineDash() {}, beginPath() {},
+  moveTo: (x, y) => miniStarts.push([x, y]), lineTo() {}, stroke() {} };
+globalThis.innerWidth = 1024; globalThis.innerHeight = 768;
+mini.app.clock = view.app.clock;
+view.app.clock.dayProgress = () => 0.75;
+for (const period of [2, 3]) {
+  const army = { faction: 0, prevX: 10, prevY: 20, x: 11, y: 21,
+    movePeriod: period, _renderMoveSerial: 0, target: { x: 30, y: 30 } };
+  mini.app.scenario.legions = [army];
+  const before = structuredClone(army);
+  for (let tick = 0; tick <= 8 * period; tick++) {
+    view.app.clock.strategicTickSerial = tick;
+    GameBar.prototype.drawMini.call(mini, miniCtx);
+    const { wxp, wyp } = view.getLegionRenderPos(army, 0.75);
+    assert.deepEqual(miniStarts.at(-1), [wxp / 32, wyp / 32]);
+  }
+  assert.deepEqual(army, before, 'minimap route draw is readonly');
+}
+delete globalThis.innerWidth; delete globalThis.innerHeight;
 // Delayed asset loads used to return null on first directional draw.
 const images = [];
 globalThis.Image = class {

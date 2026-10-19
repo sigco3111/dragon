@@ -30,7 +30,9 @@ import { createHash } from 'node:crypto';
 
 let passed = 0;
 const check = (name, cond, extra = '') => {
+  // pi-lens-ignore: no-console-except-error-js
   if (!cond) { console.error(`FAIL ${name} ${extra}`); process.exitCode = 1; }
+  // pi-lens-ignore: no-console-except-error-js
   else { passed++; console.log(`ok ${name}`); }
 };
 const fails = async (name, fn, code) => {

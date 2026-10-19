@@ -1,9 +1,6 @@
-import { PresentationClock } from "./presentationclock.js";
 import { loadImage } from "../core/assets.js";
 import { createPresentationImageResources } from './presentationimages.js';
 
-// 原版完整云雨帧直接绘制；换帧/平滑位置是Web表现，不反写天气规则。
-const FRAME_MS = 100; // Web表现节拍，不是DOS规则周期。
 const SLOTS = 16;
 const WIDTH = 256, HEIGHT = 144;
 
@@ -11,10 +8,12 @@ export class WeatherPresentation {
   constructor(resourcePorts = null) {
     this.imageResources = resourcePorts === null ? null : createPresentationImageResources(resourcePorts);
     this.imageLoadGeneration = 0;
-    this.clock = new PresentationClock();
     this.scenario = null;
     this.clouds = Array(SLOTS).fill(null);
     this.frames = [];
+    this.objectFrames = new Map();
+    this.prepared = false;
+    this.changed = false;
   }
 
   async preload() {
@@ -38,54 +37,77 @@ export class WeatherPresentation {
   }
 
   reset() {
-    this.clock.reset();
     this.scenario = null;
     this.clouds.fill(null);
+    this.objectFrames.clear();
+    this.prepared = false;
+    this.changed = false;
   }
 
-  pause() { this.clock.pause(); }
+  pause() {} // No independent wall clock or resume debt.
 
-  update(scenario, now, { enabled = true } = {}) {
-    this.imageResources?.assertCurrent();
+  /** Receives the OLD-frame snapshot from explicit KI:2533 preparation.
+   * Called after each completed rule/calendar return, not from draw(). */
+  capture(scenario, clock, frames) {
     if (scenario !== this.scenario) {
       this.reset();
       this.scenario = scenario;
     }
-    if (!enabled || !scenario) { this.pause(); return false; }
-    const dt = this.clock.advance(now);
-    let changed = false;
-    for (let slot = 0; slot < SLOTS; slot++) {
-      const source = scenario.weatherClouds?.[slot];
-      const active = source && source.active !== false && (source.group ?? 0) === 0 &&
-        Number.isFinite(source.x) && Number.isFinite(source.y);
-      let cloud = this.clouds[slot];
-      if (active) {
-        if (!cloud) {
-          cloud = this.clouds[slot] = { x: source.x, y: source.y, alpha: 0,
-            sourceX: source.x, sourceY: source.y,
-            initialFrame: (source.frame ?? 0) & 7, bornAt: this.clock.time };
-          changed = true;
-        } else if (Math.abs(source.x - cloud.sourceX) > 4 || Math.abs(source.y - cloud.sourceY) > 4) {
-          // 比较相邻权威位置，而非滞后的显示位置；追赶距离大不等于回卷。
-          // 真跳变只重定位，不重置可见度/动画，避免连续移动反复淡出消失。
-          cloud.x = source.x;
-          cloud.y = source.y;
-          changed = true;
-        }
+    const previousFrames = this.objectFrames;
+    this.objectFrames = new Map();
+    for (let slot = 0; slot < 32; slot++) {
+      const source = slot < SLOTS ? scenario.disasterMapObjects[slot] : scenario.weatherClouds[slot - SLOTS];
+      if (previousFrames.get(source) !== frames[slot]) this.changed = true;
+      this.objectFrames.set(source, frames[slot]);
+      if (slot < SLOTS) continue;
+      const index = slot - SLOTS;
+      let cloud = this.clouds[index];
+      if (frames[slot] === null || source.group !== 0) {
+        if (cloud) this.changed = true;
+        this.clouds[index] = null;
+        continue;
+      }
+      const interval = source.interval || 256; // byte DEC 0 expires after 256 updates.
+      if (!cloud || cloud.source !== source) {
+        cloud = this.clouds[index] = { source, x: source.x, y: source.y,
+          fromX: source.x, fromY: source.y, sourceX: source.x, sourceY: source.y,
+          serial: clock.strategicTickSerial, interval, alpha: 1 };
+        this.changed = true;
+      } else if (source.x !== cloud.sourceX || source.y !== cloud.sourceY) {
+        // Each 248A axis moves at most one tile; physical wrap is a relocation.
+        const wrap = Math.abs(source.x - cloud.sourceX) > 1 || Math.abs(source.y - cloud.sourceY) > 1;
+        cloud.fromX = wrap ? source.x : cloud.sourceX;
+        cloud.fromY = wrap ? source.y : cloud.sourceY;
         cloud.sourceX = source.x;
         cloud.sourceY = source.y;
-        const frame = (cloud.initialFrame + Math.floor((this.clock.time - cloud.bornAt) / FRAME_MS)) & 7;
-        if (cloud.frame !== frame) changed = true;
-        cloud.frame = frame;
-        const blend = 1 - Math.exp(-dt / 120);
-        cloud.x += (source.x - cloud.x) * blend;
-        cloud.y += (source.y - cloud.y) * blend;
-        cloud.alpha = Math.min(1, cloud.alpha + dt / 300);
-      } else if (cloud) {
-        cloud.alpha = Math.max(0, cloud.alpha - dt / 300);
-        if (cloud.alpha === 0) this.clouds[slot] = null;
+        cloud.serial = clock.strategicTickSerial;
+        cloud.interval = interval;
+        this.changed = true;
       }
-      if (cloud && dt > 0) changed = true;
+      cloud.frame = frames[slot];
+    }
+    this.prepared = true;
+  }
+
+  frameOf(object) {
+    return this.objectFrames.has(object) ? this.objectFrames.get(object) : object.frame;
+  }
+
+  update(scenario, _now, { enabled = true, clock = null } = {}) {
+    this.imageResources?.assertCurrent();
+    this.prepared = false;
+    if (!enabled || scenario !== this.scenario || !clock) return false;
+    let changed = this.changed;
+    this.changed = false;
+    const serial = clock.strategicTickSerial + clock.dayProgress();
+    for (const cloud of this.clouds) {
+      if (!cloud) continue;
+      const t = Math.max(0, Math.min(1, (serial - cloud.serial) / cloud.interval));
+      const x = cloud.fromX + (cloud.sourceX - cloud.fromX) * t;
+      const y = cloud.fromY + (cloud.sourceY - cloud.fromY) * t;
+      if (x !== cloud.x || y !== cloud.y) changed = true;
+      cloud.x = x;
+      cloud.y = y;
     }
     return changed;
   }
@@ -94,7 +116,7 @@ export class WeatherPresentation {
   draw(ctx, camera, tileSize, viewport) {
     this.imageResources?.assertCurrent();
     for (const cloud of this.clouds) {
-      if (!cloud || cloud.alpha <= 0) continue;
+      if (!cloud) continue;
       const image = this.frames[cloud.frame];
       if (!image) continue;
       const x = camera.x + (cloud.x - 8) * tileSize * camera.scale;
@@ -103,7 +125,6 @@ export class WeatherPresentation {
           x + WIDTH * camera.scale <= 0 || y + HEIGHT * camera.scale <= 0) continue;
       ctx.save();
       ctx.imageSmoothingEnabled = false;
-      ctx.globalAlpha *= cloud.alpha;
       ctx.drawImage(image, x, y, WIDTH * camera.scale, HEIGHT * camera.scale);
       ctx.restore();
     }

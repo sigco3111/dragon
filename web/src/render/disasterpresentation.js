@@ -43,14 +43,16 @@ export class DisasterPresentation {
     return this.imageResources.loadImages(urls);
   }
   disposeImageResources() { this.imageResources?.close(); }
-  draw(ctx, scenario, camera, tileSize, viewport) {
+  draw(ctx, scenario, camera, tileSize, viewport, prepared = null) {
     this.imageResources?.assertCurrent();
     // Slot identity/order is authoritative. Never filter/compact the first 16.
     const slots = scenario.disasterMapObjects ?? [];
     for (let slot = 0; slot < Math.min(16, slots.length); slot++) {
       const object = slots[slot];
       if (!object || object.active === false) continue;
-      const entry = entryFor(object.group ?? object.kind, object.frame ?? 1, this.onReady, this.imageResources);
+      const frame = prepared ? prepared.frameOf(object) : (object.frame ?? 1);
+      if (frame === null) continue;
+      const entry = entryFor(object.group ?? object.kind, frame, this.onReady, this.imageResources);
       if (!entry?.ok) continue;
       const x = camera.x + ((object.x ?? 0) - 2) * tileSize * camera.scale;
       const y = camera.y + ((object.y ?? 0) - 2) * tileSize * camera.scale;

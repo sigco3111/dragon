@@ -27,6 +27,7 @@ try {
       const { MapView, preloadMarchMarkerImages, preloadDisasterObjectImages, preloadEngageMarkerImages } = await import('./src/render/mapview.js');
       const { GameBar } = await import('./src/ui/gamebar.js');
       const { WeatherPresentation } = await import('./src/render/weatherpresentation.js');
+      const { prepareOriginalStrategicMapObjects } = await import('./src/game/weather.js');
       const { createChunkedTerrain } = await import('./src/render/chunkedterrain.js');
       const { loadImage } = await import('./src/core/assets.js');
       const { DEFAULT_WORLD } = await import('./src/content/worlddefinition.js');
@@ -34,7 +35,7 @@ try {
       const sc = { player_faction: 0, cities: [], factions: [{ idx: 0, name: '測試', monarch: '測試', march_marker_style: 0 }], legions: [], disasterMapObjects: [], weatherClouds: [], factionOf(c) { return this.factions[c.faction] ?? null; } };
       for (let i = 0; i < 192; i++) sc.cities.push({ idx: i, name: `城${i}`, faction: i % 2, x: 2 + (i % 16) * 3, y: 6 + Math.floor(i / 16) * 3 });
       const view = new MapView(document.querySelector('#map'), () => sc, () => world);
-      const app = { gameStarted: true, scenario: sc, view, world: { definition: world }, clock: { year: 196, month: 1, day: 1, hold: true, dayProgress: () => 0.5 }, engagementFx: { frameOf: () => null }, weatherFx: new WeatherPresentation() };
+      const app = { gameStarted: true, scenario: sc, view, world: { definition: world }, clock: { year: 196, month: 1, day: 1, hold: true, strategicTickSerial: 0, dayProgress: () => 0.5 }, engagementFx: { frameOf: () => null }, weatherFx: new WeatherPresentation() };
       view.app = app;
       app.gamebar = new GameBar(app);
       app.gamebar.submenuOpen = true;
@@ -64,19 +65,31 @@ try {
       const timings = [];
       for (const crowded of [false, true]) {
         sc.legions = crowded ? Array.from({ length: 128 }, (_, i) => ({ idx: i, faction: 0, x: 4 + i % 16 * 3, y: 8 + Math.floor(i / 16) * 3, prevX: 3 + i % 16 * 3, prevY: 8 + Math.floor(i / 16) * 3, target: { x: 55, y: 35 }, _markerFrame: 1 })) : [];
-        sc.disasterMapObjects = crowded ? Array.from({ length: 16 }, (_, i) => ({ active: true, group: i % 2 + 1, frame: i % 8, x: 8 + i % 8 * 5, y: 15 + Math.floor(i / 8) * 8 })) : [];
-        sc.weatherClouds = crowded ? Array.from({ length: 16 }, (_, i) => ({ active: true, group: 0, frame: i % 8, x: 12 + i % 8 * 5, y: 14 + Math.floor(i / 8) * 12 })) : [];
-        app.weatherFx.reset(); for (let t = 0; t <= 400; t += 100) app.weatherFx.update(sc, t);
+        sc.disasterMapObjects = Array.from({ length: 16 }, (_, i) => crowded ? ({ status: 0x80, active: true, group: i % 2 + 1, frame: i % 8, x: 8 + i % 8 * 5, y: 15 + Math.floor(i / 8) * 8 }) : ({ status: 0, active: false }));
+        sc.weatherClouds = Array.from({ length: 16 }, (_, i) => crowded ? ({ status: 0x80, active: true, group: 0, frame: i % 8, interval: 16, x: 12 + i % 8 * 5, y: 14 + Math.floor(i / 8) * 12 }) : ({ status: 0, active: false }));
+        const prepareWeather = () => {
+          app.weatherFx.capture(sc, app.clock, prepareOriginalStrategicMapObjects(sc));
+          app.weatherFx.update(sc, 0, { clock: app.clock });
+        };
+        app.weatherFx.reset(); prepareWeather();
+        if (app.weatherFx.clouds.filter(Boolean).length !== (crowded ? 16 : 0))
+          throw new Error('render fixture lost its cloud layer');
         compare(crowded ? 'crowded' : 'paused');
         for (const mode of ['idle', 'pointer', 'moving']) for (const uncached of [false, true]) {
           app.clock.dayProgress = () => 0.5;
-          app.weatherFx.reset(); for (let t = 0; t <= 400; t += 100) app.weatherFx.update(sc, t);
+          app.weatherFx.reset(); prepareWeather();
           const samples = [];
           for (let batch = 0; batch < 7; batch++) {
             const start = performance.now();
             for (let frame = 0; frame < 20; frame++) {
               if (mode === 'pointer') view.pointer = { x: 300 + frame, y: 330 };
-              if (mode === 'moving') { app.clock.dayProgress = () => frame / 20; app.weatherFx.update(sc, 500 + (batch * 20 + frame) * 16); }
+              if (mode === 'moving') {
+                app.clock.dayProgress = () => frame / 20;
+                app.clock.strategicTickSerial++;
+                // Explicit visual fixture states, not simulated weather rules.
+                for (const cloud of sc.weatherClouds) if (cloud.active) cloud.status |= 1;
+                prepareWeather();
+              }
               view.draw({ uncached });
             }
             // Include command execution, not just Canvas enqueue time.

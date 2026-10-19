@@ -8360,18 +8360,13 @@ export class GameBar {
     ctx.setLineDash([3, 3]);
     for (const L of sc.legions) {
       if (L.faction == null || !L.target) continue;
-      const fromX = L.prevX ?? L.x;
-      const fromY = L.prevY ?? L.y;
-      const toX = L.x;
-      const toY = L.y;
-      const isMoving = fromX !== toX || fromY !== toY;
-      const curT = isMoving ? Math.min(1, Math.max(0, t)) : 1;
-      const gx = fromX + (toX - fromX) * curT;
-      const gy = fromY + (toY - fromY) * curT;
+      // Same committed segment and 8×movePeriod phase as the big-map marker;
+      // using dayProgress alone restarted this line on every strategic update.
+      const { wxp, wyp, isMoving, curT } = this.app.view.getLegionRenderPos(L, t);
       ctx.strokeStyle = factionColorEx(sc, L.faction);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(...miniT.worldToDisplay(gx * 16 + 8, gy * 16 + 8));
+      ctx.moveTo(...miniT.worldToDisplay(wxp, wyp));
       // G3: v1 live route oracle deleted. Mirror the big-map native
       // projection (L._march points); display never searches the graph.
       const path =
@@ -8401,7 +8396,7 @@ export class GameBar {
       else if (f) style = MINI_MARKER_STYLES.other;
       drawMinimapMarker(ctx, x, y, battles.get(c.idx)?.style ?? style);
     }
-    // 两军野战同样是方块，不追加星形/十字。共享大地图的独立表现相位；
+    // 两军野战同样是方块，不追加星形/十字。共享大地图的规则倒数相位；
     // 暂停不换相，接触解除/战果完成后不保留尾闪。
     for (const [key, marker] of battles) {
       if (typeof key !== "string") continue;

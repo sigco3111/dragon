@@ -64,6 +64,12 @@ try {
       images.push({ src: image.src ?? '', args });
       nativeDraw(image, ...args);
     };
+    // Standalone MapView uses its lazy city-icon cache (not App resource ports).
+    // Wait for that first read before the synchronous raster assertions below.
+    for (let tries = 0; tries < 100 && !images.some(i => /icon-.*_city\.png$/.test(i.src)); tries++) {
+      view.draw({ uncached: true });
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
     const army = { faction: city.faction ?? sc.player_faction, prevX: city.x, prevY: city.y,
       x: city.x + 1, y: city.y, movePeriod: 3, _renderMoveSerial: 0,
       _markerFrame: 3, target: { x: city.x + 10, y: city.y } };
@@ -116,6 +122,169 @@ try {
   assert.equal(result.picked, true);
   assert.deepEqual(result.snapped, { x: 271, y: 189 });
   assert.deepEqual(result.parked, [{ frame: 4, x: 271, y: 189 }]);
+  if (deviceScaleFactor === 1) {
+    // Reuse the real App/RAF, but isolate its native slot pump from city AI and
+    // hourly diplomacy. Explicit moving records are not a natural campaign.
+    await page.evaluate(() => window.__app.setRuntimeEnabled(true));
+    async function choose(x, y) {
+      await page.evaluate(() => { window.__marchMenu = window.__app.startMenu._onClick; });
+      await page.mouse.click(x, y);
+      await page.waitForFunction(() => window.__app.startMenu._onClick &&
+        window.__app.startMenu._onClick !== window.__marchMenu);
+    }
+    await choose(468, 360); await choose(512, 234); await choose(512, 234);
+    await page.mouse.click(584, 455);
+    await page.waitForFunction(() => window.__app.gameStarted && window.__app.runtimeEnabled);
+    await page.evaluate(async () => {
+      const app = window.__app;
+      app.setRuntimeEnabled(false);
+      const { aiTick } = await import('./src/game/ai.js');
+      const { scenarioNativeRoadContext } = await import('./src/game/scenarioassembly.js');
+      const { rebindNativeLegionViews } = await import('./src/game/nativelegions.js');
+      const sc = app.scenario, native = scenarioNativeRoadContext(sc);
+      const graph = await (await fetch(app.world.definition.assets.roadGraph)).json();
+      const edge = graph.edges.find(e => e.points.length >= 32);
+      if (!edge) throw new Error('missing long original edge');
+      const address = 0x800 + edge.id * 16;
+      const first = native.memory.readByte(address) | (native.memory.readByte(address + 1) << 8);
+      const armies = [sc.nativeLegionSlots.records[0], sc.nativeLegionSlots.records[17]];
+      const enemy = sc.nativeLegionSlots.records[64];
+      const saved = armies.map(a => structuredClone(a));
+      sc.cities[edge.target].faction = sc.player_faction; // fixed friendly endpoint fixture
+      for (const obj of [...sc.weatherClouds, ...sc.disasterMapObjects]) obj.status = 0;
+      app.clock.onHour = null;
+      app.clock.onMonthEnd = null;
+      const state = window.__nativeMarch = { rows: [], ticks: [], sounds: 0, contacts: 0,
+        running: false, done: false, pause: false, paused: false, contact: false, removed: false,
+        origin: 0, rng: null };
+      const draw = app.view._drawMarchingIcon;
+      app.view._drawMarchingIcon = function(ctx, x, y, style, frame) {
+        if (state.running) {
+          const positions = armies.map(a => this.getLegionRenderPos(a, app.clock.dayProgress()));
+          const army = positions.findIndex(p => Math.abs(p.sx - x) < 1e-8 && Math.abs(p.sy - y) < 1e-8);
+          if (army >= 0) state.rows.push({ tick: app.clock.strategicTickSerial - state.origin,
+            army, x, y, frame, progress: (armies[army].roadPointAddress - first) / 4 - 1 + positions[army].curT });
+        }
+        return draw.call(this, ctx, x, y, style, frame);
+      };
+      const play = app.engagementFx.playSound;
+      await app.prepareEngageAudio();
+      app.engagementFx.playSound = () => { state.sounds++; return play(); };
+      state.begin = (speed, { contact = false, pause = false } = {}) => {
+        for (const record of [...armies, enemy]) {
+          if (record.status >= 128) native.movement.writeByte(record.occupancyRowParagraph, record.occupancyOffset, 0);
+        }
+        enemy.status = 0;
+        armies.forEach((army, i) => {
+          const pointIndex = i ? 18 : 4, p = edge.points[pointIndex];
+          for (const key of Object.keys(army)) if (!(key in saved[i])) delete army[key];
+          Object.assign(army, saved[i], { status: 0xc1, faction: sc.player_faction,
+            generalIdx: sc.factions[sc.player_faction].monarch_idx, x: p.x, y: p.y,
+            prevX: p.x, prevY: p.y, roadEdgeOrNode: address,
+            roadPointAddress: first + pointIndex * 4, roadStride: 4, targetNode: edge.target,
+            targetCity: edge.target, commandState: 0, moveDelay: 1, movePeriod: i + 2,
+            occupancyOffset: p.x, occupancyRowParagraph: p.y * 24, troops: 600, morale: 200,
+            units: Array.from({ length: 6 }, () => ({ type: i ? 3 : 1, troops: 1000 })) });
+          native.movement.writeByte(p.y * 24, p.x, 1);
+        });
+        if (contact) {
+          const p = edge.points[5];
+          Object.assign(enemy, { status: 0xc1, faction: (sc.player_faction + 1) % 22,
+            x: p.x, y: p.y, occupancyOffset: p.x, occupancyRowParagraph: p.y * 24,
+            moveDelay: 255, movePeriod: 3 });
+          native.movement.writeByte(p.y * 24, p.x, 1);
+        }
+        sc.legionSlotCounters.fill(0);
+        rebindNativeLegionViews(sc);
+        app.engagementFx.reset();
+        Object.assign(state, { rows: [], ticks: [], sounds: 0, contacts: 0, running: true,
+          done: false, pause, paused: false, contact, removed: false, origin: app.clock.strategicTickSerial,
+          rng: app.originalRng.snapshot() });
+        app.clock.strategicSpeed = speed;
+        app.clock._acc = 0;
+        app.gamebar.settingsOpen = false;
+        app.mapPointerHold = false;
+        app.view.cam.x = 350 - edge.points[4].x * 16;
+        app.view.cam.y = 260 - edge.points[4].y * 16;
+        app.setRuntimeEnabled(true);
+      };
+      app.clock.onStrategicTick = c => {
+        const tick = c.strategicTickSerial - state.origin;
+        aiTick(app, { legionBatchStart: ((tick - 1) % 8) * 16, runCityDaily: false, settleDaily: false });
+        if (app._strategicBattleFailure) throw app._strategicBattleFailure.error;
+        state.ticks.push(armies.map(a => a.roadPointAddress));
+        if (armies[0]._engagement) state.contacts++;
+      };
+      const prepare = app.clock.onStrategicUpdateComplete;
+      app.clock.onStrategicUpdateComplete = c => {
+        prepare(c);
+        const tick = c.strategicTickSerial - state.origin;
+        if (state.contact && !state.removed && tick >= 25) {
+          native.movement.writeByte(enemy.occupancyRowParagraph, enemy.occupancyOffset, 0);
+          enemy.status = 0; rebindNativeLegionViews(sc); state.removed = true;
+        }
+        if (state.pause && !state.paused && tick >= 40) {
+          state.paused = true; app.gamebar.settingsOpen = true; app.mapPointerHold = true;
+          app.gamebar.syncClock();
+        }
+        if (tick >= 160) {
+          state.done = true; state.running = false;
+          app.gamebar.settingsOpen = true; app.gamebar.syncClock();
+        }
+      };
+    });
+    const runs = [];
+    for (let run = 0; run < 7; run++) {
+      await page.evaluate(run => window.__nativeMarch.begin(run < 5 ? run : 2, { contact: run === 6, pause: run === 5 }), run);
+      if (run === 5) {
+        await page.waitForFunction(() => window.__nativeMarch.paused);
+        const held = await page.evaluate(() => ({ tick: window.__app.clock.strategicTickSerial,
+          phase: window.__app.clock.dayProgress(), rows: window.__nativeMarch.rows.length }));
+        await page.evaluate(() => {
+          window.__app.clock.strategicSpeed = 4;
+          window.__app.gamebar.settingsOpen = false;
+          window.__app.gamebar.syncClock();
+        });
+        await page.waitForTimeout(200);
+        assert.deepEqual(await page.evaluate(() => ({ tick: window.__app.clock.strategicTickSerial,
+          phase: window.__app.clock.dayProgress(), rows: window.__nativeMarch.rows.length })), held,
+          'remaining pointer hold freezes rules and already published positions after speed change');
+        await page.evaluate(() => { window.__app.mapPointerHold = false; window.__app.gamebar.syncClock(); });
+      }
+      await page.waitForFunction(() => window.__nativeMarch.done);
+      const trace = await page.evaluate(() => {
+        const state = window.__nativeMarch, app = window.__app;
+        return { rows: state.rows, ticks: state.ticks, sounds: state.sounds, contacts: state.contacts,
+          initialRng: state.rng, rng: app.originalRng.snapshot(),
+          contactEnded: !app.scenario.legions[0]._engagement, failure: Boolean(app._strategicBattleFailure) };
+      });
+      assert.equal(trace.failure, false);
+      assert.equal(trace.ticks.length, 160);
+      assert.deepEqual(trace.rng, trace.initialRng);
+      for (let army = 0; army < 2; army++) {
+        const addresses = trace.ticks.map(t => t[army]);
+        const changes = addresses.map((p, i) => i && p !== addresses[i - 1] ? i + 1 : 0).filter(Boolean);
+        const visible = trace.rows.filter(row => row.army === army);
+        for (let i = 1; i < visible.length; i++) {
+          const delta = visible[i].progress - visible[i - 1].progress;
+          assert.ok(delta >= -1e-8 && delta <= 1 + 1e-8, 'visible native path never rewinds or skips a whole segment');
+        }
+        for (const tick of changes) {
+          assert.equal(addresses[tick - 1] - addresses[tick - 2], 4, 'native action consumes one original point');
+          if (tick < 150) assert.ok(visible.some(row => row.tick >= tick && row.tick < tick + 8),
+            'each army point submission has a Canvas draw within one slot sweep');
+        }
+        assert.ok(changes.length >= 5);
+      }
+      assert.ok(trace.rows.length > 10, 'real RAF rendered multiple native positions');
+      if (run === 6) {
+        assert.ok(trace.contacts > 0); assert.equal(trace.sounds, 1);
+        assert.equal(trace.contactEnded, true, 'removed native opponent cancels contact and movement resumes');
+      }
+      runs.push({ run, draws: trace.rows.length, sounds: trace.sounds });
+    }
+    process.stdout.write(`native march RAF five speeds, two periods, hold/speed/cancel: ${JSON.stringify(runs)}\n`);
+  }
   assert.deepEqual(errors, []);
   await context.close();
   process.stdout.write(`march markers browser OK DPR=${deviceScaleFactor}: 120 images, 192 city anchors, departure/arrival origins, panned garrison/pick/snap\n`);

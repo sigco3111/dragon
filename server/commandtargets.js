@@ -76,7 +76,7 @@ export class GameDeletionCommandIntegrity {
       for(const r of relations){if(this.#targets.verifyRelation(r))sealed++;else unsealed++;}
       const byKey=new Map(relations.map(r=>[JSON.stringify([r.kind,r.actor,r.op_key]),r]));
       for(const proof of proofs){const r=byKey.get(JSON.stringify([proof.kind,proof.actor,proof.op_key]));if(!r || r.target_id!==proof.target_id)fail(503,'COMMAND_TARGET_PROOF_CORRUPT');}
-      const commands=relations.map(r=>{const table=r.kind==='copy'?'copy_http_commands':'stage_http_commands';return this.#sql.exec('SELECT * FROM '+table+' WHERE actor=? AND op_key=?',r.actor,r.op_key).toArray()[0];});
+      const commands=relations.map(r=>{const table=r.kind==='copy'?'copy_http_commands':'stage_http_commands';return this.#sql.exec(`SELECT * FROM ${table} WHERE actor=? AND op_key=?`,r.actor,r.op_key).toArray()[0];});
       const text=JSON.stringify({game,fence,relations,proofs,commands});if(Buffer.byteLength(text)>4*1024*1024)fail(413,'COMMAND_PROOF_BUDGET');
       return Object.freeze({gameId,rowRevision:game.row_revision,associationDigest:createHash('sha256').update(text).digest('hex'),sealedTargets:sealed,unsealedTargets:unsealed,deleteAllowed:false,coverage:'BOUND_COMMAND_PROOFS_ONLY_LEGACY_UNKNOWN',mode:'VERIFIED_BOUND_COMMAND_ASSOCIATIONS_NOT_DELETE_PLAN'});
     });

@@ -129,6 +129,7 @@ try {
   try { await reject(capture, 'SOURCE_OBJECT_CORRUPT'); } finally { objects.set(rootKey, rootBytes); }
   groups++;
 
+  // pi-lens-ignore: no-array-reverse-mutation-js
   for (const corrupt of [value => { value.roles[0].path = 'private/secret'; }, value => { value.roles[0].chunks[0].byteLength++; }, value => { value.extra = true; }, value => { value.roles.reverse(); }]) {
     const bad = structuredClone(index); corrupt(bad);
     setRoot(stage(Buffer.concat(encodeSourceChunks(bad))));

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from
 import {createPresentationImageResources} from '../web/src/render/presentationimages.js';
 import {DisasterPresentation} from '../web/src/render/disasterpresentation.js';
 import {WeatherPresentation} from '../web/src/render/weatherpresentation.js';
-const checks=[],paths=['web/src/render/ownedimages.js','web/src/render/mapimages.js','web/src/render/presentationimages.js','web/src/render/disasterpresentation.js','web/src/render/weatherpresentation.js','web/src/render/presentationclock.js','web/src/core/assets.js','tools/verify_presentation_image_resource_ports.mjs'],sourceHashes=Object.fromEntries(paths.map(p=>[p,createHash('sha256').update(readFileSync(p)).digest('hex')]));
+import {prepareOriginalStrategicMapObjects} from '../web/src/game/weather.js';
+const checks=[],paths=['web/src/render/ownedimages.js','web/src/render/mapimages.js','web/src/render/presentationimages.js','web/src/render/disasterpresentation.js','web/src/render/weatherpresentation.js','web/src/game/weather.js','web/src/core/assets.js','tools/verify_presentation_image_resource_ports.mjs'],sourceHashes=Object.fromEntries(paths.map(p=>[p,createHash('sha256').update(readFileSync(p)).digest('hex')]));
 const weatherURLs=Array.from({length:8},(_,n)=>`grf/weather/cloud_frame_${n}.png`),disasterURLs=['fire','riot'].flatMap(k=>Array.from({length:8},(_,n)=>`grf/disaster/${k}_frame_${n}.png`)),all=[...disasterURLs,...weatherURLs];
 const check=(name)=>checks.push(name),ctx=()=>{const draws=[];return {draws,globalAlpha:1,save(){},restore(){},drawImage(...x){draws.push(x);}};},camera={x:0,y:0,scale:1},viewport={width:1024,height:768};
 function fixture(){let valid=true,disposed=0,active=0,peak=0;const calls=[],ports={assertCurrent(){if(!valid)throw new Error('SCOPE_REVOKED');},async loadImage(url){calls.push(url);active++;peak=Math.max(peak,active);await Promise.resolve();active--;let done=false;return {image:{url},dispose(){assert.equal(done,false);done=true;disposed++;}};}};return {ports,calls,stats:()=>({disposed,peak}),revoke(){valid=false;}};}
@@ -12,8 +13,35 @@ assert.throws(()=>createPresentationImageResources({loadImage:null,assertCurrent
 {const f=fixture(),r=createPresentationImageResources(f.ports);for(const u of ['grf/disaster/fire_frame_8.png','grf/weather/cloud_frame_8.png','grf/disaster/riot_frame_0.png\n','/grf/weather/cloud_frame_0.png','grf/ui/icon-empty_city.png','grf/weather/../cloud_frame_0.png'])assert.throws(()=>r.getImage(u),/ROLE/);await assert.rejects(r.loadImages([all[0],all[0]]),/LIST/);assert.equal(f.calls.length,0);r.close();check('wrong roles, trailing newline, prefix, traversal, duplicate list reject before I/O');}
 {const f=fixture(),fx=new DisasterPresentation(undefined,f.ports);await fx.preloadImageResources();const s={disasterMapObjects:Array(17).fill(null)};s.disasterMapObjects[1]={group:1,frame:9,x:2,y:2};s.disasterMapObjects[3]={group:2,frame:-1,x:4,y:4};s.disasterMapObjects[8]={group:2,active:false};s.disasterMapObjects[15]={kind:1};s.disasterMapObjects[16]={group:1};const before=JSON.stringify(s),c=ctx();fx.draw(c,s,camera,16,viewport);assert.deepEqual(c.draws.map(v=>v[0].url),[disasterURLs[1],disasterURLs[15],disasterURLs[1]]);assert.deepEqual(c.draws[0].slice(1),[0,0,80,80]);assert.equal(JSON.stringify(s),before);fx.disposeImageResources();assert.equal(f.stats().disposed,16);check('same disaster slot1/3/15 order, eight frame mask, default frame, original80px geometry and no slot16/rule writes');}
 {const f=fixture(),fx=new DisasterPresentation(undefined,f.ports);await fx.preloadImageResources([disasterURLs[0]]);await fx.preloadImageResources([disasterURLs[0]]);assert.equal(f.calls.length,2);assert.equal(f.stats().disposed,1);f.revoke();assert.throws(()=>fx.draw(ctx(),{disasterMapObjects:[]},camera,16,viewport),/SCOPE_REVOKED/);assert.equal(f.calls.length,2);fx.disposeImageResources();check('disaster explicit same-role fresh load; revoked cached/empty draw no network');}
-{const f=fixture(),w=new WeatherPresentation(f.ports);await w.preload();assert.deepEqual(f.calls,weatherURLs);const s={weatherClouds:[{x:8,y:4,frame:3}]},before=JSON.stringify(s);w.update(s,0);w.update(s,300);const c=ctx();w.draw(c,camera,16,viewport);assert.equal(c.draws.length,1);assert.equal(c.draws[0][0].url,weatherURLs[w.clouds[0].frame]);assert.deepEqual(c.draws[0].slice(1),[0,0,256,144]);assert.equal(JSON.stringify(s),before);await w.preload();assert.equal(f.calls.length,16);assert.equal(f.stats().disposed,8);w.disposeImageResources();assert.equal(w.frames.length,0);assert.equal(f.stats().disposed,16);check('weather eight same decoded frames, originalclock/draw256x144, no authoritative writes, explicit preload fresh reads and release');}
-{const f=fixture(),w=new WeatherPresentation(f.ports);await w.preload();w.update({weatherClouds:[{x:8,y:4}]},0);const time=w.clock.time,snapshot=JSON.stringify(w.clouds);f.revoke();assert.throws(()=>w.update(w.scenario,1000),/SCOPE_REVOKED/);assert.throws(()=>w.draw(ctx(),camera,16,viewport),/SCOPE_REVOKED/);assert.equal(w.clock.time,time);assert.equal(JSON.stringify(w.clouds),snapshot);w.disposeImageResources();check('weather revoked update rejects before clock/smoothing; cached draw rejects');}
+{
+  const f=fixture(),w=new WeatherPresentation(f.ports);
+  await w.preload();assert.deepEqual(f.calls,weatherURLs);
+  const s={disasterMapObjects:Array.from({length:16},()=>({status:0})),
+    weatherClouds:Array.from({length:16},()=>({status:0}))};
+  s.weatherClouds[0]={status:0x80,group:0,x:8,y:4,frame:3,interval:16};
+  const clock={strategicTickSerial:0,dayProgress:()=>0},before=JSON.stringify(s);
+  w.capture(s,clock,prepareOriginalStrategicMapObjects(s));
+  w.update(s,0,{clock});w.update(s,300,{clock});
+  const c=ctx();w.draw(c,camera,16,viewport);
+  assert.equal(c.draws.length,1);assert.equal(c.draws[0][0].url,weatherURLs[3]);
+  assert.deepEqual(c.draws[0].slice(1),[0,0,256,144]);assert.equal(JSON.stringify(s),before);
+  await w.preload();assert.equal(f.calls.length,16);assert.equal(f.stats().disposed,8);
+  w.disposeImageResources();assert.equal(w.frames.length,0);assert.equal(f.stats().disposed,16);
+  check('weather prepared frame/draw256x144, no wall-clock/rule writes, explicit preload fresh reads and release');
+}
+{
+  const f=fixture(),w=new WeatherPresentation(f.ports);await w.preload();
+  const s={disasterMapObjects:Array.from({length:16},()=>({status:0})),
+    weatherClouds:Array.from({length:16},()=>({status:0}))};
+  s.weatherClouds[0]={status:0x80,group:0,x:8,y:4,frame:3,interval:16};
+  const clock={strategicTickSerial:0,dayProgress:()=>0};
+  w.capture(s,clock,prepareOriginalStrategicMapObjects(s));w.update(s,0,{clock});
+  const snapshot=JSON.stringify(w.clouds);f.revoke();
+  assert.throws(()=>w.update(s,1000,{clock}),/SCOPE_REVOKED/);
+  assert.throws(()=>w.draw(ctx(),camera,16,viewport),/SCOPE_REVOKED/);
+  assert.equal(JSON.stringify(w.clouds),snapshot);assert.equal(clock.strategicTickSerial,0);
+  w.disposeImageResources();check('weather revoked update rejects before projection; cached draw rejects');
+}
 {let resolve;const gate=new Promise(yes=>{resolve=yes;}),f=fixture(),load=f.ports.loadImage;f.ports.loadImage=async url=>{await gate;return load(url);};const w=new WeatherPresentation(f.ports),p1=w.preload(),p2=w.preload();const failure=assert.rejects(p1,/WEATHER_IMAGES_STALE/);resolve();await failure;await p2;assert.equal(w.frames.length,8);assert.equal(f.calls.length,8);w.disposeImageResources();check('concurrent weather preloads join inflight yet older install rejected by generation');}
 {let resolve;const gate=new Promise(yes=>{resolve=yes;}),f=fixture(),load=f.ports.loadImage;f.ports.loadImage=async url=>{await gate;return load(url);};const w=new WeatherPresentation(f.ports),p=w.preload(),failure=assert.rejects(p,/PRESENTATION_IMAGES_CLOSED/);w.disposeImageResources();resolve();await failure;await new Promise(yes=>setImmediate(yes));assert.equal(w.frames.length,0);assert.equal(f.stats().disposed,4);assert.equal(f.calls.length,4);check('closed weather queued promises reject and four eventual owned handles disposed without installed frames');}
 {const f=fixture(),r=createPresentationImageResources(f.ports);let n=0;f.ports.loadImage=async()=>{n++;throw new Error('HTTP_409');};await r.loadImages([all[0]]);assert.equal(r.getImage(all[0]).url,all[0]);assert.equal(f.calls.length,1);assert.equal(n,0);r.close();check('installed loader function captured, not later property replacement');}

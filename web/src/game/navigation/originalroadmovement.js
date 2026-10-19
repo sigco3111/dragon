@@ -273,6 +273,11 @@ export function performOriginalRoadAction(sc, legion, context, rng = null, block
       return performScenarioSiegeEntry(sc, legion, target.cityIdx, context, rng, blocks);
     }
     if (count === 0) wb(3, 12);
+    else if (count > 1) {
+      // KI:286C/28B4 → 02F5(AL=3). First contact and battle entry are silent.
+      // Optional display I/O cannot hold, reject or otherwise change the rule step.
+      try { blocks?.onContactSound?.(); } catch { /* Audio unavailable. */ }
+    }
     // Product presentation only; never used to select the next native contact.
     legion._engagement = { kind, target };
     projectEngagementCounter(legion);

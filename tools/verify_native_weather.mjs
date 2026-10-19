@@ -2,9 +2,11 @@
 // 248A→24FF→ECE0 execution; source/evidence root is documented in march §3.16.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   moveOriginalWeatherCloud,
   tickOriginalStrategicWeather,
+  prepareOriginalStrategicMapObjects,
 } from "../web/src/game/weather.js";
 
 const TABLE = Array.from({ length: 256 }, (_, i) => (i * 73 + 19) & 255);
@@ -144,6 +146,31 @@ function scenario(cloud) {
     weatherCloudBounds: { minX: -16, maxX: 400, minY: -16, maxY: 400 },
   };
 }
+
+test("2533 captures OLD frame before clearing dirty/increment, without another timer tick", () => {
+  const ki = readFileSync(new URL('../../Dragon/KI.EXE', import.meta.url));
+  assert.equal(ki.subarray(0x2551 + 512, 0x2565 + 512).toString('hex'),
+    '8a440f02d8f60401740a8024fefec0240788440f');
+  const sc = scenario({ status: 0x81, frame: 7, timer: 16 });
+  sc.disasterMapObjects[15] = { status: 0x83, frame: 255, timer: 1 };
+  const first = prepareOriginalStrategicMapObjects(sc);
+  assert.equal(first.length, 32);
+  assert.equal(first[14], null);
+  assert.equal(first[15], 255);
+  assert.equal(first[16], 7);
+  assert.deepEqual(sc.weatherClouds[0], { status: 0x80, frame: 0, timer: 16 });
+  assert.deepEqual(sc.disasterMapObjects[15], { status: 0x82, frame: 0, timer: 1 });
+  const saved = JSON.stringify(sc);
+  assert.equal(prepareOriginalStrategicMapObjects(sc)[16], 0);
+  assert.equal(JSON.stringify(sc), saved, 'second outer draw does not advance clean frame/timer');
+  let restored;
+  try { restored = JSON.parse(saved); } catch (error) { assert.fail(error); }
+  assert.deepEqual(prepareOriginalStrategicMapObjects(restored), prepareOriginalStrategicMapObjects(sc));
+  sc.disasterMapObjects[0] = { status: 0x81, frame: 0 };
+  sc.disasterMapObjects[1] = { status: 0x81 };
+  assert.throws(() => prepareOriginalStrategicMapObjects(sc), /slot 1 frame/);
+  assert.deepEqual(sc.disasterMapObjects[0], { status: 0x80, frame: 1 }, 'late uncovered input retains original prefix');
+});
 
 test("2459 expiry performs reload/dirty then two RNG calls and 248A writes", () => {
   const sc = scenario({

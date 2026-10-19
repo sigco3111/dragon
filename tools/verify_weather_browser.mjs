@@ -78,12 +78,12 @@ try {
     const app = window.__app;
     const advance = app.clock.advanceFrame.bind(app.clock);
     window.__weatherSlowRestore = () => { app.clock.advanceFrame = advance; };
-    window.__weatherRunning = { serial: app.clock.strategicTickSerial, times: [], frames: [] };
+    window.__weatherRunning = { serial: app.clock.strategicTickSerial, serials: [], frames: [] };
     app.clock.speed = 1;
     app.clock.advanceFrame = dt => {
       advance(dt);
       const probe = window.__weatherRunning;
-      probe.times.push(app.weatherFx.clock.time);
+      probe.serials.push(app.clock.strategicTickSerial);
       probe.frames.push(app.weatherFx.clouds[0]?.frame);
       const start = performance.now();
       while (performance.now() - start < 120) { /* controlled visible main-thread load */ }
@@ -92,15 +92,23 @@ try {
   await page.waitForFunction(() => {
     const app = window.__app, probe = window.__weatherRunning;
     return app.clock.strategicTickSerial > probe.serial &&
-      Math.max(...probe.times) - Math.min(...probe.times) >= 400 &&
+      Math.max(...probe.serials) - Math.min(...probe.serials) >= 32 &&
       new Set(probe.frames.filter(Number.isInteger)).size >= 3;
   }, null, { timeout: 15000 });
-  await page.evaluate(() => window.__weatherSlowRestore());
+  const slowBudget = await page.evaluate(() => {
+    window.__weatherSlowRestore();
+    const serials = window.__weatherRunning.serials;
+    return serials.slice(1).every((serial, i) => serial - serials[i] <= 8);
+  });
+  assert.equal(slowBudget, true, 'visible slow frames discard backlog, at most eight updates');
 
   const evidence = await page.evaluate(async () => {
     const app = window.__app;
     app.setRuntimeEnabled(false);
+    const { prepareOriginalStrategicMapObjects } = await import('./src/game/weather.js');
+    const prepare = () => app.weatherFx.capture(app.scenario, app.clock, prepareOriginalStrategicMapObjects(app.scenario));
     const cloud = {
+      status: 0x80,
       active: true,
       x: 100,
       y: 100,
@@ -113,7 +121,7 @@ try {
       group: 0,
       frame: 0,
     };
-    app.scenario.weatherClouds = [cloud];
+    app.scenario.weatherClouds = [cloud, ...Array.from({ length: 15 }, () => ({ status: 0 }))];
     app.view.cam.scale = 1;
     app.view.cam.x = 320 - cloud.x * 16;
     app.view.cam.y = 200 - cloud.y * 16;
@@ -126,8 +134,8 @@ try {
     const bare = capture();
     const stateBefore = JSON.stringify(app.scenario);
     const rngBefore = JSON.stringify(app.originalRng.snapshot());
-    app.weatherFx.update(app.scenario, 0);
-    for (let time = 10; time <= 300; time += 10) app.weatherFx.update(app.scenario, time);
+    prepare();
+    app.weatherFx.update(app.scenario, 0, { clock: app.clock });
     app.view.draw();
     const weather = capture();
     const visualBeforeDraw = JSON.stringify(app.weatherFx.clouds);
@@ -147,12 +155,15 @@ try {
         image.onload = () => resolve(image); image.onerror = reject;
         image.src = `grf/weather/cloud_frame_${frame}.png`;
       })));
-    app.weatherFx.pause();
-    app.weatherFx.update(app.scenario, 350); // 恢复帧不补债，表现时间仍为300ms。
+    let stateUnchanged = stateBefore === JSON.stringify(app.scenario);
     let exactFrames = 0;
     for (let step = 0; step < 8; step++) {
-      const image = originals[(3 + step) & 7];
-      app.weatherFx.update(app.scenario, 350 + step * 100);
+      const image = originals[step];
+      cloud.frame = step;
+      cloud.status = 0x81;
+      prepare(); // Old-frame image; stored successor is advanced outside draw.
+      const preparedState = JSON.stringify(app.scenario);
+      app.weatherFx.update(app.scenario, 350 + step * 100, { clock: app.clock });
       cloudContext.clearRect(0, 0, 256, 144);
       app.weatherFx.draw(cloudContext, { x: 128 - cloud.x * 16,
         y: 64 - cloud.y * 16, scale: 1 }, 16, { width: 256, height: 144 });
@@ -161,13 +172,14 @@ try {
       const actual = cloudContext.getImageData(0, 0, 256, 144).data;
       const expected = referenceContext.getImageData(0, 0, 256, 144).data;
       if (actual.every((value, index) => value === expected[index])) exactFrames++;
+      stateUnchanged &&= preparedState === JSON.stringify(app.scenario);
     }
     const modern = {
       exactFrames,
       visible: weather.some((value, index) => value !== bare[index]),
       repeatable: repeated.every((value, index) => value === weather[index]),
       drawIsReadOnly,
-      stateUnchanged: stateBefore === JSON.stringify(app.scenario),
+      stateUnchanged,
       rngUnchanged: rngBefore === JSON.stringify(app.originalRng.snapshot()),
     };
 
@@ -317,7 +329,6 @@ try {
     window.__weatherRngBefore = JSON.stringify(app.originalRng.snapshot());
     window.__weatherSerialBefore = app.clock.strategicTickSerial;
     window.__weatherVisualBefore = JSON.stringify(app.weatherFx.clouds);
-    window.__weatherTimeBefore = app.weatherFx.clock.time;
     app.setRuntimeEnabled(true);
   });
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 350)));
@@ -325,8 +336,7 @@ try {
     const app = window.__app;
     app.setRuntimeEnabled(false);
     return {
-      frozen: window.__weatherVisualBefore === JSON.stringify(app.weatherFx.clouds) &&
-        window.__weatherTimeBefore === app.weatherFx.clock.time,
+      frozen: window.__weatherVisualBefore === JSON.stringify(app.weatherFx.clouds),
       state: window.__weatherRuleBefore === JSON.stringify(app.scenario),
       rng: window.__weatherRngBefore === JSON.stringify(app.originalRng.snapshot()),
       serial: window.__weatherSerialBefore === app.clock.strategicTickSerial,

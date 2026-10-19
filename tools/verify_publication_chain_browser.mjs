@@ -329,7 +329,8 @@ try {
   }
   assert.deepEqual(errors, []); assert.deepEqual(outside, []); assert.deepEqual(unexpectedFailures, ['/api/publish', ...(managementUI ? ['/api/games/' + gameId + '/listing'] : []), ...(deletionUI ? ['/api/games/' + gameId + '/deletion'] : [])]); assert.equal(outbound, 0);
   const expectedHTTP = calls.filter(row => row.status >= 400);
-  const expectedStatuses = [...(managementUI ? [401,401,403,409,409,410] : [401,403,409,409,410]), ...(playerClient ? [503,409,403,410] : []), ...(playerApp ? (publicPlayer ? [410] : [503,410]) : [])];
+  const appStatuses = publicPlayer ? [410] : [503,410];
+  const expectedStatuses = [...(managementUI ? [401,401,403,409,409,410] : [401,403,409,409,410]), ...(playerClient ? [503,409,403,410] : []), ...(playerApp ? appStatuses : [])];
   assert.deepEqual(expectedHTTP.map(row => row.status).sort((a,b) => a-b), expectedStatuses.sort((a,b) => a-b));
   assert.equal(consoleErrors.length, expectedHTTP.length + (managementUI ? 2 : 1) + (deletionUI ? 1 : 0));
   for (const message of consoleErrors) assert.match(message, playerClient ? /Failed to load resource: (net::ERR_FAILED|the server responded with a status of (401|403|409|410|503))/ : /Failed to load resource: (net::ERR_FAILED|the server responded with a status of (401|403|409|410))/);

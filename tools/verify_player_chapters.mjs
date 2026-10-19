@@ -16,6 +16,7 @@ const invalid=e=>['PLAYER_SELECTION_CHANGED','PLAYER_CHAPTER_PREVIEW_INVALID'].i
 for(const patch of [{gameId:'bad'},{chapters:[]},{chapters:[selection.chapters[0],selection.chapters[0]]},{chapters:['other#chapter']},{name:3},{manifestDigest:'bad'}]){const f=await fixture();await assert.rejects(()=>loadPlayerChapters({reader:f.reader,selection:{...selection,...patch}}));assert.deepEqual(f.calls,[]);checks++;}
 for(const args of [{reader:{}},{reader:{admit(){}}},{assertCurrent:1}]){const f=await fixture();await assert.rejects(()=>loadPlayerChapters({reader:f.reader,selection,...args}));assert.deepEqual(f.calls,[]);checks++;}
 {
+ // pi-lens-ignore: no-array-reverse-mutation-js
  const f=await fixture(),input=structuredClone(selection),pending=loadPlayerChapters({reader:f.reader,selection:input});input.name='mutated';input.chapters.reverse();const result=await pending;
  assert.deepEqual(result.chapters,f.bodies.map((b,i)=>({chapterId:selection.chapters[i],name:b.name,start:b.start})));assert.equal(result.selection.name,'Owned');assert.equal(result.selection.manifestDigest,D);
  assert.ok(Object.isFrozen(result)&&Object.isFrozen(result.selection)&&Object.isFrozen(result.chapters)&&result.chapters.every(c=>Object.isFrozen(c)&&Object.isFrozen(c.start)));
@@ -23,6 +24,7 @@ for(const args of [{reader:{}},{reader:{admit(){}}},{assertCurrent:1}]){const f=
  const final=await admitPlayerChapter({reader:f.reader,selection:result.selection,chapterId:selection.chapters[1]});assert.equal(final.state(),'active');assert.notEqual(final,f.sessions[1]);assert.equal(f.sessions.length,3);assert.equal(f.calls.at(-1)[0],'admit');final.close();checks++;
  const again=await loadPlayerChapters({reader:f.reader,selection:result.selection});assert.deepEqual(again,result);checks++;
 }
+// pi-lens-ignore: no-array-reverse-mutation-js
 for(const mutate of [s=>{s.identity.releaseId=G;},s=>{s.identity.ordinal='1.1';},s=>{s.identity.sourceDigest='e'.repeat(64);},s=>s.identity.chapters.reverse(),s=>{s.identity.chapterId=selection.chapters[1];},s=>{s.identity.manifestDigest='bad';},s=>s.close()]){const f=await fixture();f.admitHook=mutate;await assert.rejects(()=>loadPlayerChapters({reader:f.reader,selection}),invalid);assert.ok(f.sessions.every(s=>s.state()==='closed'));assert.equal(f.calls.some(c=>c[0]==='read'),false);checks++;}
 {
  const f=await fixture();f.admitHook=(s,i)=>{if(i===1)s.identity.manifestDigest='e'.repeat(64);};await assert.rejects(()=>loadPlayerChapters({reader:f.reader,selection}),invalid);assert.ok(f.sessions.every(s=>s.state()==='closed'));assert.equal(f.calls.filter(c=>c[0]==='read').length,1);checks++;

@@ -12,6 +12,7 @@ import { GameBar } from "./ui/gamebar.js";
 import { createNewGameScenario, seasonOf, SEASONS } from "./game/world.js";
 import { Clock } from "./game/clock.js";
 import { captureLegionContinuation } from "./game/legioncontinuation.js";
+import { holdFailedStrategicUpdate } from "./game/strategicfailure.js";
 import {
   prepareScenario,
   assertPlayableScenario,
@@ -74,6 +75,7 @@ import { TrialStrategicClock } from "./editor/trialruleboundaries.js";
 import {
   normalizeDisasterMapObjectState,
   normalizeWeatherCloudState,
+  prepareOriginalStrategicMapObjects,
 } from "./game/weather.js";
 
 const app = {
@@ -146,6 +148,18 @@ const app = {
       // environment's terminal ownership can retire this already admitted game.
     }
     if (this._formalEntry === entry) this.checkFormalCurrent();
+  },
+
+  // 2533 is an explicit state-preparation boundary, never a Canvas side effect.
+  prepareMapObjects(c = this.clock) {
+    if (!c || c !== this.clock || c.hold || c.speed <= 0 || !this.scenario ||
+        c._pendingStrategicAdvance || c._pendingDayAdvance || c._pendingMonthAdvance) return;
+    try {
+      const frames = prepareOriginalStrategicMapObjects(this.scenario);
+      this.weatherFx.capture(this.scenario, c, frames);
+    } catch (error) {
+      holdFailedStrategicUpdate(this, error);
+    }
   },
 
   /** 用户手势内解锁AudioContext并开始解码委任接战样本。 */
@@ -413,10 +427,12 @@ const app = {
     if (formal) {
       this.originalRng = null;
       this.activeBattleRng = null;
-      formal.exit = Promise.resolve().then(() => formal.onExit(Object.freeze({
-        reason: formal.failure?.code === "GAME_DELETED" ? "deleted" : formal.failure ? "unavailable" : "title",
-        initialAction,
-      })));
+      formal.exit = Promise.resolve().then(() => {
+        let reason = "title";
+        if (formal.failure?.code === "GAME_DELETED") reason = "deleted";
+        else if (formal.failure) reason = "unavailable";
+        return formal.onExit(Object.freeze({ reason, initialAction }));
+      });
       return formal.exit;
     }
     if (this.canPersist === false) {
@@ -612,6 +628,7 @@ const app = {
       () =>
         this._scenarioAssemblyPending === assembly &&
         this.scenario === loadedScenario,
+      startMonth % 3 === 0 ? Math.min(16, Math.max(1, requestedDay | 0)) : 16,
     );
     // 新游戏使用章节起始日；存档使用 parse_save/snapshotState 的 save_date。
     const clockOptions = {
@@ -635,8 +652,12 @@ const app = {
         // Admission (G5) guarantees a native road context for every App
         // scenario, so no non-native live pump remains to advance here.
       },
+      onStrategicUpdateComplete: (c) => this.prepareMapObjects(c),
       onSyncHold: () => this.gamebar?.syncClock?.(),
       onHour: (c) => {
+        // KI:9377: one date step, at hour 1 on the first 16 days of a season.
+        if (c.hour === 1 && c.month % 3 === 0 && c.day <= 16)
+          void this.setSeason(seasonOf(c.month), () => this.clock === c, c.day);
         this.score.calendar(c); // KI:1DE9 before 3E11; no audio await/clock mutation
         // 0x1D8E 仅在CF2达到8时调用一次0x3E11：先泵一个全局事件槽，
         // 再对当前势力做财政危机、预备兵维护累计和外交官维护。
@@ -805,12 +826,14 @@ const app = {
     return true;
   },
 
-  setSeason(i, isCurrent = () => true) {
+  setSeason(i, isCurrent = () => true, day = 16) {
     this.assertFormalCurrent();
     this.seasonIdx = i;
-    const world = this.world;
-    return world.loadSeason(SEASONS[i]).then((img) => {
-      if (!this.checkFormalCurrent() || !isCurrent() || this.world !== world || this.seasonIdx !== i) return;
+    const world = this.world, scenario = this.scenario;
+    const request = this._seasonRequest = { world, i, day };
+    return world.loadSeason(SEASONS[i], day).then((img) => {
+      if (!this.checkFormalCurrent() || !isCurrent() || this.world !== world ||
+          this.scenario !== scenario || this._seasonRequest !== request) return;
       this.view.seasonImg = img;
       if (this.gameStarted) this.view.draw();
     }).catch(error => {
@@ -1150,11 +1173,14 @@ export async function startApp(opening, { trial = null, formal = null } = {}) {
         !app.engageTransition?.active,
       paused: document.hidden || !c || c.hold || c.speed <= 0,
     });
-    // 用户要求云雨跟随战略计时：暂停/任一hold时位置与雨丝一起冻结。
+    // Each completed update prepared its own 2533 snapshot. A no-update outer
+    // frame can expose the stored successor, but never advances the timer/RNG.
+    const weatherEnabled = !document.hidden && app.gameStarted && !!c &&
+      c.speed > 0 && !c.hold &&
+      app.score.scene === "strategy" && !app.engageTransition?.active;
+    if (weatherEnabled && !app.weatherFx.prepared) app.prepareMapObjects(c);
     const weatherChanged = app.weatherFx.update(app.scenario, now, {
-      enabled: !document.hidden && app.gameStarted && !!c &&
-        c.speed > 0 && !c.hold &&
-        app.score.scene === "strategy" && !app.engageTransition?.active,
+      enabled: weatherEnabled && !c.hold, clock: c,
     });
     const isRunning =
       c &&
@@ -1195,11 +1221,6 @@ export async function startApp(opening, { trial = null, formal = null } = {}) {
       // 10Hz 刷新日期显示
       uiAcc = 0;
       app.hud.refreshClock();
-      // 换月时按月份同步季节画面 (复刻 0x9377 换季逻辑)
-      if (c) {
-        const want = seasonOf(c.month);
-        if (want !== app.seasonIdx) app.setSeason(want);
-      }
     }
     // 下一帧已在入口调度，此处不再调度（见P88注释）。
   }

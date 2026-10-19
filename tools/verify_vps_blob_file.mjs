@@ -13,7 +13,9 @@ import { HttpError, fail } from '../server/security.js';
 
 let passed = 0;
 const check = (name, cond) => {
+  // pi-lens-ignore: no-console-except-error-js
   if (!cond) { console.error(`FAIL ${name}`); process.exitCode = 1; }
+  // pi-lens-ignore: no-console-except-error-js
   else { passed++; console.log(`ok ${name}`); }
 };
 const fails = async (name, fn, code) => {
@@ -81,5 +83,6 @@ try { await bucket.put('../../evil', new Uint8Array([1]), {}); } catch { travers
 check('bucket traversal rejected', traversal);
 await fails('journal bad key 422', async () => journal.put('evil', new Uint8Array([1]), {}), 'PRIVATE_WRITE_KEY');
 
+// pi-lens-ignore: no-console-except-error-js
 console.log(`passed ${passed} checks`);
 } finally { storage.close(); rmSync(own, { recursive: true, force: true }); }
