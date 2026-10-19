@@ -16,7 +16,7 @@ const check = (name, cond, extra = '') => {
 
 const own = mkdtempSync(join(tmpdir(), 'topo-routes-'));
 const origin = 'https://127.0.0.1:8787';
-const initial = randomBytes(24).toString('hex');
+const initial = (randomBytes(24).toString('hex') + 'Aa1!');
 let config;
 try { config = JSON.parse(readFileSync('server/wrangler.jsonc', 'utf8')); }
 catch (error) { throw new Error('cannot load server/wrangler.jsonc', { cause: error }); }
@@ -49,7 +49,7 @@ const server = await startEditorBackend(join(own, 'config.json'));
 try {
   const login = await call('/api/auth/login', { account: 'tianyi', password: initial });
   check('login 200', login.status === 200);
-  const changed = await call('/api/auth/password', { oldPassword: initial, newPassword: randomBytes(24).toString('hex') },
+  const changed = await call('/api/auth/password', { oldPassword: initial, newPassword: (randomBytes(24).toString('hex') + 'Aa1!') },
     { cookie: login.cookie, csrf: login.data.csrf });
   check('password changed', changed.status === 200);
   const admin = { cookie: changed.cookie, csrf: changed.data.csrf };

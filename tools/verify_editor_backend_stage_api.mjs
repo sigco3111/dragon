@@ -7,7 +7,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import { DatabaseSync } from 'node:sqlite';
 import { startEditorBackend } from './start_editor_backend.mjs';
-const own = mkdtempSync(join(tmpdir(), 'dragon-stage-api-')), origin = 'https://127.0.0.1:8787', initial = randomBytes(24).toString('hex'), password = randomBytes(24).toString('hex'), secret = randomBytes(32).toString('hex'), sha = b => createHash('sha256').update(b).digest('hex');
+const own = mkdtempSync(join(tmpdir(), 'dragon-stage-api-')), origin = 'https://127.0.0.1:8787', initial = (randomBytes(24).toString('hex') + 'Aa1!'), password = (randomBytes(24).toString('hex') + 'Aa1!'), secret = randomBytes(32).toString('hex'), sha = b => createHash('sha256').update(b).digest('hex');
 function parse(b) { try { return JSON.parse(b); } catch (cause) { throw new Error('invalid owned stage JSON', { cause }); } }
 const configuration = parse(readFileSync('server/wrangler.jsonc')), configPath = join(own, 'wrangler.jsonc'); configuration.main = resolve('server/worker.js'); writeFileSync(configPath, JSON.stringify(configuration)); writeFileSync(join(own, '.dev.vars'), 'EDITOR_DEFAULT_PASSWORD=' + JSON.stringify(initial) + '\nEDITOR_REQUEST_KEY=' + JSON.stringify(secret) + '\n', { flag: 'wx', mode: 0o600 });
 const sources = ['server/worker.js','server/stageapi.js','tools/verify_editor_backend_stage_api.mjs'], sourceHashes = Object.fromEntries(sources.map(p => [p,sha(readFileSync(p))])), checks = [], calls = []; let server;

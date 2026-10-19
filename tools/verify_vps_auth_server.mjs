@@ -6,8 +6,8 @@ import { startAuthServer } from '../vps/auth-server.mjs';
 
 const ORIGIN = 'https://vps-test.invalid';
 const SECRET = 'f'.repeat(64);
-const DEFAULT_PW = 'vps-default-password-01';
-const NEW_PW = 'vps-rotated-password-02';
+const DEFAULT_PW = 'Vps-default-password-01!';
+const NEW_PW = 'Aa123456!';
 const env = { EDITOR_ORIGIN: ORIGIN, EDITOR_REQUEST_KEY: SECRET, EDITOR_DEFAULT_PASSWORD: DEFAULT_PW };
 
 let passed = 0;
@@ -54,6 +54,11 @@ try {
   let last = null;
   for (let i = 0; i < 6; i++) { last = await req('/api/auth/login', { method: 'POST', body: { account: 'ratelimit01', password: 'wrong-password-00000' }, key: key(10 + i) }); }
   check('rate limit 429', last.status === 429 && last.json.error === 'LOGIN_RATE_LIMIT');
+  const invalid = [['Aa12345!', 'PASSWORD_LENGTH'], ['aa123456!', 'PASSWORD_COMPLEXITY'], ['AA123456!', 'PASSWORD_COMPLEXITY'], ['Aabcdefg!', 'PASSWORD_COMPLEXITY'], ['Aa1234567', 'PASSWORD_COMPLEXITY'], ['Aa123456 ', 'PASSWORD_COMPLEXITY']];
+  for (const [i, [newPassword, code]] of invalid.entries()) {
+    r = await req('/api/auth/password', { method: 'POST', cookie: T1.cookie, csrf: T1.json.csrf, body: { oldPassword: DEFAULT_PW, newPassword }, key: key(100 + i) });
+    check(`password policy rejects case ${i}`, r.status === 422 && r.json.error === code);
+  }
   r = await req('/api/auth/password', { method: 'POST', cookie: T1.cookie, csrf: T1.json.csrf, body: { oldPassword: DEFAULT_PW, newPassword: NEW_PW }, key: key(20) });
   check('password change 200', r.status === 200 && !!r.token && r.token !== T1.token);
   const T3 = r;

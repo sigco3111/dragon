@@ -42,8 +42,8 @@ Q25 已关闭（2026-10-15，见用户决策①②）：`publishedGames.list()` 
 
 ## D. 公告/目录/玩家端
 - Q31–Q33/Q35/Q36 公告后端已关闭（2026-10-15）：新 `server/announcements.js`（DDL主人#21：`content_announcements`＋`content_registry`）＋publish/listing事务announce＋管理下架bump＋匿名GET分页；`tools/verify_announcements.mjs`二十二项全绿。Q34玩家侧公告UI仍缺（另立项）。
-- [缺] Q10/Q29 下架续取与旧版保存警告（旧局不断、不热换；上架分离已落地，单版本语义下旧版＝删）。
-- [做] Q11/Q19/N8 版本不符单档确认清理、不可用档管理（底层已测，正式政策与UI未接）。
+- [做] Q10/Q29 原旧局续玩／旧版保存警告政策已撤销。当前新版旧局停止禁存、同版下架可继续、不热换Scenario；本地联合复验见[R2§2.72](r2-player-connection.md#272-当前版本唯一的共同发布联合复验current-publication-1)，生产发布／物理回收仍未放行。
+- [做] Q11/Q19/N8 原“版本不符单档确认清理”已撤销。已确认更新的旧档自动清理及新版保存原子清旧见R2§2.69／2.72；其它不可用档识别／管理及完整环境矩阵仍缺。
 
 ## E. 试运行收尾
 - [做] Q67–Q71：列表分支/权限/窗口矩阵、快照迟到组合、撤销/App侧/故障组合的当前SHA整体验收。
@@ -60,8 +60,8 @@ F-1已关闭：`tools/verify_idor_matrix.mjs`十项（跨作者与未知id不可
 
 ## H. 用户已决策（2026-10-14）
 - [定] JPEG源预算：保持当前值（16384像素/单边8192/100KiB），不扩大。
-- [定] Q25/Q26/D/A2（2026-10-15，用户决策①②③）：发布＝作者定版，上架＝管理员操作、仅上架进玩家目录；无回退、只增不减、仅保留当前版（A2只显示当前版；后继R2选择A明确不立即删除已准入旧局的必要运行资源，见下一条）；开放作者自建（第一章＋公用基础地图、画像自传或模板库选（模板库待建）、重名允许、玩家侧「名＋版本（作者）」）。均已落地并 commit（见C-2b/Q25/Q26/D/A2条）。
-- [定] **后继 R2 接线选择 A**：仅当前版可选／新局／读档，已准入旧局固定资源继续保留；更新／下架不清旧运行包，不开放历史选择或回滚，不以TTL代替安全回收。物理删除仍例外。政策维护于[产品§5](game-editor-design.md#5-草稿校验与发布)，限定接线与未完成项见[R2维护源](r2-player-connection.md)；旧 SQL 行剪枝不等于删除 R2 运行资源。
+- [定] Q25/Q26/D/A2（2026-10-15，用户决策①②③）：发布＝作者定版，上架＝管理员操作、仅上架进玩家目录；无回退、只增不减、仅保留当前版（A2只显示当前版；原R2选择A后被新版全部作废决定撤销，见下一条）；开放作者自建（第一章＋公用基础地图、画像自传或模板库选（模板库待建）、重名允许、玩家侧「名＋版本（作者）」）。均已落地并 commit（见C-2b/Q25/Q26/D/A2条）。
+- [定] **原R2选择A已撤销**：新版上线旧版游戏全部作废，不再为旧版续玩或兼容保留运行数据；旧局确认更新即停止禁存，旧档提示并自动清理，新版保存同事务清旧。仅下架且版本未变可继续，公告历史不授旧版准入；物理回收仍须保护当前版、共享资源及其它游戏。政策维护于[产品§5](game-editor-design.md#5-草稿校验与发布)，接线／本地联合复验及尚缺的物理回收见[R2§2.69–2.72](r2-player-connection.md)；不拿旧SQL行剪枝冒全量清理。
 - [定] A2 发布 UI 完整分支验收补齐：`GET /api/games/:id/releases`版本列表＋`publish.txt`作者UI（发布对话框/版本列表/公告预览/失败落字）＋lane化验证（releases四码冒烟、`verify_publish_ui_model`十六项）；修Q26遗留POST 500与多余`}`、简体混入改繁体。
 - [定] 画像政策（2026-10-15，用户决策，取代上传管线）：禁上传，武将画像一对一取自共用画像库（`web/kao`，621 PNG／11.2MB，编号命名；`manifest.js` 提交生成，lane 自核）；发包记ID＋SHA（`kao/<id>.png`，R2 取数），pack 不嵌字节。编辑器上传链已退役落地（`portraits.js` 唯读、worker 路由、pack 冻结、general 选择器、9 lane 删除、idor／publish_pack 20 项／shell 68 项／generals 6 项改绿、E-01 46 波 7/7 重跑绿）。后继Trial服务上传口已退役；残留客户端上传／裁剪／图库在[R2§2.60](r2-player-connection.md#260-固定库新身份与trial选边修复library-refresh-1)清除并复验真实启动；其余重 lane（sql-freeze／bound／validated／waits／reference／management）待跑；R2 `kao/` 621／621 已传。
 - [定] R2布局（用户已建 `dragon` 桶）：`kao/<id>.png` 共用库（一次上传永不覆盖）；`artifacts/<gameId>/<releaseId>/<sha>/…` 发版包（画像只记ID不嵌字节）；`projections/<generation>/<digest>/…` 目录/公告/release索引快照；`control/current.json` CAS根。桶保持私有、无公开域；读经Worker binding。需用户授权见journal。

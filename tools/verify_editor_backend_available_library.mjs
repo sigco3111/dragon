@@ -10,7 +10,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 function json(text) { try { return JSON.parse(text); } catch (cause) { throw new Error('owned library response/config JSON invalid', { cause }); } }
 const own = mkdtempSync(join(tmpdir(), 'dragon-available-library-')), configPath = join(own, 'worker.json'), doc = json(readFileSync('server/wrangler.jsonc', 'utf8'));
 doc.main = resolve('server/worker.js'); doc.name = 'library-owned-' + randomUUID();
-const initial = randomBytes(24).toString('hex'), password = randomBytes(24).toString('hex');
+const initial = (randomBytes(24).toString('hex') + 'Aa1!'), password = (randomBytes(24).toString('hex') + 'Aa1!');
 writeFileSync(configPath, JSON.stringify(doc), { flag: 'wx' });
 writeFileSync(join(own, '.dev.vars'), 'EDITOR_DEFAULT_PASSWORD=' + JSON.stringify(initial) + '\nEDITOR_REQUEST_KEY=' + JSON.stringify(randomBytes(32).toString('hex')) + '\n', { flag: 'wx', mode: 0o600 });
 const paths = ['server/worker.js', 'server/sourcecatalog.js', 'server/sourcecatalogpolicy.js', 'server/available-library.txt', 'tools/editor_stage_library.mjs', 'tools/start_editor_backend.mjs', 'tools/verify_editor_backend_available_library.mjs'];
@@ -56,7 +56,7 @@ try {
   assert.equal((await call('/api/admin/library/install', {}, admin, key)).status, 200);
   assert.equal((await call('/api/admin/source', undefined, admin)).data.registered, null);
   checks.push('real launcher/Worker restart retains SQL/R2 and separate descriptor without re-staging, same-key replay re-verifies actual bytes');
-  const changed = await call('/api/auth/password', { oldPassword: password, newPassword: randomBytes(24).toString('hex') }, admin); assert.equal(changed.status, 200);
+  const changed = await call('/api/auth/password', { oldPassword: password, newPassword: (randomBytes(24).toString('hex') + 'Aa1!') }, admin); assert.equal(changed.status, 200);
   assert.equal((await call('/api/admin/library', undefined, admin)).status, 401);
   const fresh = { cookie: changed.cookie, csrf: changed.data.csrf };
   assert.equal((await call('/api/admin/library/install', {}, fresh, key)).status, 409);

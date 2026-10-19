@@ -35,7 +35,7 @@ writeFileSync(`${out}/inputs.json`, JSON.stringify(pins, null, 2), { flag: 'wx' 
 const checks = [];
 const port = 18980, origin = `https://127.0.0.1:${port}`;
 const own = mkdtempSync(join(tmpdir(), 'trial-session-'));
-const initial = randomBytes(16).toString('hex'), password = randomBytes(16).toString('hex');
+const initial = (randomBytes(16).toString('hex') + 'Aa1!'), password = (randomBytes(16).toString('hex') + 'Aa1!');
 let mf = null;
 function req(path, value, session, extra = {}, timeoutMs = 120000) {
   return new Promise((done, reject) => {
@@ -108,7 +108,7 @@ try {
   // Status stays creating-session-visible only (re-login never resurrects), so
   // post-rotate semantics get full visibility through a fresh T2b issued under C.
   const t2 = await issue('real-trial-issue-t2');
-  const password2 = randomBytes(16).toString('hex');
+  const password2 = (randomBytes(16).toString('hex') + 'Aa1!');
   const rotated = await ok('real-rotate', '/api/auth/password', { oldPassword: password, newPassword: password2 }, A);
   const C = { cookie: rotated.cookie, csrf: parse(rotated.bytes.toString('utf8')).csrf };
   await okErr('dead-session-pack', `/api/trials/${t2.trialId}/pack`, undefined, A, 401, 'SESSION_INVALID');

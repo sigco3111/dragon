@@ -32,7 +32,7 @@ try {
   staging = (await import('./fixtures/publish-runtime-stage.mjs')).makePublishRuntimeStage({ root: join(scratch, 'static-package') });
   const bucket = new FileBucket({ root: join(scratch, 'objects') }), get = bucket.get.bind(bucket);
   bucket.get = async key => { reads++; if (pauseReads) { await pauseReads(key); } return get(key); };
-  const env = { EDITOR_ORIGIN: origin, EDITOR_REQUEST_KEY: secret, EDITOR_DEFAULT_PASSWORD: 'Owned-Test-Password-Only!', EDITOR_BLOBS: bucket };
+  const env = { EDITOR_ORIGIN: origin, EDITOR_REQUEST_KEY: secret, EDITOR_DEFAULT_PASSWORD: 'Owned-Test-Password-Only-1!', EDITOR_BLOBS: bucket };
   const makeApp = () => new (createEditorApplication(class {}, { runtimeStager: staging.stager, frozenPublication: true }))({ storage }, env);
   app = makeApp();
   // Include the two lazy, actual schema owners before the complete frozen gate.

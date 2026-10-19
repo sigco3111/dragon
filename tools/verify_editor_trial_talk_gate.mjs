@@ -64,7 +64,7 @@ const unit = () => {
 };
 unit();
 
-const initial = `init${randomBytes(13).toString("hex")}`, password = `pw1${randomBytes(13).toString("hex")}`;
+const initial = `init${(randomBytes(13).toString("hex") + 'Aa1!')}`, password = `pw1${(randomBytes(13).toString("hex") + 'Aa1!')}`;
 const own = mkdtempSync(join(tmpdir(), "trial-talk-gate-")), config = parsed(readFileSync("server/wrangler.jsonc"));
 config.main = resolve(join(out, "fixture.js"));
 writeFileSync(join(own, "config.json"), JSON.stringify(config), { flag: "wx" });

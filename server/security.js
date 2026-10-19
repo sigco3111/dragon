@@ -6,7 +6,11 @@ export const randomToken = () => hex(crypto.getRandomValues(new Uint8Array(32)))
 const unhex = text => Uint8Array.from(text.match(/../g), s => Number.parseInt(s, 16));
 const encoder = new TextEncoder();
 function parse(text) { try { return JSON.parse(text); } catch (cause) { throw new Error('invalid stored security data', { cause }); } }
-export function password(value) { if (typeof value !== 'string' || [...value].length < 16 || [...value].length > 128 || value.includes('\0') || !value.isWellFormed()) fail(422, 'PASSWORD_LENGTH'); return value; }
+export function password(value) {
+  if (typeof value !== 'string' || [...value].length < 9 || [...value].length > 128 || value.includes('\0') || !value.isWellFormed()) fail(422, 'PASSWORD_LENGTH');
+  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value) || !/[\p{P}\p{S}]/u.test(value)) fail(422, 'PASSWORD_COMPLEXITY');
+  return value;
+}
 export function account(value) { if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,32}$/.test(value)) fail(422, 'ACCOUNT_FORMAT'); return value; }
 export function passwordHash(value) {
   password(value); const salt = hex(crypto.getRandomValues(new Uint8Array(16)));

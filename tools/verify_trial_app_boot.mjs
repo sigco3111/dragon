@@ -35,7 +35,7 @@ const checks = [];
 const check = name => { checks.push(name); writeFileSync(`${out}/partial.json`, JSON.stringify({ checks }, null, 2)); };
 const port = 18981, origin = `https://127.0.0.1:${port}`;
 const own = mkdtempSync(join(tmpdir(), 'trial-boot-'));
-const initial = randomBytes(16).toString('hex'), password = randomBytes(16).toString('hex');
+const initial = (randomBytes(16).toString('hex') + 'Aa1!'), password = (randomBytes(16).toString('hex') + 'Aa1!');
 let mf = null, server = null;
 function req(path, value, session, extra = {}, timeoutMs = 120000) {
   return new Promise((done, reject) => {

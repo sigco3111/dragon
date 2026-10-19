@@ -12,7 +12,7 @@ import { InstalledSourceCatalog } from '../server/sourcecatalog.js';
 import { canonicalSourceTokens, encodeSourceChunks } from '../web/src/content/authoring/sourcejson.js';
 const { Miniflare } = await import(pathToFileURL(process.env.MINIFLARE_MODULE).href);
 const d = '.dragon-analysis/editor-phase/backend-source-catalog-session-r1/', own = mkdtempSync(join(tmpdir(), 'dragon-catalog-')), origin = 'https://127.0.0.1:8787';
-const initial = randomBytes(24).toString('hex'), password = randomBytes(24).toString('hex'), nextPassword = randomBytes(24).toString('hex'), secret = randomBytes(32).toString('hex');
+const initial = (randomBytes(24).toString('hex') + 'Aa1!'), password = (randomBytes(24).toString('hex') + 'Aa1!'), nextPassword = (randomBytes(24).toString('hex') + 'Aa1!'), secret = randomBytes(32).toString('hex');
 const sha = b => createHash('sha256').update(b).digest('hex');
 function json(text) { try { return JSON.parse(text); } catch (cause) { throw new Error('invalid owned catalog JSON', { cause }); } }
 function canonical(value) { return Buffer.concat(encodeSourceChunks(value)); }

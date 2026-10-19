@@ -29,8 +29,11 @@ location ^~ /deployment-assets/static-v1/RELEASE_SHA256/ {
     add_header Cache-Control "public, max-age=31536000, immutable" always;
     add_header X-Content-Type-Options nosniff always;
 }
-# The installed available library currently has stale consumer fingerprints.
-# Do not approve it or issue new Trial sessions until its independent review.
+# Conservative gates for a fresh deployment. Remove library install only after
+# independently reviewing the current pinned consumers and private UI tests;
+# remove new Trial only after normal admin registration and same-engine Trial
+# verification. See r2-player-connection.md §2.71 and the deployment journal.
+# Never reuse an old library identity to silence a changed consumer hash.
 location = /api/admin/library/install {
     default_type application/json;
     add_header Cache-Control no-store always;

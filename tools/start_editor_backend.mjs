@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { password as validatePassword } from '../server/security.js';
 import { createRequire } from 'node:module';
 import { createEditorHTTPS } from './editor_local_https.mjs';
 import { stageInstalledEditorSource } from './editor_stage_source.mjs';
@@ -16,7 +17,7 @@ function options(args) {
 }
 async function secretPrompt() {
   if (!process.stdin.isTTY) throw new Error('Use an interactive terminal, or EDITOR_DEFAULT_PASSWORD for --init. Never put passwords in command arguments.');
-  process.stdout.write('初始密碼（至少16字元；不回顯）：'); const wasRaw = process.stdin.isRaw; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
+  process.stdout.write('初始密碼（9至128字元，含大寫、小寫、數字及符號；不回顯）：'); const wasRaw = process.stdin.isRaw; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
   return new Promise((resolveValue, reject) => {
     let value = ''; const done = error => { process.stdin.off('data', receive); process.stdin.setRawMode(Boolean(wasRaw)); process.stdin.pause(); process.stdout.write('\n'); if (error) reject(error); else resolveValue(value); };
     const receive = text => { for (const char of text) { if (char === '\u0003') { done(new Error('Cancelled')); return; } if (char === '\r' || char === '\n') { done(); return; } if (char === '\u007f' || char === '\b') value = [...value].slice(0, -1).join(''); else if (char.codePointAt(0) >= 32 && value.length < 256) value += char; } }; process.stdin.on('data', receive);
@@ -71,7 +72,7 @@ async function main() {
   const opt = options(process.argv.slice(2)), directory = dirname(opt.config);
   if (opt.init) {
     const password = process.env.EDITOR_DEFAULT_PASSWORD ?? await secretPrompt();
-    if ([...password].length < 16 || [...password].length > 128 || password.includes('\0') || !password.isWellFormed()) throw new Error('Initial password must contain16–128characters.');
+    validatePassword(password);
     mkdirSync(directory, { recursive: true });
     writeFileSync(join(directory, '.dev.vars'), 'EDITOR_DEFAULT_PASSWORD=' + JSON.stringify(password) + '\nEDITOR_REQUEST_KEY=' + JSON.stringify(randomBytes(32).toString('hex')) + '\n', { flag: 'wx', mode: 0o600 });
     process.stdout.write('已建立本機私密設定（未覆寫任何既有檔案）。請重新執行啟動命令。\n'); return;

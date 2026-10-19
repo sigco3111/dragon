@@ -114,26 +114,46 @@ export function createPlayerClientBrowserProbe({ page, context, origin, gameId, 
       assert.deepEqual(result, { digest: chapterDigest, identity, state: 'active' });
       checks.push('restored exact owned chapter is readable with the same session');
     },
-    async observe(listed) {
+    async observe(listed, index, expectedChapter) {
+      const previousIdentity = identity;
       const result = await page.evaluate(async ({ listed, gameId }) => {
-        const { reader, session } = window.__ownedPlayer;
-        const status = await session.status(), data = await session.read('chapter:' + session.identity.chapterId);
+        const owner = window.__ownedPlayer, { reader, session } = owner;
+        const status = await session.status(), failures = [];
+        let localRepeat = null, manifest = null;
+        if (listed) {
+          for (let i = 0; i < 2; i++) {
+            const before = owner.traces.length;
+            try { await session.read('chapter:' + session.identity.chapterId); throw new Error('retired release read succeeded'); }
+            catch (error) { failures.push({ code: error.code, status: error.status }); }
+            if (i === 1) localRepeat = before === owner.traces.length;
+          }
+        }
         let rejected;
         try { await reader.admit({ gameId, ordinal: listed ? '1.0' : '1.1', chapterId: session.identity.chapterId }); }
         catch (error) { rejected = { code: error.code, status: error.status }; }
-        let current = null;
+        const retired = { identity: session.identity, state: session.state() };
         if (listed) {
-          const next = await reader.admit({ gameId, ordinal: '1.1', chapterId: session.identity.chapterId });
-          await next.read('manifest'); await next.read('chapter:' + next.identity.chapterId);
-          current = next.identity.ordinal; next.close(); if (next.state() !== 'closed') throw new Error('close failed');
+          owner.session = await reader.admit({ gameId, ordinal: '1.1', chapterId: session.identity.chapterId });
+          manifest = (await owner.session.read('manifest')).sha256;
         }
-        return { status, rejected, current, identity: session.identity, digest: data.sha256, state: session.state() };
+        const current = owner.session, data = await current.read('chapter:' + current.identity.chapterId);
+        return { status, rejected, retired, failures, localRepeat, manifest, identity: current.identity, digest: data.sha256, state: current.state() };
       }, { listed, gameId });
-      assert.equal(result.status.listed, listed); if (listed) assert.equal(result.status.ordinal, '1.1');
-      assert.deepEqual(result.identity, identity); assert.equal(result.digest, chapterDigest); assert.equal(result.state, 'active');
+      assert.equal(result.status.listed, listed); assert.equal(result.state, 'active');
+      assert.deepEqual(result.retired.identity, previousIdentity);
       assert.deepEqual(result.rejected, listed ? { code: 'RELEASE_CHANGED', status: 409 } : { code: 'GAME_NOT_LISTED', status: 403 });
-      assert.equal(result.current, listed ? '1.1' : null);
-      checks.push(listed ? 'update rejects old new-admission, admits current version, never replaces the old session' : 'unlisting rejects new admission while old session still reads');
+      if (listed) {
+        assert.equal(result.status.ordinal, '1.1'); assert.equal(result.retired.state, 'outdated');
+        assert.deepEqual(result.failures, [{ code: 'RELEASE_CHANGED', status: 409 }, { code: 'RELEASE_CHANGED', status: 409 }]);
+        assert.equal(result.localRepeat, true); assert.equal(result.identity.ordinal, '1.1');
+        assert.notEqual(result.identity.releaseId, previousIdentity.releaseId); assert.equal(result.identity.releaseId, index.releaseId);
+        assert.equal(result.manifest, index.resources.manifest.sha256); assert.equal(result.digest, expectedChapter.digest);
+        identity = result.identity; chapterDigest = result.digest;
+      } else {
+        assert.deepEqual(result.identity, identity); assert.equal(result.digest, chapterDigest); assert.equal(result.retired.state, 'active');
+        assert.deepEqual(result.failures, []);
+      }
+      checks.push(listed ? 'update permanently retires old capability; repeat fails locally; explicit fresh current admission reads its own manifest/chapter' : 'unlisting denies new admission but the already-current 1.1 session still reads');
     },
     async deleted() {
       const result = await page.evaluate(async () => {

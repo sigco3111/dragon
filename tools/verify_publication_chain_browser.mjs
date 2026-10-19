@@ -205,7 +205,7 @@ try {
   const chapterId = authority.chapters[0], admissionPath = ordinal => `/play-api/v1/admissions?game=${gameId}&ordinal=${ordinal}&chapter=${encodeURIComponent(chapterId)}`;
   const admission = await player.evaluate(async path => { const response = await fetch(path); const body = await response.json(); window.ownedTicket = body.ticket; return { status: response.status, ordinal: body.ordinal, chapterId: body.chapterId }; }, admissionPath('1.0'));
   assert.deepEqual(admission, { status: 200, ordinal: '1.0', chapterId });
-  const readRole = role => player.evaluate(async role => { const response = await fetch('/play-api/v1/file?role=' + encodeURIComponent(role), { headers: { Authorization: 'Bearer ' + window.ownedTicket } }); const bytes = await response.arrayBuffer(); const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), n => n.toString(16).padStart(2, '0')).join(''); return { status: response.status, digest }; }, role);
+  const readRole = (role, retired = false) => player.evaluate(async ({ role, retired }) => { const response = await fetch('/play-api/v1/file?role=' + encodeURIComponent(role), { headers: { Authorization: 'Bearer ' + (retired ? window.ownedRetiredTicket : window.ownedTicket) } }); const bytes = await response.arrayBuffer(); const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), n => n.toString(16).padStart(2, '0')).join(''); return { status: response.status, digest }; }, { role, retired });
   const oldChapter = await readRole('chapter:' + chapterId); assert.equal(oldChapter.status, 200);
   assert.equal(oldChapter.digest, sha(sql.exec('SELECT state_json FROM published_pack_chapters WHERE game_id=? AND chapter_id=?', gameId, chapterId).toArray()[0].state_json));
   const chapterDigests = await player.evaluate(async ({ gameId, chapters }) => {
@@ -240,23 +240,35 @@ try {
     finally { await bucket.put(key, bytes, { httpMetadata }); }
     await playerProbe.recovered();
   }
-  stage = 'second browser publish updates current selection without replacing old ticket';
+  stage = 'second browser publish invalidates the old release; only explicit new admission can continue';
   await page.click('#publish-forget'); await idle(); await page.click('#publish-games-refresh'); await idle(); await page.fill('#publish-name', '瀏覽器新版'); await page.click('#publish-button'); await idle();
   assert.equal(posts.length, 2); assert.notEqual(posts[1].key, posts[0].key); assert.equal(tail(), 3); assert.equal(confirmed(), 2);
   assert.equal((await registry()).directory[0].ordinal, '1.0'); assert.equal((await playerJSON(admissionPath('1.1'))).status, 409);
   await drain(); await page.click('#publish-query'); await idle(); assert.match(await page.locator('#publish-result').textContent(), /版本 1.1.*此次分發曾於/);
   publicState = await registry(); assert.equal(publicState.directory[0].ordinal, '1.1'); assert.equal(publicState.announcements.length, 2);
-  assert.equal((await playerJSON(admissionPath('1.0'))).status, 409); assert.equal((await playerJSON(admissionPath('1.1'))).status, 200);
-  assert.deepEqual(await readRole('chapter:' + chapterId), oldChapter); checks.push(stage);
-  if (playerProbe) await playerProbe.observe(true);
-  if (appProbe) await appProbe.observe(true);
-  stage = 'unlist denies new admissions but the existing browser ticket still reads';
+  assert.equal((await playerJSON(admissionPath('1.0'))).status, 409);
+  assert.equal((await readRole('chapter:' + chapterId)).status, 409, 'old admitted ticket cannot read after a newer release becomes current');
+  const currentAdmission = await player.evaluate(async path => {
+    const response = await fetch(path), body = await response.json();
+    window.ownedRetiredTicket = window.ownedTicket; window.ownedTicket = body.ticket;
+    return { status: response.status, ordinal: body.ordinal };
+  }, admissionPath('1.1'));
+  assert.deepEqual(currentAdmission, { status: 200, ordinal: '1.1' });
+  const currentChapter = await readRole('chapter:' + chapterId); assert.equal(currentChapter.status, 200);
+  assert.equal(currentChapter.digest, sha(sql.exec('SELECT state_json FROM published_pack_chapters WHERE game_id=? AND chapter_id=?', gameId, chapterId).toArray()[0].state_json));
+  const currentPayload = JSON.parse(new TextDecoder().decode(app.frozenDistribution.entry(3).payload));
+  const currentIndex = JSON.parse(await (await bucket.get(currentPayload.runtime.runtime.key)).text());
+  checks.push(stage);
+  if (playerProbe) await playerProbe.observe(true, currentIndex, currentChapter);
+  if (appProbe) await appProbe.observe(true, currentIndex, currentChapter);
+  stage = 'unlist denies new admissions; current 1.1 ticket continues, retired 1.0 remains invalid';
   if (managementUI) {
     await adminQuery(); assert.match(await adminPage.locator('#management-result').textContent(), /此次分發曾於/);
     await adminAction('管理下架並限制'); assert.match(await adminPage.locator('#management-result').textContent(), /分發待確認/);
   } else await authority.manage('unlist');
   await drain(); assert.equal(confirmed(), 4); assert.deepEqual((await registry()).directory, []);
-  assert.equal((await playerJSON(admissionPath('1.1'))).status, 403); assert.deepEqual(await readRole('chapter:' + chapterId), oldChapter); checks.push(stage);
+  assert.equal((await playerJSON(admissionPath('1.1'))).status, 403); assert.deepEqual(await readRole('chapter:' + chapterId), currentChapter);
+  assert.equal((await readRole('chapter:' + chapterId, true)).status, 409, 'unlisting cannot revive a retired release'); checks.push(stage);
   if (playerProbe) await playerProbe.observe(false);
   if (appProbe) await appProbe.observe(false);
   if (managementUI) {
@@ -330,7 +342,7 @@ try {
   assert.deepEqual(errors, []); assert.deepEqual(outside, []); assert.deepEqual(unexpectedFailures, ['/api/publish', ...(managementUI ? ['/api/games/' + gameId + '/listing'] : []), ...(deletionUI ? ['/api/games/' + gameId + '/deletion'] : [])]); assert.equal(outbound, 0);
   const expectedHTTP = calls.filter(row => row.status >= 400);
   const appStatuses = publicPlayer ? [410] : [503,410];
-  const expectedStatuses = [...(managementUI ? [401,401,403,409,409,410] : [401,403,409,409,410]), ...(playerClient ? [503,409,403,410] : []), ...(playerApp ? appStatuses : [])];
+  const expectedStatuses = [...(managementUI ? [401,401,403,409,409,409,409,410] : [401,403,409,409,409,409,410]), ...(playerClient ? [503,409,409,403,410] : []), ...(playerApp ? appStatuses : [])];
   assert.deepEqual(expectedHTTP.map(row => row.status).sort((a,b) => a-b), expectedStatuses.sort((a,b) => a-b));
   assert.equal(consoleErrors.length, expectedHTTP.length + (managementUI ? 2 : 1) + (deletionUI ? 1 : 0));
   for (const message of consoleErrors) assert.match(message, playerClient ? /Failed to load resource: (net::ERR_FAILED|the server responded with a status of (401|403|409|410|503))/ : /Failed to load resource: (net::ERR_FAILED|the server responded with a status of (401|403|409|410))/);
@@ -345,7 +357,7 @@ try {
   await browser.close(); browser = null; storage.close(); authority.storage = null;
   reopened = openStorage(authority.dbPath); const afterRestart = createDistributionPublisher({ storage: reopened, r2, verifyStaticResources });
   assert.equal((await afterRestart.drainOne()).state, 'IDLE'); assert.equal(roots, generations); assert.equal(afterRestart.ledger.status().confirmedGeneration, generations); checks.push(stage);
-  const result = { checks, publicPlayer, playerApp: appProbe ? appProbe.report() : null, playerClient: playerProbe ? { ...playerProbe.report(), traces, completedStreamFailures } : null, nodeService, managementUI, managementPosts, deletionUI, adminDeletionUI, deletionPosts, browser: browserVersion, posts: posts.length, roots, confirmed: generations, chapters: authority.chapters.length, r2: { gets, puts, outbound }, static: { ...packaged.stats(), checks: staticChecks }, expectedHTTP: expectedHTTP.map(row => ({ path: row.path, status: row.status })), expectedLostResponses: (managementUI ? 2 : 1) + (deletionUI ? 1 : 0), sources, screenshots: Object.fromEntries(['pending.png','confirmed.png', ...(managementUI ? ['management-pending.png','management-confirmed.png'] : []), ...(deletionUI ? ['deletion-pending.png','deletion-confirmed.png'] : []), ...(playerApp ? ['published-app-retired.png'] : [])].map(name => [name, sha(readFileSync(join(artifact,name)))])), scope: 'Actual browser UI/password login/gateway/SQLite/20-chapter compile/guarded immutable stage/default publisher/owned workerd R2 and reader, via in-process browser transport bridge. Full-copy bootstrap; optional managementUI mode uses an independent admin browser login and listing/unlist/clear UI (optional deletionUI exercises the author-owned deletion journal, or adminDeletionUI the cross-author confirmation preview and journal, with real post-fence status; otherwise deletion is a direct authenticated Request). Otherwise admin actions are direct authenticated Requests. Optional playerApp joins real admission to the same App, owned native IDB and real lifecycle host (warning/deletion confirmation), with test startup and a recording navigation port; without it the engine is not executed. The additional publicPlayer mode uses unmodified production HTML/boot and real title/chooser/page navigation instead of that test startup/recording port. Not author blank creation, Node TCP/TLS/cloud S3, full campaign, static-retention or physical-delete proof.' };
+  const result = { checks, publicPlayer, playerApp: appProbe ? appProbe.report() : null, playerClient: playerProbe ? { ...playerProbe.report(), traces, completedStreamFailures } : null, nodeService, managementUI, managementPosts, deletionUI, adminDeletionUI, deletionPosts, browser: browserVersion, posts: posts.length, roots, confirmed: generations, chapters: authority.chapters.length, r2: { gets, puts, outbound }, static: { ...packaged.stats(), checks: staticChecks }, expectedHTTP: expectedHTTP.map(row => ({ path: row.path, status: row.status })), expectedLostResponses: (managementUI ? 2 : 1) + (deletionUI ? 1 : 0), sources, screenshots: Object.fromEntries(['pending.png','confirmed.png', ...(managementUI ? ['management-pending.png','management-confirmed.png'] : []), ...(deletionUI ? ['deletion-pending.png','deletion-confirmed.png'] : []), ...(playerApp ? ['published-app-retired.png'] : [])].map(name => [name, sha(readFileSync(join(artifact,name)))])), scope: 'Actual browser UI/password login/gateway/SQLite/20-chapter compile/guarded immutable stage/default publisher/owned workerd R2 and reader, via in-process browser transport bridge. Full-copy bootstrap; optional managementUI mode uses an independent admin browser login and listing/unlist/clear UI (optional deletionUI exercises the author-owned deletion journal, or adminDeletionUI the cross-author confirmation preview and journal, with real post-fence status; otherwise deletion is a direct authenticated Request). Otherwise admin actions are direct authenticated Requests. Optional playerApp joins real admission to the same App, owned native IDB and real lifecycle host (update/deletion retirement and explicit confirmation), with test startup and a recording navigation port; without it the engine is not executed. The additional publicPlayer mode uses unmodified production HTML/boot and real title/chooser/page navigation instead of that test startup/recording port. Not author blank creation, Node TCP/TLS/cloud S3, full campaign, static-retention or physical-delete proof.' };
   writeFileSync(join(artifact, 'result.json'), JSON.stringify(result, null, 2), { flag: 'wx' });
   process.stdout.write(JSON.stringify({ ...result, sources: 'in artifact', artifact }) + '\n');
 } catch (error) {

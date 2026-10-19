@@ -13,7 +13,7 @@ import { FileBucket } from '../vps/file-bucket.mjs';
 import { FrozenDistributionLedger } from '../server/distributionledger.js';
 import { startPublicationServer } from '../vps/publication-server.mjs';
 const own = mkdtempSync(join(tmpdir(), 'dragon-publication-service-'));
-const env = { EDITOR_ORIGIN: 'https://owned-editor.invalid', EDITOR_REQUEST_KEY: 'a'.repeat(64), EDITOR_DEFAULT_PASSWORD: 'Owned publication password only!' };
+const env = { EDITOR_ORIGIN: 'https://owned-editor.invalid', EDITOR_REQUEST_KEY: 'a'.repeat(64), EDITOR_DEFAULT_PASSWORD: 'Owned publication password only 1!' };
 const prefix = 'test/lifecycle/';
 let checks = 0;
 const check = () => checks++;

@@ -9,7 +9,7 @@ import { request as httpsRequest } from 'node:https';
 import { createEditorHTTPS } from './editor_local_https.mjs';
 const { Miniflare } = await import(pathToFileURL(process.env.MINIFLARE_MODULE).href);
 const d = '.dragon-analysis/editor-phase/backend-jobs-session-r1/', own = mkdtempSync(join(tmpdir(), 'dragon-jobs-')), origin = 'https://127.0.0.1:8787';
-const initial = randomBytes(24).toString('hex'), password = randomBytes(24).toString('hex'), nextPassword = randomBytes(24).toString('hex'), secret = randomBytes(32).toString('hex');
+const initial = (randomBytes(24).toString('hex') + 'Aa1!'), password = (randomBytes(24).toString('hex') + 'Aa1!'), nextPassword = (randomBytes(24).toString('hex') + 'Aa1!'), secret = randomBytes(32).toString('hex');
 const sha = b => createHash('sha256').update(b).digest('hex'), key = () => randomUUID();
 function json(text) { try { return JSON.parse(text); } catch(cause) { throw new Error('invalid owned jobs fixture JSON', {cause}); } }
 const files = ['server/jobs.js','tools/verify_editor_backend_job_ids.mjs',d+'fixture-worker.js','server/metadata.js','server/worker.js','server/blobs.js','tools/editor_local_https.mjs'];

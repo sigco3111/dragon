@@ -14,7 +14,7 @@ import { encodeSourceChunks } from '../web/src/content/authoring/sourcejson.js';
 import { editChapterResources } from '../web/src/editor/chapterresources.js';
 const { Miniflare } = await import(pathToFileURL(process.env.MINIFLARE_MODULE).href);
 const d = '.dragon-analysis/editor-phase/backend-provenance-session-r1/', own = mkdtempSync(join(tmpdir(),'dragon-copy-profile-')), origin = 'https://127.0.0.1:8787';
-const initial = randomBytes(24).toString('hex'), password = randomBytes(24).toString('hex'), nextPassword = randomBytes(24).toString('hex'), secret = randomBytes(32).toString('hex');
+const initial = (randomBytes(24).toString('hex') + 'Aa1!'), password = (randomBytes(24).toString('hex') + 'Aa1!'), nextPassword = (randomBytes(24).toString('hex') + 'Aa1!'), secret = randomBytes(32).toString('hex');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 function json(bytes) { try { return JSON.parse(bytes); } catch(cause) { throw new Error('invalid owned fixture JSON',{cause}); } }
 const files=['server/copyprofile.js','tools/editor_trusted_copy.mjs','tools/verify_editor_backend_copy_profile.mjs',d+'fixture-worker.js','server/snapshots.js','tools/editor_local_https.mjs','.dragon-analysis/editor-phase/backend-snapshot-session-r1/encode-worker.mjs'];

@@ -13,9 +13,9 @@ export function createPublishedAppBrowserProbe({ browser, origin, gameId, chapte
   const allowed = new Map(manifest.files.map(row => [row.path, row]));
   const boot = readFileSync('tools/fixtures/published-app-boot.mjs');
   const sources = { 'tools/fixtures/published-app-boot.mjs': sha(boot), 'static-release.json': sha(manifestBytes) };
-  const checks = [], pages = [], observations = []; let page, context, identity, initialMetadata, savedDigest;
+  const checks = [], pages = [], observations = []; let page, context, identity, initialMetadata, savedDigest, saveSlot = 0;
   function bytes(path) {
-    assert.ok(allowed.has(path), 'undeclared static path: ' + path);
+    assert.ok(allowed.has(path), `undeclared static path: ${path}`);
     const body = readFileSync(join(root, 'dist', path)), row = allowed.get(path);
     assert.equal(body.length, row.byteLength); assert.equal(sha(body), row.sha256);
     sources[path] = row.sha256; return body;
@@ -34,21 +34,24 @@ export function createPublishedAppBrowserProbe({ browser, origin, gameId, chapte
         assert.equal(text.split(anchor).length, 2); assert.ok(!text.includes('type="importmap"'));
         body = Buffer.from(text.replace(anchor, `<script type="module" src="${bootPath}"></script>`));
       }
-      const type = mime[extname(path)]; assert.ok(type, 'unclassified static MIME: ' + path);
+      const type = mime[extname(path)]; assert.ok(type, `unclassified static MIME: ${path}`);
       await route.fulfill({ contentType: type, body }); return true;
     },
-    async start(index, expectedChapter) {
-      context = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
-      await context.addInitScript(() => {
-        const open = indexedDB.open.bind(indexedDB); window.__ownedDatabases = [];
-        indexedDB.open = (name, ...args) => { if (name !== 'owned-published-app') throw new Error('non-owned database forbidden'); window.__ownedDatabases.push(name); return open(name, ...args); };
-      });
-      observeContext(context); await context.route('**/*', bridge);
+    async start(index, expectedChapter, ordinal = '1.0') {
+      saveSlot = ordinal === '1.0' ? 0 : 1;
+      if (!context) {
+        context = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+        await context.addInitScript(() => {
+          const open = indexedDB.open.bind(indexedDB); window.__ownedDatabases = [];
+          indexedDB.open = (name, ...args) => { if (name !== 'owned-published-app') throw new Error('non-owned database forbidden'); window.__ownedDatabases.push(name); return open(name, ...args); };
+        });
+        observeContext(context); await context.route('**/*', bridge);
+      }
       const open = async restore => {
         page = await context.newPage(); pages.push(page); page.setDefaultTimeout(90000);
-        await page.goto(origin + '/index.html'); await page.waitForFunction(() => !!window.__ownedPublishedApp?.start);
+        await page.goto(`${origin}/index.html`); await page.waitForFunction(() => !!window.__ownedPublishedApp?.start);
         const started = page.evaluate(args => window.__ownedPublishedApp.start(args), { gameId, chapterId, restore, sequenceBase: pages.length * 1000000 });
-        if (restore) await page.locator('[data-save-slot="0"]').click();
+        if (restore) await page.locator(`[data-save-slot="${saveSlot}"]`).click();
         else {
           await page.locator('[data-chapter-id]').first().waitFor();
           assert.equal(await page.locator('[data-chapter-id]').count(), 20);
@@ -60,7 +63,7 @@ export function createPublishedAppBrowserProbe({ browser, origin, gameId, chapte
         return started;
       };
       const first = await open(false); identity = first.identity; initialMetadata = first.metadata;
-      assert.equal(identity.gameId, gameId); assert.equal(identity.ordinal, '1.0'); assert.equal(identity.chapterId, chapterId);
+      assert.equal(identity.gameId, gameId); assert.equal(identity.ordinal, ordinal); assert.equal(identity.chapterId, chapterId);
       assert.equal(identity.manifestDigest, index.resources.manifest.sha256); assert.equal(first.chapterDigest, expectedChapter.digest);
       assert.deepEqual(first.chapterPreviews.map(row => row.chapterId), identity.chapters);
       assert.equal(first.chapterPreviews.length, 20);
@@ -68,51 +71,70 @@ export function createPublishedAppBrowserProbe({ browser, origin, gameId, chapte
       assert.equal(first.resources, Object.keys(index.resources).filter(role => role.startsWith('asset:')).length + 8);
       assert.equal(first.cities, 192); assert.equal(first.trial, null); assert.equal(first.staticReads.length, 8);
       for (const row of first.staticReads) { assert.equal(row.digest, allowed.get(row.path)?.sha256); assert.equal(row.bytes, allowed.get(row.path)?.byteLength); }
-      const saved = await page.evaluate(async () => {
+      const saved = await page.evaluate(async slot => {
         const c = window.__ownedPublishedApp, a = window.__app;
-        const result = await a.saveGame(0, 'published App first save'), record = await c.store.get(0);
+        const result = await a.saveGame(slot, 'published App first save'), record = await c.store.get(slot);
+        const obsoleteCleared = slot === 0 ? null : await c.store.get(0) === null;
         await a.returnToTitle('load');
-        return { result, identity: { releaseId: record.record.releaseId, ordinal: record.record.releaseOrdinal }, digest: record.token.bodyDigest, exits: c.exits, databases: window.__ownedDatabases };
-      });
-      assert.deepEqual(saved.result, { saved: 'local' }); assert.deepEqual(saved.identity, { releaseId: identity.releaseId, ordinal: 0 });
+        return { result, obsoleteCleared, identity: { releaseId: record.record.releaseId, ordinal: record.record.releaseOrdinal }, digest: record.token.bodyDigest, exits: c.exits, databases: window.__ownedDatabases };
+      }, saveSlot);
+      assert.deepEqual(saved.result, { saved: 'local' }); assert.deepEqual(saved.identity, { releaseId: identity.releaseId, ordinal: Number(ordinal.split('.')[1]) });
       assert.deepEqual(saved.exits, [{ reason: 'title', initialAction: 'load' }]); assert.ok(saved.databases.length && saved.databases.every(name => name === 'owned-published-app'));
+      if (saveSlot === 1) assert.equal(saved.obsoleteCleared, true, 'save in observed empty slot prunes retired slot 0 atomically');
       savedDigest = saved.digest; observations.push({ first, saved }); checks.push('actual reader/compiled chapter/152 assets/8 static maps -> same App fresh and native IDB save');
       const restored = await open(true);
-      assert.deepEqual(restored.identity, identity); assert.deepEqual(restored.metadata, initialMetadata); assert.equal(restored.slot, 0);
+      assert.deepEqual(restored.identity, identity); assert.deepEqual(restored.metadata, initialMetadata); assert.equal(restored.slot, saveSlot);
       assert.deepEqual(restored.chapterPreviews, first.chapterPreviews);
-      assert.equal(await page.evaluate(async () => (await window.__ownedPublishedApp.store.get(0)).token.bodyDigest), savedDigest);
+      assert.equal(await page.evaluate(async slot => (await window.__ownedPublishedApp.store.get(slot)).token.bodyDigest, saveSlot), savedDigest);
       observations.push({ restored }); checks.push('title exit then fresh page/current reader admission restores the same owned native IDB archive');
     },
     async unavailable() {
       const result = await page.evaluate(async () => {
         const c = window.__ownedPublishedApp; let error;
-        try { await c.session.read('chapter:' + c.session.identity.chapterId); } catch (e) { error = { code: e.code, status: e.status }; }
+        try { await c.session.read(`chapter:${c.session.identity.chapterId}`); } catch (e) { error = { code: e.code, status: e.status }; }
         return { error, state: c.session.state(), allowed: window.__app.checkFormalCurrent(), exits: c.exits.length };
       });
       assert.deepEqual(result, { error: { code: 'RUNTIME_UNAVAILABLE', status: 503 }, state: 'active', allowed: true, exits: 0 });
       checks.push('missing R2 chapter is 503; assembled App retains its active owner');
     },
-    async observe(listed) {
-      // Opening the actual save dialog must discover the update before any
-      // write. No probe calls host.checkStatus or App.refreshFormalStatus.
+    async observe(listed, index, expectedChapter) {
+      // The real save entry discovers the update, retires before IDB and waits
+      // for explicit confirmation. No direct host/status-refresh test hook.
       if (listed) {
         assert.equal(await page.evaluate(() => window.__app.gamebar.openSystemSaveDialog()), true);
-        await page.waitForFunction(() => window.__ownedPublishedApp.host.warning());
-        assert.equal(await page.evaluate(async () => (await window.__ownedPublishedApp.store.get(0)).token.bodyDigest), savedDigest);
-        assert.match(await page.locator('.player-session-host [role="status"]').textContent(), /保存後將無法在新版讀取/);
+        const dialog = page.getByRole('dialog', { name: '遊戲結束' }); await dialog.waitFor();
+        assert.match(await dialog.textContent(), /版本已更新/);
+        const result = await page.evaluate(async () => {
+          const c = window.__ownedPublishedApp, a = window.__app, before = window.__ownedDatabases.length;
+          const saved = await a.saveGame(0, 'must not save retired release');
+          return { saved, noSaveIO: before === window.__ownedDatabases.length, checked: c.statusChecks.at(-1),
+            warned: c.host.warning(), identity: c.session.identity, state: c.session.state(), scenario: a.scenario, enabled: a.runtimeEnabled, exits: c.exits.length };
+        });
+        assert.deepEqual(result.saved, { saved: 'blocked', reason: 'superseded' }); assert.equal(result.noSaveIO, true);
+        assert.equal(result.checked.kind, 'updated'); assert.equal(result.warned, true); assert.deepEqual(result.identity, identity);
+        assert.equal(result.state, 'closed'); assert.equal(result.scenario, null); assert.equal(result.enabled, false); assert.equal(result.exits, 0);
+        assert.equal(await page.evaluate(async slot => (await window.__ownedPublishedApp.store.get(slot)).token.bodyDigest, saveSlot), savedDigest);
+        await dialog.click({ button: 'right' }); assert.equal(await dialog.isVisible(), true);
+        assert.equal(await page.evaluate(() => window.__ownedPublishedApp.exits.length), 0);
+        await dialog.getByRole('button', { name: '確認', exact: true }).click();
+        await page.waitForFunction(() => window.__ownedPublishedApp.exits.length === 1);
+        assert.deepEqual(await page.evaluate(() => window.__ownedPublishedApp.exits), [{ reason: 'updated', initialAction: undefined }]);
+        observations.push(result); checks.push('new release retires old App before any save IO; right does not confirm; explicit left exits without hot replacement');
+        await this.start(index, expectedChapter, '1.1');
+        return;
       }
-      const result = await page.evaluate(async listed => {
+      const result = await page.evaluate(async slot => {
         const c = window.__ownedPublishedApp, a = window.__app, status = await c.session.status();
-        const saved = await a.saveGame(0, listed ? 'saved after update' : 'saved after unlist'), record = await c.store.get(0);
-        const checked = c.statusChecks.at(-1), warned = c.host.warning();
-        return { status, checked, warned, identity: c.session.identity, saved, releaseId: record.record.releaseId, ordinal: record.record.releaseOrdinal,
-          digest: record.token.bodyDigest, state: c.session.state(), scenario: !!a.scenario, exits: c.exits.length };
-      }, listed);
-      assert.equal(result.status.listed, listed); if (listed) assert.equal(result.status.ordinal, '1.1');
-      assert.equal(result.checked.kind, listed ? 'updated' : 'unlisted'); assert.equal(result.warned, true);
-      assert.deepEqual(result.identity, identity); assert.deepEqual(result.saved, { saved: 'local' }); assert.equal(result.releaseId, identity.releaseId); assert.equal(result.ordinal, 0);
-      assert.equal(result.state, 'active'); assert.equal(result.scenario, true); assert.equal(result.exits, 0); savedDigest = result.digest;
-      observations.push(result); checks.push(listed ? 'new publication does not replace App owner or save release' : 'unlisted old App can save under its original release');
+        const saved = await a.saveGame(slot, 'saved current release after unlist'), record = await c.store.get(slot);
+        return { status, checked: c.statusChecks.at(-1), warned: c.host.warning(), identity: c.session.identity, saved,
+          releaseId: record.record.releaseId, ordinal: record.record.releaseOrdinal, digest: record.token.bodyDigest,
+          state: c.session.state(), scenario: !!a.scenario, exits: c.exits.length };
+      }, saveSlot);
+      assert.equal(result.status.listed, false); assert.equal(result.checked.kind, 'unlisted'); assert.equal(result.warned, false);
+      assert.deepEqual(result.identity, identity); assert.equal(identity.ordinal, '1.1'); assert.deepEqual(result.saved, { saved: 'local' });
+      assert.equal(result.releaseId, identity.releaseId); assert.equal(result.ordinal, 1); assert.equal(result.state, 'active');
+      assert.equal(result.scenario, true); assert.equal(result.exits, 0); savedDigest = result.digest;
+      observations.push(result); checks.push('only unlisting, without another update: current 1.1 App retains its owner and can save');
     },
     async deleted() {
       const attempted = await page.evaluate(async () => {
@@ -132,11 +154,11 @@ export function createPublishedAppBrowserProbe({ browser, origin, gameId, chapte
       await dialog.getByRole('button', { name: '確認', exact: true }).click();
       await page.waitForFunction(() => window.__ownedPublishedApp.exits.length === 1);
       assert.equal(await dialog.count(), 0);
-      const result = await page.evaluate(async () => {
+      const result = await page.evaluate(async slot => {
         const c = window.__ownedPublishedApp, a = window.__app, before = window.__ownedDatabases.length;
         const saved = await a.saveGame(0, 'must not save'), noSaveIO = before === window.__ownedDatabases.length;
-        return { saved, noSaveIO, exits: c.exits, scenario: a.scenario, enabled: a.runtimeEnabled, state: c.session.state(), digest: (await c.store.get(0)).token.bodyDigest };
-      });
+        return { saved, noSaveIO, exits: c.exits, scenario: a.scenario, enabled: a.runtimeEnabled, state: c.session.state(), digest: (await c.store.get(slot)).token.bodyDigest };
+      }, saveSlot);
       assert.deepEqual(result.saved, { saved: 'blocked', reason: 'superseded' }); assert.equal(result.noSaveIO, true);
       assert.deepEqual(result.exits, [{ reason: 'deleted', initialAction: undefined }]); assert.equal(result.scenario, null); assert.equal(result.enabled, false); assert.equal(result.state, 'deleted'); assert.equal(result.digest, savedDigest);
       observations.push({ ...result, beforeConfirmation, attempted }); checks.push('actual save preflight reader 410 -> App retirement before IDB, real host right-click ignored/left confirmation before navigation port, no local archive deletion');

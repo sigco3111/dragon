@@ -13,7 +13,7 @@ function parse(b){try{return JSON.parse(b);}catch(cause){throw new Error('owned 
 const before=parse(readFileSync(`${d}before.json`));
 for(const[p,h]of Object.entries({...before.inputs,...before.imports})){assert.equal(sha(readFileSync(p)),h,p);}
 const sourceHashes=Object.fromEntries(['server/deletiondefinitions.js','server/deletionschemaintegrity.js','tools/verify_editor_backend_deletion_definitions.mjs',`${d}fixture-worker.js`,...Object.keys(parse(readFileSync(`${d}generation.json`)).sourceHashes)].map(p=>[p,sha(readFileSync(p))]));
-const origin='https://127.0.0.1:8787',own=mkdtempSync(join(tmpdir(),'dragon-definition-')),config=parse(readFileSync('server/wrangler.jsonc')),initial=randomBytes(24).toString('hex'),password=randomBytes(24).toString('hex');
+const origin='https://127.0.0.1:8787',own=mkdtempSync(join(tmpdir(),'dragon-definition-')),config=parse(readFileSync('server/wrangler.jsonc')),initial=(randomBytes(24).toString('hex') + 'Aa1!'),password=(randomBytes(24).toString('hex') + 'Aa1!');
 config.main=resolve(`${d}fixture-worker.js`);
 writeFileSync(join(own,'wrangler.jsonc'),JSON.stringify(config),{flag:'wx'});
 writeFileSync(join(own,'.dev.vars'),`EDITOR_DEFAULT_PASSWORD=${JSON.stringify(initial)}\nEDITOR_REQUEST_KEY=${JSON.stringify(randomBytes(32).toString('hex'))}\n`,{flag:'wx',mode:0o600});
@@ -77,7 +77,7 @@ try{
  checks.push('real loopback HTTP cookie/Origin/CSRF required; internal observation never trusts an anonymous DTO or supplied schema');
  await server.close();server=await startEditorBackend(join(own,'wrangler.jsonc'),{stageSource:false,stageLibrary:false});assert.equal((await observed(input,owner)).schemaDigest,first.schemaDigest);
  checks.push('actual workerd/DO restart retains fence/authority and exact50 declarations; reobservation is fresh facts, not immutable approval/oldprovider proof');
- const changed=await call('/api/auth/password',{oldPassword:password,newPassword:randomBytes(24).toString('hex')},owner);assert.equal(changed.status,200);await rejected({action:'observe',input},owner,401,'SESSION_INVALID');
+ const changed=await call('/api/auth/password',{oldPassword:password,newPassword:(randomBytes(24).toString('hex') + 'Aa1!')},owner);assert.equal(changed.status,200);await rejected({action:'observe',input},owner,401,'SESSION_INVALID');
  const latest={cookie:changed.cookie,csrf:changed.data.csrf};assert.equal((await observed(input,latest)).schemaDigest,first.schemaDigest);
  const missingPublic=await call(`/api/games/${game.gameId}/delete`,{},admin);assert.equal(missingPublic.status,404);
  checks.push('actual password handler revokes oldepoch and newprincipal rechecks schema; publicdelete still404, no completed410 or physical deletion');

@@ -21,7 +21,7 @@ const checks = [], calls = [], outside = [], consoleErrors = [], pageErrors = []
 const evidence = (name, actual, expected) => { assert.equal(actual, expected, `${name}: ${actual}`); checks.push({ name, status: expected }); };
 function parsed(b) { try { return JSON.parse(b); } catch (cause) { throw new Error("owned trial browser JSON", { cause }); } }
 
-const initial = `init${randomBytes(13).toString("hex")}`, password = `pw1${randomBytes(13).toString("hex")}`, password2 = `pw2${randomBytes(13).toString("hex")}`;
+const initial = `init${(randomBytes(13).toString("hex") + 'Aa1!')}`, password = `pw1${(randomBytes(13).toString("hex") + 'Aa1!')}`, password2 = `pw2${(randomBytes(13).toString("hex") + 'Aa1!')}`;
 const own = mkdtempSync(join(tmpdir(), "trial-browser-")), config = parsed(readFileSync("server/wrangler.jsonc"));
 config.main = resolve(`.dragon-analysis/editor-phase/${round}/fixture.js`);
 writeFileSync(join(own, "config.json"), JSON.stringify(config), { flag: "wx" });

@@ -15,7 +15,7 @@ node tools/start_editor_backend.mjs --init
 node tools/start_editor_backend.mjs
 ```
 
-第一次交互输入16–128字符的初始密码，不回显、不放命令参数。`--init`只用wx建立私密`server/.dev.vars`（初始密码和随机256bit安全key），不覆盖已有配置；启动不生成通用公开密码。唯一管理员为`tianyi`，首次登录必须改密。作者创建/重设使用配置的统一初始密码，通过安全管道交付，不从页面/API显示；账户名不可改。
+第一次交互输入9–128字符、同时包含大写字母、小写字母、数字和符号的初始密码（空白不算符号），不回显、不放命令参数。`--init`只用wx建立私密`server/.dev.vars`（初始密码和随机256bit安全key），不覆盖已有配置；启动不生成通用公开密码。唯一管理员为`tianyi`，首次登录必须改密。作者创建/重设使用配置的统一初始密码，通过安全管道交付，不从页面/API显示；账户名不可改。
 
 本机入口 **`https://127.0.0.1:8787/`**，Ctrl+C只关闭自己服务；占用端口报错，不杀其它进程。开发TLS为本机自签名；浏览器首次访问可能显示证书提示，不修改系统/浏览器全局信任。局部自动化只在新隔离context忽略该证书。后继[大源快照](editor-backend-snapshots.md)因本机workerd原生TLS正文中断改为NodeHTTPS入口→own WorkerHTTP随机loopback端口，已装OpenSSL仅生成own临时一天工程证书，保持真实Origin/CSRF/Host/body限制，线上TLS与玩家不变；原失败全保，不声称根因闭合。当前账户/launcher fresh browser已重跑。数据保存于`server/.local/metadata`，不清空重启；私密设置与持久化目录均Git ignore，不应上传截图、密码或数据库。
 
@@ -24,6 +24,7 @@ node tools/start_editor_backend.mjs
 ## 已实现的账户/API边界
 
 - [Durable Object SQLite](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)是权威，users/sessions/双维login_rates/operations同事务域；写入用同步transactionSync，密码KDF/随机数/HMAC/加密在事务外准备，提交再复查会话epoch、停用和CAS版本，不跨网络await事务。
+- 用户最新密码强度决定：初始及新密码为9–128个Unicode码点，包含ASCII大写／小写字母、数字及至少一个Unicode标点或符号；空白不算符号。前端最短长度、错误提示、共享后端及本地初始化一致；已有密码仍按原哈希验证，不强制重设。
 - 标准scrypt N32768/r8/p3、随机128bit盐、32byte摘要、常量时间比较。初始/新密码拒NUL及孤立代理，不做静默Unicode归一化。参数参照[OWASP Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)；实际workerd KDF已跑通，约210ms仅本机观测，非线上CPU/并发/SLA认证。
 - 256bit随机会话，只存token SHA；host-only `__Secure-dragon-editor` cookie，Path=/api、Secure/HttpOnly/SameSite=Strict。所有写请求精确Origin与CSRF（登录仍精确Origin）；不给跨域CORS权限。绝对8h/空闲30min、账户5次/来源30次每10min默认工程策略，可显式配置正整数；SQLite持久，不重启归零。禁用/恢复/重设/改密递增epoch并撤销旧session，恢复不复活旧cookie。
 - 受限改密态只允许session/password/logout。管理员只能创建author、列账户、停用/恢复/重设；作者不能跨权限管账户。管理员自己不能停用/重设，正常改密可用。不存在任意提升role/改account API。

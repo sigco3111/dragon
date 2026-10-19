@@ -13,7 +13,7 @@ import { installedAvailableLibraryPolicy } from '../server/sourcecatalogpolicy.j
 import { HttpError } from '../server/security.js';
 import { encodeSourceChunks, decodeSourceChunks } from '../web/src/content/authoring/sourcejson.js';
 import { stageInstalledAvailableLibrary } from './editor_stage_library.mjs';
-import { previousAvailableLibrary, previousLibraryId, previousLibraryDigest } from './fixtures/previous-available-library.mjs';
+import { priorAvailableLibrary as previousAvailableLibrary, priorLibraryId as previousLibraryId, priorLibraryDigest as previousLibraryDigest } from './fixtures/previous-available-library.mjs';
 assert.ok(process.argv.slice(2).every(arg => arg === '--workerd'));
 const workerd = process.argv.includes('--workerd'), own = mkdtempSync(join(tmpdir(), 'dragon-library-refresh-'));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');

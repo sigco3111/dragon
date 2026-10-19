@@ -11,7 +11,7 @@ import { startEditorBackend } from './start_editor_backend.mjs';
 import { decodeSourceChunks } from '../web/src/content/authoring/sourcejson.js';
 import { editChapterResources } from '../web/src/editor/chapterresources.js';
 const own = mkdtempSync(join(tmpdir(), 'dragon-private-draft-')), origin = 'https://127.0.0.1:8787';
-const initial = randomBytes(24).toString('hex'), password = randomBytes(24).toString('hex'), secret = randomBytes(32).toString('hex');
+const initial = (randomBytes(24).toString('hex') + 'Aa1!'), password = (randomBytes(24).toString('hex') + 'Aa1!'), secret = randomBytes(32).toString('hex');
 const sha = b => createHash('sha256').update(b).digest('hex');
 function json(b) { try { return JSON.parse(b); } catch (cause) { throw new Error('invalid owned draft test JSON', { cause }); } }
 const files = ['server/drafts.js', 'server/worker.js', 'tools/verify_editor_backend_private_draft.mjs'], sourceHashes = Object.fromEntries(files.map(p => [p, sha(readFileSync(p))]));

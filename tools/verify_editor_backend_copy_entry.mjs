@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { startEditorBackend } from './start_editor_backend.mjs';
 import { installedSourcePolicy } from '../server/sourcecatalogpolicy.js';
 const own = mkdtempSync(join(tmpdir(), 'dragon-copy-entry-')), origin = 'https://127.0.0.1:8787', d = '.dragon-analysis/editor-phase/backend-copy-entry-session-r1/';
-const initial = randomBytes(24).toString('hex'), password = randomBytes(24).toString('hex'), secret = randomBytes(32).toString('hex');
+const initial = (randomBytes(24).toString('hex') + 'Aa1!'), password = (randomBytes(24).toString('hex') + 'Aa1!'), secret = randomBytes(32).toString('hex');
 const sha = b => createHash('sha256').update(b).digest('hex');
 function json(bytes) { try { return JSON.parse(bytes); } catch (cause) { throw new Error('invalid owned entry JSON', { cause }); } }
 const doc = json(readFileSync('server/wrangler.jsonc')); doc.main = resolve('server/worker.js');

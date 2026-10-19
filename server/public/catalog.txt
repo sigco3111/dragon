@@ -1,5 +1,5 @@
 // Fixed operator inventory registration UI. DTO/storage association is NEVER authority.
-const REGISTRY = 'approved-available-library-76cdf28-1', PROFILE = 'fixed-available-web-library-1', MODE = 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE';
+const REGISTRY = 'approved-available-library-f4ba804b-1', PROFILE = 'fixed-available-web-library-1', MODE = 'STAGED_AVAILABLE_LIBRARY_NOT_Q69_CLOSURE';
 const sha = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const positive = value => typeof value === 'string' && /^[1-9][0-9]{0,63}$/.test(value);
 function exact(value, keys) { return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key)); }
@@ -56,5 +56,5 @@ export function installLibraryRegistration({ api, authority, work, isBusy }) {
   window.addEventListener('beforeunload', event => { if (permitted() && (broken || op?.state === 'unknown')) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('pagehide', () => { generation++; view = null; queried = false; message = '頁面離開已清除本次狀態；保留原鍵關聯但不自動請求或重放。'; render(); });
   render();
-  return Object.freeze({ render, setIdentity(next) { if (actor === next) return render(); generation++; actor = next; view = null; queried = false; message = '會話已更換；須明確查看，原關聯不是權限。'; restore(); render(); }, canLeave() { return !permitted() || (!broken && op?.state !== 'unknown') || confirm('固定庫原鍵回應未確認。離開只保留關聯，不自動提交或取消服務操作；仍要離開？'); } });
+  return Object.freeze({ render, setIdentity(next) { if (actor === next) return render(); generation++; actor = next; view = null; queried = false; message = '會話已更換；須明確查看，原關聯不是權限。'; restore(); render(); }, canLeave(forUnload = false) { return !permitted() || (!broken && op?.state !== 'unknown') || (!forUnload && confirm('固定庫原鍵回應未確認。離開只保留關聯，不自動提交或取消服務操作；仍要離開？')); } });
 }

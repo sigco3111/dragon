@@ -86,6 +86,42 @@ export async function exerciseDistributionResources(makeStore) {
     const f = await fixture(); f.envelope = { version: 1, projection: { runtimeVersion: 1, directory: [], releases: [], announcements: [], gameStates: [] } };
     assert.equal((await f.verify(f.record('bootstrap'))).reads, 0); groups++;
   }
+  // Current-only policy metadata is optional for retained legacy projections,
+  // but when present it must match listed/hidden publish identity exactly.
+  for (const listed of [true, false]) {
+    const f = await fixture(), { releaseId, ordinal } = f.envelope.runtime;
+    f.envelope.projection.gameStates[0].currentRelease = { releaseId, ordinal };
+    if (!listed) {
+      f.envelope.projection.directory = []; f.envelope.projection.releases = []; f.envelope.projection.announcements = [];
+      f.envelope.projection.gameStates[0].listed = false;
+    }
+    assert.equal((await f.verify(f.record())).objects, 7); assert.equal(f.writes.length, 0); groups++;
+  }
+  for (const change of [
+    row => { row.currentRelease = null; },
+    row => { row.currentRelease = {}; },
+    row => { row.currentRelease.extra = true; },
+    row => { row.currentRelease.releaseId = '../invalid'; },
+    row => { row.currentRelease.ordinal = '01.1'; },
+    row => { row.currentRelease.releaseId = OTHER_GAME; },
+    row => { row.currentRelease.ordinal = '1.999'; },
+  ]) {
+    const f = await fixture(), { releaseId, ordinal } = f.envelope.runtime;
+    f.envelope.projection.gameStates[0].currentRelease = { releaseId, ordinal }; change(f.envelope.projection.gameStates[0]);
+    await assert.rejects(f.verify(f.record())); assert.equal(f.gets.length, 0); assert.equal(f.writes.length, 0); groups++;
+  }
+  {
+    const f = await fixture(), { releaseId, ordinal } = f.envelope.runtime;
+    f.envelope.projection = { runtimeVersion: 1, directory: [], releases: [], announcements: [], gameStates: [{ gameId: GAME, listed: false, currentRelease: { releaseId, ordinal } }] };
+    // An unlisted current version is metadata, not a historical runtime grant.
+    assert.equal((await f.verify(f.record())).objects, 7);
+    f.envelope.projection.gameStates[0].currentRelease.releaseId = OTHER_GAME;
+    f.gets.length = 0; await assert.rejects(f.verify(f.record())); assert.equal(f.gets.length, 0);
+    f.envelope.projection.gameStates[0].currentRelease.releaseId = releaseId;
+    delete f.envelope.runtime; assert.equal((await f.verify(f.record('listing'))).reads, 0);
+    f.envelope.projection.gameStates[0].deleted = true;
+    await assert.rejects(f.verify(f.record('delete-fence'))); groups++;
+  }
   // Every runtime role, including both shared portrait forms, must exist.
   for (let position = 0; position < 7; position++) {
     const f = await fixture(), keys = [...f.source.files.map(file => file.key), 'kao/0.png', 'kao/p0001.png'];

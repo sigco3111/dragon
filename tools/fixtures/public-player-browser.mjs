@@ -43,12 +43,12 @@ export function createPublicPlayerBrowserProbe({ browser, origin, gameId, chapte
       return { size: row.bytes.length, httpMetadata: { contentType: row.type }, body: new Response(row.bytes).body }; } },
   };
   const sources = {}, checks = [], observations = [], traces = new Map();
-  let page, initialMetadata, releaseId, savedDigest, sequence = 4000000;
+  let page, initialMetadata, releaseId, savedDigest, saveSlot = 0, sequence = 4000000;
   async function record() {
-    return page.evaluate(async ({ game, base }) => {
+    return page.evaluate(async ({ game, base, slot }) => {
       const { createGameSaveStore } = await import(base + 'src/core/gamesavestore.js');
-      return createGameSaveStore({ gameId:game, databaseName:'wolong-web', getIndexedDB:()=>indexedDB }).get(0);
-    }, { game: gameId, base: await moduleBase() });
+      return createGameSaveStore({ gameId:game, databaseName:'wolong-web', getIndexedDB:()=>indexedDB }).get(slot);
+    }, { game: gameId, base: await moduleBase(), slot: saveSlot });
   }
   async function ready() {
     await page.waitForFunction(() => {
@@ -225,12 +225,50 @@ export function createPublicPlayerBrowserProbe({ browser, origin, gameId, chapte
       assert.equal(await page.evaluate(()=>window.__app.checkFormalCurrent()&&!!window.__app.scenario),true);
       checks.push('assembled production App is still active while server chapter is temporarily missing (no lazy fetch asserted)');
     },
-    async observe(listed) {
-      if(listed){assert.equal(await page.evaluate(()=>window.__app.gamebar.openSystemSaveDialog()),true);await page.waitForFunction(()=>document.querySelector('.player-session-host [role="status"]')?.textContent.includes('保存後將無法在新版讀取'));}
-      assert.deepEqual(await page.evaluate(value=>window.__app.saveGame(0,value?'public update':'public unlisted'),listed),{saved:'local'});
-      const stored=await record(); assert.equal(stored.record.releaseId,releaseId);assert.equal(stored.record.releaseOrdinal,0);savedDigest=stored.token.bodyDigest;
-      assert.equal((await metadata()).scenarioAssembly.content.publication.releaseId,releaseId);
-      observations.push({listed,releaseId:stored.record.releaseId,digest:savedDigest});checks.push(listed?'actual save dialog update warning/old release persistence':'unlisted production session persists without hot replacement');
+    async observe(listed, index) {
+      if (listed) {
+        const oldReleaseId = releaseId, beforeURL = page.url();
+        assert.equal(await page.evaluate(() => window.__app.gamebar.openSystemSaveDialog()), true);
+        const dialog = page.getByRole('dialog', { name: '遊戲結束' }); await dialog.waitFor();
+        assert.match(await dialog.textContent(), /版本已更新/);
+        const attempted = await page.evaluate(async () => {
+          const n = window.__ownedDatabases.length, saved = await window.__app.saveGame(0, 'must not save retired release');
+          return { saved, noIO: n === window.__ownedDatabases.length, scenario: window.__app.scenario, enabled: window.__app.runtimeEnabled };
+        });
+        assert.deepEqual(attempted, { saved: { saved: 'blocked', reason: 'superseded' }, noIO: true, scenario: null, enabled: false });
+        assert.equal((await record()).token.bodyDigest, savedDigest);
+        await dialog.click({ button: 'right' }); assert.equal(page.url(), beforeURL); assert.equal(await dialog.isVisible(), true);
+        await dialog.getByRole('button', { name: '確認', exact: true }).click(); await page.waitForURL(origin + '/'); await title();
+        observations.push({ updatedRetirement: attempted, oldReleaseId, preservedDigest: savedDigest });
+        checks.push('actual update discovery stops old App before IDB; right cannot confirm; explicit left navigates to current title');
+        await page.locator('.player-catalog option').filter({ hasText: '1.1' }).first().waitFor({ state: 'attached' });
+        await page.locator('.player-catalog select').selectOption(gameId); await yesNo(true);
+        await page.waitForURL(url => url.searchParams.get('mode') === 'new');
+        await page.locator('[data-chapter-id]').first().waitFor(); assert.equal(await page.locator('[data-chapter-id]').count(), 20);
+        const at = await page.locator('[data-chapter-id]').evaluateAll((nodes, id) => nodes.findIndex(node => node.dataset.chapterId === id), chapterId); assert.ok(at >= 0);
+        await page.locator('[data-chapter-id]').nth(at).click(); await page.locator('[data-faction-slot]').first().click(); await ready();
+        initialMetadata = await metadata(); releaseId = initialMetadata.scenarioAssembly.content.publication.releaseId;
+        assert.equal(releaseId, index.releaseId); assert.notEqual(releaseId, oldReleaseId);
+        assert.equal(initialMetadata.scenarioAssembly.content.publication.ordinal, '1.1');
+        // Old release slot 0 is reserved/unavailable, not an overwrite grant.
+        // Save into an observed empty slot; the same commit must prune old 0.
+        saveSlot = 1;
+        assert.deepEqual(await page.evaluate(slot => window.__app.saveGame(slot, 'explicit fresh current release'), saveSlot), { saved: 'local' });
+        const obsolete = await page.evaluate(async ({ game, base }) => {
+          const { createGameSaveStore } = await import(base + 'src/core/gamesavestore.js');
+          return createGameSaveStore({ gameId: game, databaseName: 'wolong-web', getIndexedDB: () => indexedDB }).get(0);
+        }, { game: gameId, base: await moduleBase() });
+        assert.equal(obsolete, null, 'current-release save atomically prunes old release slot');
+        const current = await record(); assert.equal(current.record.releaseId, releaseId); assert.equal(current.record.releaseOrdinal, 1); savedDigest = current.token.bodyDigest;
+        observations.push({ current: initialMetadata, releaseId, savedDigest });
+        checks.push('explicit new 1.1 title/chapter/faction selection installs a fresh App and saves the current release, never hot-replaces old App');
+        return;
+      }
+      assert.deepEqual(await page.evaluate(slot => window.__app.saveGame(slot, 'public current release unlisted'), saveSlot), { saved: 'local' });
+      const stored = await record(); assert.equal(stored.record.releaseId, releaseId); assert.equal(stored.record.releaseOrdinal, 1); savedDigest = stored.token.bodyDigest;
+      assert.equal((await metadata()).scenarioAssembly.content.publication.releaseId, releaseId);
+      observations.push({ listed, releaseId: stored.record.releaseId, digest: savedDigest });
+      checks.push('only unlisting without another update: already-current 1.1 production session can save without hot replacement');
     },
     async deleted() {
       const beforeURL=page.url();

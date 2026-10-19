@@ -24,7 +24,7 @@ export async function createPublicationBrowserAuthority({ root, origin, runtimeS
   const ADMIN = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', OWNER = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
   const secret = 'c'.repeat(64), token = '1'.repeat(64), adminToken = '2'.repeat(64);
   const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-  const hash = sha(token), adminHash = sha(adminToken), password = 'Owned-Browser-Password-Only!';
+  const hash = sha(token), adminHash = sha(adminToken), password = 'Owned-Browser-Password-Only-1!';
   try {
     const bucket = new FileBucket({ root: join(root, 'private-objects') });
     const bindings = { EDITOR_ORIGIN: origin, EDITOR_REQUEST_KEY: secret, EDITOR_DEFAULT_PASSWORD: password, EDITOR_BLOBS: bucket };

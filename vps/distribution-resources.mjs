@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { DISTRIBUTION_PAYLOAD_LIMIT } from '../server/distributionledger.js';
 import { projectPublicationCatalog } from '../server/publicationcatalog.js';
 import { validateFirstOnlineReference, firstOnlineReceiptKey, receiptVisibleAt } from '../reader/firstonline.js';
-import { ASSET_TYPES, MAX_METADATA_BYTES, isGameId, isChapterId, isOrdinal, parseJSON, sameIdentity, validateIndex, validateRuntimeReference } from '../reader/runtimecontract.js';
+import { ASSET_TYPES, MAX_METADATA_BYTES, isGameId, isId, isChapterId, isOrdinal, parseJSON, sameIdentity, validateIndex, validateRuntimeReference } from '../reader/runtimecontract.js';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -27,8 +27,12 @@ function projectionEntries(projection, context) {
   for (const key of ['directory', 'gameStates', 'announcements', 'releases']) check(Array.isArray(projection[key]));
   const states = new Map(), releases = new Map(), directory = new Map();
   for (const row of projection.gameStates) {
-    fields(row, ['gameId', 'listed'], ['deleted']);
+    fields(row, ['gameId', 'listed'], ['deleted', 'currentRelease']);
     check(isGameId(row.gameId) && typeof row.listed === 'boolean' && (row.deleted === undefined || typeof row.deleted === 'boolean') && !(row.deleted && row.listed) && !states.has(row.gameId));
+    if (Object.hasOwn(row, 'currentRelease')) {
+      fields(row.currentRelease, ['releaseId', 'ordinal']);
+      check(!row.deleted && isId(row.currentRelease.releaseId) && isOrdinal(row.currentRelease.ordinal));
+    }
     states.set(row.gameId, row);
   }
   for (const row of projection.releases) {
@@ -41,6 +45,8 @@ function projectionEntries(projection, context) {
     fields(row, ['gameId', 'releaseId', 'ordinal', 'revision', 'sourceDigest', 'name', 'publishedAt', 'chapters']);
     const release = releases.get(row.gameId);
     check(release && sameIdentity(row, release) && states.get(row.gameId)?.listed === true && !directory.has(row.gameId) && typeof row.name === 'string');
+    const current = states.get(row.gameId).currentRelease;
+    check(!current || current.releaseId === row.releaseId && current.ordinal === row.ordinal);
     iso(row.publishedAt); directory.set(row.gameId, row);
     result.push(entry({ ...release, chapters: row.chapters }));
   }
@@ -100,6 +106,8 @@ export function createDistributionResourceVerifier({ r2, prefix = '', verifyStat
     if (kind === 'publish') {
       const candidate = entry(payload.runtime);
       check(candidate.gameId === gameId && states.has(gameId) && !states.get(gameId).deleted);
+      const current = states.get(gameId).currentRelease;
+      check(!current || current.releaseId === candidate.releaseId && current.ordinal === candidate.ordinal);
       const visible = entries.find(value => value.gameId === gameId);
       check(!visible || sameIdentity(visible, candidate) && ['key', 'sha256', 'byteLength'].every(key => visible.runtime[key] === candidate.runtime[key]) && same(visible.chapters, candidate.chapters));
       if (!visible) entries.push(candidate); // Hidden formal releases need bytes too.

@@ -20,7 +20,7 @@ const checks = [], calls = [];
 const evidence = (name, actual, expected) => { assert.equal(actual, expected, `${name}: ${actual}`); checks.push({ name, status: expected }); };
 function parsed(b) { try { return JSON.parse(b); } catch (cause) { throw new Error("owned trial web-assets JSON", { cause }); } }
 
-const initial = `init${randomBytes(13).toString("hex")}`, password = `pw1${randomBytes(13).toString("hex")}`;
+const initial = `init${(randomBytes(13).toString("hex") + 'Aa1!')}`, password = `pw1${(randomBytes(13).toString("hex") + 'Aa1!')}`;
 const own = mkdtempSync(join(tmpdir(), "trial-web-assets-")), config = parsed(readFileSync("server/wrangler.jsonc"));
 config.main = resolve(`.dragon-analysis/editor-phase/${round}/fixture.js`);
 writeFileSync(join(own, "config.json"), JSON.stringify(config), { flag: "wx" });

@@ -5,7 +5,7 @@ import { startAuthServer } from '../vps/auth-server.mjs';
 
 const ORIGIN = 'https://vps-test.invalid';
 const SECRET = 'e'.repeat(64);
-const PW = 'vps-default-password-01';
+const PW = 'Vps-default-password-01!';
 const base = { EDITOR_ORIGIN: ORIGIN, EDITOR_REQUEST_KEY: SECRET, EDITOR_DEFAULT_PASSWORD: PW };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

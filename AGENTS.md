@@ -8,7 +8,7 @@
 - 仓库`E:/Dragon/web-port`；原程序`E:/Dragon/Dragon/`，官方基准`E:/Dragon/原版/`，改版库`上/中/下/后/`。自动化禁止访问真实`SAVE.DAT`、用户存档/profile；只用内存、mock或新隔离profile。
 - 软件版本以`VERSION`为准，规则基线`web-0.1.1`；游戏正式版本`1.n`与软件版本、source修订、程序摘要相互独立。
 - fresh／restore走v2原生道路与固定表，生产v1路径已退役；未知消费点fail-closed，保已提交前缀、hold和禁存。不凭现代码、体验或测试补公式，不宣称完整战役已经认证。
-- 当前主线：自建游戏发布、当前版本唯一政策及VPS落地。共同业务／冻结分发／正式玩家入口／程序绑定资源／旧档清理与旧会话退休已接线，**完整发布仍未就绪**；尚需新政策联合复验、物理回收／作者准入审计及生产装配。维护源：[R2接线](docs/r2-player-connection.md)、[VPS就绪](docs/vps-editor-readiness.md)；本轮修改、提交／部署状态和连接阻塞只记journal。
+- 当前主线：自建游戏发布、当前版本唯一政策及VPS落地。共同业务／冻结分发／正式玩家入口／程序绑定资源／旧档清理与旧会话退休已接线，**完整发布仍未就绪**；当前政策联合验证范围见R2§2.72；尚需物理回收／作者准入审计及完整生产放行。维护源：[R2接线](docs/r2-player-connection.md)、[VPS就绪](docs/vps-editor-readiness.md)；本轮修改、提交／部署状态和连接阻塞只记journal。
 - 优先最小修改、复用现有验证，不堆框架或辅助测试。保留他人改动；commit／push分别需明确授权，推送显式使用GitHub `github`，不误推Gitea `origin`。不提交秘密、缓存、临时报告、截图或本地运行数据。
 
 ## 2. 架构与数据流
@@ -111,7 +111,7 @@ git diff --check
 
 - 内容／规则改动按范围跑pipeline、catalog、world、slot-phase／battle、formation、road-authority等现有入口；共享调度／RNG／存档／跨模块状态改动须完整安全回归。Python禁优化，使用`-B`和UTF-8日志；编译输出用新隔离目录。
 - UI用全新浏览器profile核流程和console/page/request错误；保存另测守卫、真实JSON、事务失败及跨窗口CAS。已有Playwright可显式传`PLAYWRIGHT_MODULE`，不擅自安装依赖。完整EOF后的CDP失败只能逐请求严格关联，不泛化忽略。
-- 公开发布联合链使用`verify_publication_chain_browser.mjs`的`--node-service --management-ui --deletion-ui --admin-deletion-ui --player-client --player-app --public-player`，程序路径另加`--program-paths`（重入口600秒）。**旧续玩断言须按当前版本唯一政策修正后复验**，历史成功不代表新政策整链通过。
+- 公开发布联合链使用`verify_publication_chain_browser.mjs`的`--node-service --management-ui --deletion-ui --admin-deletion-ui --player-client --player-app --public-player`，程序路径另加`--program-paths`（重入口600秒）。按当前版本唯一政策核旧票拒绝、旧局禁存、空槽新版保存原子清旧及仅同版下架续玩；验证范围见R2§2.72，进程内运输桥不等于生产TCP／TLS／云或物理清理。
 - 程序资源验证复用`verify_program_entry.mjs`／`verify_program_assets.mjs`及各自`--workerd`；静态整包用`verify_static_release_package.mjs --archive --archive-read`，只能操作自有包，不覆盖共享dist。真桶测试限定自有`test/`前缀并清理；生产数据写入另依授权执行。
 - 每次交付核实际diff、支持文件主动LSP及`lens_diagnostics mode=all`；空缓存／push-only／inconclusive不算clean。纯文档核职责、链接／锚点及元数据，不跑无关游戏回归；保留被引用的journal锚点或提供归档索引。
 - 验证先固定显式入口／依赖／源码SHA与I/O白名单，串行跑重入口，禁止`verify_*`通配。仅关闭自有监听／profile，子进程用必要环境白名单；改动后重新核证据，不拼接过期成绩。

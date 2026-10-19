@@ -101,7 +101,7 @@ if (mode === 'file-before-link' || mode === 'file-after-link') {
   };
   syncBuiltinESMExports();
   const { runPublicationCommand } = await import('../../vps/publication-main.mjs');
-  const env = { EDITOR_ORIGIN: 'https://owned-editor.invalid', EDITOR_REQUEST_KEY: 'c'.repeat(64), EDITOR_DEFAULT_PASSWORD: 'Owned Linux password only!',
+  const env = { EDITOR_ORIGIN: 'https://owned-editor.invalid', EDITOR_REQUEST_KEY: 'c'.repeat(64), EDITOR_DEFAULT_PASSWORD: 'Owned Linux password only 1!',
     EDITOR_DATA_DIR: root, EDITOR_LISTEN_HOST: '127.0.0.1', EDITOR_LISTEN_PORT: port, EDITOR_DRAIN_INTERVAL_MS: '20',
     R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'b'.repeat(32), R2_SECRET_ACCESS_KEY: 'd'.repeat(64), R2_BUCKET: 'dragon', R2_PREFIX: 'test/owned-linux/',
     STATIC_ORIGIN: 'https://owned-static.invalid', STATIC_PATH_PREFIX: 'release/', STATIC_RELEASE_SHA256: archive.release.sha256, STATIC_SOURCE_SHA256: sourceDigest };

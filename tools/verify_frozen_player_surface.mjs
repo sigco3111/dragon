@@ -10,7 +10,7 @@ register('../vps/text-loader.mjs', import.meta.url);
 const { createEditorApplication, createEditorGateway, default: legacyGateway } = await import('../server/editorapp.js');
 const own = mkdtempSync(join(tmpdir(), 'dragon-frozen-surface-'));
 const editor = 'https://owned-editor.invalid', player = 'https://owned-player.invalid';
-const env = { EDITOR_ORIGIN: editor, EDITOR_PLAY_ORIGIN: player, EDITOR_REQUEST_KEY: 'c'.repeat(64), EDITOR_DEFAULT_PASSWORD: 'Owned player surface password!' };
+const env = { EDITOR_ORIGIN: editor, EDITOR_PLAY_ORIGIN: player, EDITOR_REQUEST_KEY: 'c'.repeat(64), EDITOR_DEFAULT_PASSWORD: 'Owned player surface password 1!' };
 const paths = ['/api/published-games', '/api/published-games?game=private', '/api/announcements', '/api/announcements?cursor=private', '/api/trial-pack', '/api/trial-pack?game=wolong-builtin', '/api/trial-asset?game=private', '/api/play/web/src/game/clock.js', '/api/play/web/private/unknown', '/api/play/web/content/builtin/compiled/unknown.png', '/content/builtin/compiled/unknown.png'];
 const runtimeStager = { async stage() { throw new Error('no publish in this test'); }, verifyStaged() { throw new Error('no stage proof'); } };
 let checks = 0;

@@ -4,7 +4,7 @@
 
 ## 1. 接续状态
 
-- 当前本地HEAD为`b4177c8`（战略绘制性能修复）；§9–10保留对应发布前／提交前收据，不能当作本轮远端核验。用户已批准编辑器VPS部署；受限服务已在`https://dragon-editor.720108.xyz`上线，连接基线见§11，实际验证和未开放功能见§12。本轮未commit／push，不沿用旧批次推送授权。
+- 本轮提交整理以`d04e5fd`（首次受限部署）为基线；用户已明确授权提交此后的编辑器／受限部署改动，未授权push。实际提交身份查Git日志。§9–10为更早性能批次收据。受限服务已在`https://dragon-editor.720108.xyz`上线，连接基线见§11，首次部署见§12；提交后的固定库／私有Trial接续见§13，密码强度调整见§15，当前vps6资源门与巡检接续见§16；不能将未提交代码视为已在GitHub／Cloudflare发布。
 - 发布主线仍未就绪：当前版本唯一政策已有局部接线，完整链及生产条件见§6。旧版续玩成绩不能用于当前放行；程序归档固定资源前缀也不授权旧游戏内容续玩。
 - §8提速与纯文档整理已随v0.1.8发布；§10修复已进入当前本地HEAD，本轮已核GitHub main和线上静态核心身份，不冒性能／完整发布验收。无实际diff的M标记保留，不批量重写。
 
@@ -46,11 +46,11 @@
 
 ## 6. 发布主线阻塞与下一步
 
-1. **新政策联合复验**：专项旧凭据／宿主／保存检查已有通过，完整发布浏览器链仍有旧续玩预期；按当前版本唯一合同定点修正再复验，见[R2接线§2.69–2.70](r2-player-connection.md)。
+1. **新政策联合复验**：专项检查及后继两条完整本地联合链已通过，范围与失败轮见[R2接线§2.72](r2-player-connection.md#272-当前版本唯一的共同发布联合复验current-publication-1)／§14；资源门已按§16最小覆盖部署并复验，不替代真实游戏云发布及物理清理放行。
 2. **物理回收**：全局冻结payload、R2历史对象、在途发布及备份引用尚未完整闭合。删除栅栏／409退休不等于物理删除，非空全局账本inventory仍应拒绝，不能靠game_id过滤绕过。
 3. **作者准入／同引擎**：G-INIT未知初始化、剩余编辑器功能及两端兼容待按[需求矩阵](editor-requirements-matrix.md)审计；完整复制或归档SHA不证明任意空白章可玩。
 4. **生产装配**：受限编辑器、可信整包归档及两端静态核心身份已核（§12）；正式游戏registry仍为`REGISTRY_EMPTY`。完整生产数据／游戏发布链及旧重lane缺口见[VPS就绪审计](vps-editor-readiness.md)，不得以局部成功冲销。
-5. **VPS连接已具备**：SSH、域名HTTPS及R2连接已实测；§11为只读基线，实际受限部署见§12。保护已有`/home/web`，完整发布条件未满足，Trial／发布等部署维护门不能以HTTP健康为由移除。
+5. **VPS连接已具备**：SSH、域名HTTPS及R2连接已实测；§11为只读基线，实际受限部署见§12。保护已有`/home/web`，完整发布条件未满足，维护门仅能按相应独立证据分步解除（私有两门见§13），不能以HTTP健康为由移除发布／删除门。
 6. **顺序**：提速与记忆整理已交付；§9是历史提交／Release／推送授权，不沿用到本轮。部署授权已独立取得；后续在当前任务范围内推进联合验证、回收／准入缺口及生产审计，服务上线或代码Release不自动解除以上阻塞。
 
 ## 7. 本次记忆整理
@@ -104,3 +104,42 @@
 - **备份／巡检**：实际执行`backup-publication.sh`在`/root/dragon-editor-backups/publication-20261019T114028Z`完成本项目正常停机、一致备份、SHA／隔离SQLite恢复检查及自动重启；整包重检约4分钟后健康恢复。改密／来源登记后另存同机`publication-online-20261019T114658Z`：原生SQLite online backup、87个不可变对象前后清单稳定，快照SHA=`93eb0ab45967db5d1a8a5744c3587b665fe6822e27d5ed82e2bbd81bc9914a20`；断网隔离解包核对象字节、SQLite完整性／FK、已改密管理员1／来源1／游戏0通过。检查器初次误查不存在的games表，核声明后改为content_games，未改库／schema。不是恢复应用运行、异地灾备或R2根回滚。monitor timer enabled／active，手动触发真实检查成功；仅journal，无外部告警接收端。最终容器healthy、只读非root、loopback端口、数据0700及env0600逐项复核，probe／panel／nginx保留。
 - **专项验证边界**：实际VPS固定镜像中非root Linux19组（真实信号／SIGKILL／fsync／SQLite／权限，云运输为替身）、共享冻结HTTP12组、服务18、drainer35、FileBucket12通过；修改后的CLI90、真实签名R2客户端13、静态客户端31／59请求通过；本地同三项及R2预算28、归档34通过。这些专项仅用独立临时数据／虚拟云端口；真实云／UI／备份另如上取证，不称完整发布浏览器链、断电、异地恢复或完整战役通过。
 - **最终检查／交付**：实际diff与5份变更JS/MJS语法、44处文档链接／锚点、7份Linux运维文件LF、17个候选文件秘密值扫描及远端／本地外置Compose SHA一致均通过，无暂存内容。主动LSP共17路径：两文档＋Compose共3 clean，5份JS/MJS＋两shell共7项push-only／silent无法确认，另7项格式未配置LSP；零报告诊断不冒全部clean。另以实际Docker build、Compose config、nginx -t、sh -n及systemd-analyze verify覆盖相关配置。末次session mode=all在17文件无warning（缓存范围，非全仓重扫）；文档链接检查初次GBK解码失败，显式UTF-8后通过。受限编辑器已上线并完成上述生产冒烟，完整发布阻塞仍为§6；不能移除维护门或声称完整编辑／试玩／发布已就绪。没有提交／推送。
+
+## 13. 固定库刷新与私有Trial接续
+
+- **授权／范围**：用户要求先提交已有部署，再继续做完整可用编辑器；首次部署已提交`d04e5fd`，未push。本批只推进可独立核验的固定库与私有工作台／Trial，完整发布、上下架、解除限制及删除维护门仍保留。没有改Web引擎、230项束、静态核心、DOS机制或生产游戏数据。
+- **维护源／本地证据**：五项消费者逐字节历史／资源依赖审计、新清单及历史保留、不可变旧登记回归、真实工作台与Trial的详细范围统一见[R2§2.71](r2-player-connection.md#271-固定素材库消费者刷新及私有工作台library-refresh-2)。本批新库`approved-available-library-f4ba804b-1`／93632字节SHA=`f4ba804b84b326ff2d569980127f52d3f6df92ab623d740ad3ab21945840615b`，只刷新五个programHashes，400角色／20消费者全匹配；20个画像255缺口不冒Q69闭合。Node／workerd刷新各8组、策略400角色／11负控、同引擎Trial22项、登记UI127的11组及素材UI126的10组均通过。后者约1314秒，之前123–125超时不算通过；所有新profile无用户存档／外网／意外错误。
+- **生产阶段一**：三文件固定库覆盖tar SHA=`836595b1fdf8407870ad4b6a1355a648b325b404f8f8dd38759a6aae85692ff5`经远端逐文件核验，构建vps3镜像ID=`sha256:91be307245f09cd8c28e361eeeaf20712ca8e62a45b948af00ffc73eff6d53ce`。操作员在私有FileBucket条件写／全量读回新400角色，只装配严格描述，不伪造SQL批准。停本项目后`publication-20261019T121545Z`同机备份／独立SQLite恢复通过，切vps3并完成严格整包重检、健康及monitor检查；两项私有维护门当时仍关闭。
+- **生产阶段二**：发现并修正两份工作台更旧的`76cdf28`身份及native unload调用confirm的错误，普通手动确认／原键关联保留。五个服务端UI文件覆盖tar SHA=`3d51a4836339b9fc2085ffa1ba44748b86785d1ef1bf05a7a87fd3c96315c724`，逐文件校验后构建vps4镜像ID=`sha256:3242092b3b0c67b025bfe7fb8121602cb715f3c33be1ad0dbf3fa392ec8f3af2`。裸镜像配置、安装36组／同一源码树、400固定角色／20消费者均通过；第一次测试漏临时tmpfs而EROFS，补显式隔离tmpfs后重跑通过，不是产品目录放宽。再次停机一致备份`publication-20261019T133609Z`／独立SQLite恢复通过，已启vps4严格归档重检。仅该编辑器域临时503／no-store维护，保留原站点配置；首次维护插入因原花括号换行不符被断言拒绝，未写坏配置，按实际结构定点修改并经nginx -t才reload。完整预检后容器healthy／初始化已完成、monitor成功。依次只解除库安装门，经全新隔离Chromium和真实HTTPS正常`tianyi`登录、显式GET核独立root、确认安装POST／读回200、原41来源仍登记且游戏0、正常退出，3组通过，预期冷401之外零错误；未改密／伪造SQL或创建生产测试游戏。随后才解除新私有Trial门，保留发布／上下架／限制解除／删除门，nginx -t／reload通过；公网首页200、两私有API匿名POST均401（非维护503），四项发布／管理／删除POST仍503。新配置SHA=`e7a99b1939be24af153e77c64e2d3eec7e028ca758653c8ea1ef21c00749a80a`，远端收据`deployment-private-library.json`。生产Trial未创建／执行：真实引擎运行证据为上述自有Trial22项，不能将两项门解除冒作完整作者／发布功能已验收。
+
+## 14. 当前政策联合发布复验
+
+- 详细维护源：[R2§2.72](r2-player-connection.md#272-当前版本唯一的共同发布联合复验current-publication-1)。修正历史测试续旧版预期时，实际默认publisher暴露仍拒绝共同投影的currentRelease字段；已补严格格式／一致性检查，不绕过默认门、不改引擎／存档协议／Trial束。
+- Node及自有workerd的资源门各45组通过。记录导航端口的共享App链与未改生产boot／两软件归档的公开App链都完成：各11主组、6客户端组、App分别8／13组、20章／六根／六确认、outbound=0。新版本旧票409、旧局禁存／退休、空槽新版保存原子清旧、同版下架续玩、删除410及明确确认均已实际覆盖；失败轮r1–r4未算通过。
+- 收据分别为`.dragon-analysis/release-readiness/publication-chain-browser-i7633d`和`publication-chain-browser-ufpqGC`；对应日志`published-app-current-only-r1.log`／`public-player-current-only-r6.log`保存在本轮editor-completion目录。两条仍为进程内运输桥，不冒实际云／生产发布或物理删除。
+- 本批结束时生产仍是§13的vps4镜像与已开放私有库／Trial，发布／管理／删除维护门保留；本批当时没有上传资源门修复／重启VPS或写生产根，后继部署另见§16。物理清理的非空全局账本、在途／legacy写、R2历史及全部备份引用仍须先闭合；不能仅按game_id删旧payload或改永久链摘要。异地备份／外部告警、作者准入／完整资源闭包也未完成。本批没有新增commit／push。
+- **收尾核查**：12份JS/MJS及5份服务端Text模块语法、400角色／20消费者／11负控、diff空白检查通过；29个实际变更／新增文件逐值比对7项私密值无命中，638本地链接目标／39锚点通过。主动LSP查21路径：4 clean、16 findings、1 push-only未确认，零error；AGENTS的跨工作区文档／README解析有9条warning，实际目标均存在，其余为保留括号提示／历史标识typos，不称全clean；session mode=all已查42个会话文件，仍9 warning。最终远端vps4 healthy／只读uid1000、env0600／data0700、monitor timer active、nginx -t及公网首页／health 200；四项发布／管理／删除门保持503，签名只读查询生产current根仍404。原probe／nginx／panel继续运行；临时规范化SSH私钥副本已删除，原私钥未改。尚未完成项见上，不把局部验收写成完整编辑器可用。
+
+## 15. 密码强度调整与线上同步
+
+- **用户决定／实现**：初始及新密码从至少16改为至少9、最多128个字符，必须含大写字母、小写字母、数字与符号，空白不算符号。共享后端、页面minlength／提示／422错误、本地初始化一致；详细规则见[认证合同](editor-backend-auth.md#已实现的账户api边界)。不更改scrypt、会话或原密码登录验证，不重设现有账户。测试中原纯十六进制密码夹具补四类字符，未改请求密钥／令牌或弱化断言。
+- **本地验证**：纯策略／KDF17组（9／128边界、四类缺项、Unicode标点／符号、NUL／孤立代理、历史密码哈希兼容）；真实Node认证25项、单用户7项、共享编辑器HTTP12组通过。真实workerd／SQLite／HTTPS账户浏览器六组通过，新增minlength9、缺大写422／页面提示和恰好9位成功改密；仍保留旧session撤销、账户权限／CAS、重设与持久重启检查。该机8787监听EACCES的r1未通过；r2已到9位改密但旧测试未主动选择账户菜单而超时；只修测试菜单操作并允许自有测试端口，r3在55787成功，未改产品导航／网络门。证据目录`.dragon-analysis/password-policy-20261019/`；没有访问用户存档。90份相关JS/MJS／Text模块语法及diff检查通过；机械夹具更新没有重跑全部重型编辑器／游戏lane。
+- **生产替换**：只将`security.js`、`public/index.html`、`public/client.txt`覆盖到既有vps4应用，未夹带§14当时尚未部署的发布资源门或其它本地代码（资源门后继见§16）。覆盖包SHA=`cc7d8d47f91aab94732bb6894dc7cea65840ccbf62ab94d8086d5f20e44f2cb7`。先构建并隔离检验新镜像，再仅对编辑器根入口临时维护、正常停止本项目；备份`/root/dragon-editor-backups/publication-20261019T151346Z`的SHA／独立SQLite恢复检查通过。新镜像`dragon-editor-publication:20261019-password9-vps5`，ID=`sha256:b1b5308513202594d4ede3eda97c38f98dd6aaf176fbb67f4e521cd58569ecf4`；完成原严格整包预检后恢复原站点配置，SHA仍`e7a99b1939be24af153e77c64e2d3eec7e028ca758653c8ea1ef21c00749a80a`。容器healthy、uid1000／只读根、env0600／data0700、monitor active；probe／nginx／panel保持运行。
+- **真实HTTPS冒烟**：全新隔离Chromium检查线上9位／四类提示、原管理员正常登录、缺大写新密码422及准确页面提示、原会话仍有效与正常登出，四组通过；只有明确冷session401／非法新密码422，意外错误0。不提交有效生产新密码、不重设账户、不创建游戏／Trial／存档，不输出凭据。首页／health200，发布／下架／删除门仍503，完整发布未放行。本批没有commit／push。
+- **收尾检查**：110个实际变更／新增文件逐值比对6项私密值无命中，三份变更文档的本地链接目标及最终diff检查通过。主动LSP已覆盖92路径并补查8个重点路径：报告无error，部分push-only／超时不能确认clean，Text／env两种格式无LSP；最终session mode=all为116文件／36 warning（既有测试console输出／嵌套三元及工作区外Markdown链接），不冒全仓clean。新策略测试新增console警告已改用stdout并复验；语法、实际Node／workerd／浏览器与生产Docker另如上取证。临时规范化SSH私钥已删除，原私钥未改。
+
+## 16. 当前版本资源门部署与只读巡检补强
+
+- **范围**：用户要求继续未完成的受限部署。只将§14已验证的`vps/distribution-resources.mjs`覆盖既有vps5应用；不上传整个工作树、不改Web／Trial束／核心摘要，不解除发布／管理／删除维护门。既有密码9位四类政策、固定来源／库及私有Trial入口保留；没有创建生产测试游戏或执行物理删除。
+- **巡检修复**：原shell只看最近一条事件，可能由后续事件遮住同次运行的fault；starting也无时间上限。改为宿主stdlib Python只读端口，按当前容器StartedAt取日志、解析白名单事件；同次blocked／faulted／startup-failed／shutdown-failed一律报警，后续idle／confirmed／stopped不能抵消。preflight只容许Compose同一30分钟界限；日志超预算／未知或损坏事件／缺started、OOM及健康异常均拒绝。健康只访问loopback、显式Host、禁止环境代理／重定向，核状态、JSON类型及service／stage／initialized；输出只有固定分类，不打印原始异常、日志或凭据，不重启／解锁／改库。完整运维边界见[VPS§6](vps-editor-readiness.md#6-受限容器装配与运维边界)。
+- **专项测试**：资源门Node／自有workerd各45组、drainer35组通过；新镜像在断网、只读、uid1000、无生产数据／env挂载的Docker内再跑45组通过。巡检最终13项纯fake-port测试在Windows及VPS原生Python均通过，覆盖30分钟边界、所有故障遮盖、损坏／重复JSON事件、stderr、观察预算、时间／容器异常、HTTP内容／跳转／代理及异常脱敏；另在真实当前容器和systemd服务上成功。测试不发送真实故障／停机信号，不冒掉电或真实故障注入。
+- **构建／切换**：运行覆盖包SHA=`885cbabd40b65c06fe32e91ddcbd45c1a45c8329d6d28761718359327e5a7492`，只含资源门及两份宿主巡检文件；后续严格坏JSON补验包SHA=`079d9e1763e5754c9d413aabafdeea2b5f299ccfd0b02480cbe54dd50ffa7245`，仅更新宿主Python及自有测试，不重建应用。新镜像`dragon-editor-publication:20261019-current-only-vps6`，ID=`sha256:69b723d4b55f0c8a2245aef4ac207a0a79a78dafdae99cdb51715d1f202f5fc3`。先构建／隔离验证，再仅编辑器临时维护、正常停本项目；同机一致备份`/root/dragon-editor-backups/publication-20261019T153944Z`的SHA及独立SQLite恢复完整性通过。只更新外置镜像tag；整包归档／读回预检约4分钟后健康，原站点配置精确恢复，SHA仍`e7a99b1939be24af153e77c64e2d3eec7e028ca758653c8ea1ef21c00749a80a`，nginx -t／reload通过。旧镜像及源码覆盖前副本保留，不回滚SQL或R2。
+- **实际复验**：镜像内资源门SHA=`624f12b8a938c1c6502f07b9eb6c23bf9096194db40bc2b98096267f6f6e1511`，最终宿主PythonSHA=`da621f300e7b706199fd6ebd83fd8494dbea5db11bf9ed70549a06ce1c119622`；容器healthy／uid1000／只读、env0600／data0700、monitor timer active且oneshot Result=success／exit0，probe／nginx／panel均保持运行。新隔离Chromium经真实HTTPS重跑§15四组认证冒烟，未有效改密／写游戏／访问IDB，意外错误0。另九路径检查：首页／health200、五项发布／管理／删除POST503且no-store、两私有API匿名JSON POST401；首次漏JSON Content-Type的检查正确得到415，只修测试请求、不改产品门。真实签名GET生产`control/current.json`仍404，没有初始化根。
+- **产物／限制**：证据在`.dragon-analysis/publication-vps6-20261019/`，含两次巡检测试、Node／workerd／Docker、构建／切换、实际HTTPS／systemd及SHA收据。外部告警接收端和异地备份仍未配置；非空全局冻结payload的检查点／完整引用、在途写屏障、旧R2和全部备份清理仍未实施，不能按game_id改写永久链或将deleteAllowed改成true。作者G-INIT和完整资源／兼容审计仍未闭合；本批不能称完整编辑器／发布完成，也没有commit／push。
+- **交付检查**：shell／两Python语法、diff空白检查、130个相对文档目标通过；113个实际变更／新增文件逐值核6项敏感值无命中。主动LSP覆盖7个相关路径：2 clean、3 findings（旧SHA的typos信息）、2 push-only未确认，无error；Python补探两项超时，不能称全部clean。最终session mode=all覆盖118会话文件无error，仍有既有warning；新增固定loopback HTTP被路径遍历规则误报，已按确切来源／测试标记false-positive，未加忽略注释或放宽端口。临时规范化SSH私钥已删除并确认两处历史副本均不存在，原私钥未改；凭据和诊断缓存未入Git。
+
+## 17. 编辑器与受限部署提交整理
+
+- 用户本轮明确要求提交代码，不包含推送。范围为§13–16的固定库刷新／工作台离开处理、当前版本唯一资源门与回归、9位四类密码政策及夹具同步、VPS只读巡检和相应合同／收据；保持完整发布仍未就绪的结论，不发Release、不改VERSION或再部署。
+- 提交候选113个实际变更／新增文件均固定本次字节SHA；其余仅换行／Git缓存造成的M标记保留，不批量重写或纳入提交。旧固定库清单、新密码策略回归和两份巡检Python为正式新增文件；凭据、临时SSH副本、缓存、截图与验证产物均排除。
+- 提交前串行重跑八个Node入口（密码策略、认证、单用户、共享HTTP、固定库策略、资源门Node／workerd、drainer）及巡检13项，全部通过；证据在`.dragon-analysis/commit-editor-vps6-20261019/`。重型联合浏览器与生产切换沿用§13–16已完成的独立证据，本次不重复操作生产账户／数据；提交不等于GitHub／Cloudflare已更新或维护门解除。

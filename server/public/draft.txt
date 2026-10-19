@@ -23,7 +23,7 @@ export function installDraftEditor({ api, authority, work, isBusy, onContextChan
     q('draft-operation-retry').disabled = locked || !attempt?.body || !['failed', 'not-found'].includes(attempt.state);
     renderChapters(); q('draft-status').textContent = message; q('draft-context').textContent = loaded ? loaded.gameId + '／已保存修訂 ' + loaded.draftRevision + (dirty() ? '／有未保存修改' : '') : '未載入私有草稿'; onContextChanged();
   }
-  function canLeave() { return !(dirty() || attempt) || confirm('有未保存資料或未確認的保存操作。確定離開？未確認操作仍須查詢原鍵，不會自動重試。'); }
+  function canLeave(forUnload = false) { return !(dirty() || attempt) || (!forUnload && confirm('有未保存資料或未確認的保存操作。確定離開？未確認操作仍須查詢原鍵，不會自動重試。')); }
   function setIdentity(next) {
     if (identity === next) { render(); return; } generation++; identity = next;
     if (next && owner !== next.user.id) { owner = next.user.id; games = []; loaded = null; attempt = null; chapters = []; q('draft-game').replaceChildren(); q('draft-name').value = ''; q('draft-introduction').value = ''; q('draft-resources').replaceChildren(); restore(); }
