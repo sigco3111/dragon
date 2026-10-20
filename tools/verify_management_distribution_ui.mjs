@@ -1,4 +1,4 @@
-// Actual UI module, owned DOM/session/transport seams; not an authority/browser certificate.
+// Actual controller, owned display/session/transport seams; not an authority/browser certificate.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const moduleURL = 'data:text/javascript;base64,' + Buffer.from(readFileSync('server/public/management.txt')).toString('base64');
@@ -7,21 +7,21 @@ const A='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',G='bbbbbbbb-bbbb-4bbb-bbbb-bbbbbb
 const actor={user:{id:A,role:'admin',version:1,mustChangePassword:false}},key='editor-management-operation:'+A;
 const failure=(status,code)=>Object.assign(new Error(code),{status,code});
 const parse=text=>{try{return JSON.parse(text);}catch(cause){throw new Error('owned journal JSON',{cause});}};
-class Element { children=[]; textContent=''; disabled=false; append(...v){this.children.push(...v);} replaceChildren(...v){this.children=[...v];} }
 let checks=0;
 function setup(action='list') {
- const nodes=Object.fromEntries([...readFileSync('server/public/index.html','utf8').matchAll(/id="(management-[^"]+)"/g)].map(m=>[m[1],new Element()]));
+ let model;
+ // Legacy assertion labels resolve only display facts; no fake DOM or event wiring.
+ const nodes=new Proxy({}, {get(_target,id){if(id==='management-games')return {children:model.games.map(g=>({children:[{},...g.actions]}))};if(id==='management-editor')return {hidden:model.locked};const name=id.slice('management-'.length);return {disabled:model[name+'Disabled'],textContent:model[name]??''};}});
  const journal=new Map(),calls=[],prompts=[];let identity=structuredClone(actor),consent=true,storeMode='ok';
  const g={gameId:G,creatorAccount:'owned',name:null,introduction:null,currentReleaseId:R,listed:action==='unlist',restricted:action==='clear-restriction',rowRevision:'4',createdAt:T,modifiedAt:T};
  const result=action==='list'?{gameId:G,ownerId:A,metadata:{name:'正式名稱',introduction:''},draftRevision:'1',rowRevision:'5',currentReleaseId:R,nextOrdinal:'1.1',listed:true,restricted:false,createdAt:T,modifiedAt:T}:{gameId:G,action,listed:false,restricted:action==='unlist',rowRevision:'5',eventAt:T};
  const observed={version:1,gameId:G,result,distribution:{gameId:G,operationId:R,generation:2,kind:action==='list'?'listing':'restriction',state:'pending',visibleAt:null,recoveryRequired:false}};
  let post=async()=>structuredClone(result),get=async()=>structuredClone(result),status=async()=>structuredClone(observed);
- globalThis.document={querySelector:s=>nodes[s.slice(1)],createElement:()=>new Element()};
- globalThis.sessionStorage={getItem:k=>journal.get(k)??null,setItem(k,v){if(storeMode==='throw')throw new Error('owned quota');if(storeMode!=='silent')journal.set(k,v);},removeItem:k=>journal.delete(k)};
- globalThis.confirm=text=>{prompts.push(text);return consent;};
+ const storage={getItem:k=>journal.get(k)??null,setItem(k,v){if(storeMode==='throw')throw new Error('owned quota');if(storeMode!=='silent')journal.set(k,v);},removeItem:k=>journal.delete(k)};
+ const confirm=text=>{prompts.push(text);return consent;};
  const api=async(path,value,options)=>{calls.push({path,value:structuredClone(value),options:structuredClone(options)});if(value!==undefined)return post();if(path==='/api/admin/games')return {games:[g]};if(path.endsWith('/distribution'))return status();if(path.includes('/management-operations/'))return get();throw new Error('unexpected UI path');};
- let ui;const mount=()=>{ui=installGameManagement({api,authority:()=>identity,work:fn=>fn(),isBusy:()=>false});ui.setIdentity(identity);};mount();
- return {nodes,journal,calls,prompts,result,observed,g,mount,get ui(){return ui;},load:()=>nodes['management-load'].onclick(),start:()=>nodes['management-games'].children[0].children[['list','unlist','clear-restriction'].indexOf(action)+1].onclick(),query:()=>nodes['management-query'].onclick(),retry:()=>nodes['management-retry'].onclick(),forget:()=>nodes['management-forget'].onclick(),text:()=>nodes['management-result'].textContent,posts:()=>calls.filter(c=>c.value!==undefined),post:fn=>{post=fn;},get:fn=>{get=fn;},status:fn=>{status=fn;},consent:v=>{consent=v;},storeMode:v=>{storeMode=v;},identity:v=>{identity=v;ui.setIdentity(v);}};
+ let ui;const mount=()=>{ui=installGameManagement({api,authority:()=>identity,work:fn=>fn(),isBusy:()=>false,storage,confirm,publish:value=>{model=value;}});ui.setIdentity(identity);};mount();
+ return {nodes,get model(){return model;},journal,calls,prompts,result,observed,g,mount,get ui(){return ui;},load:()=>ui.actions.refresh(),start:()=>ui.actions.start(model.games[0].gameId,model.games[0].rowRevision,action),query:()=>ui.actions.query(),retry:()=>ui.actions.retry(),forget:()=>ui.actions.forget(),text:()=>nodes['management-result'].textContent,posts:()=>calls.filter(c=>c.value!==undefined),post:fn=>{post=fn;},get:fn=>{get=fn;},status:fn=>{status=fn;},consent:v=>{consent=v;},storeMode:v=>{storeMode=v;},identity:v=>{identity=v;ui.setIdentity(v);}};
 }
 for(const action of ['list','unlist','clear-restriction']){
  const f=setup(action);await f.load();f.post(async()=>{assert.ok(f.journal.has(key),'journal before POST');return structuredClone(f.result);});await f.start();
@@ -61,4 +61,8 @@ for(const role of ['author','admin']){const f=setup();f.identity({user:{...actor
 {
  const f=setup();await f.load();f.g.currentReleaseId=null;await f.load();assert.equal(f.nodes['management-games'].children[0].children[1].disabled,true);await assert.rejects(f.start());f.g.currentReleaseId=R;f.g.restricted=true;await f.load();await assert.rejects(f.start());assert.equal(f.posts().length,0);checks++;
 }
-process.stdout.write(JSON.stringify({checks,scope:'Actual management UI with owned DOM/session/transport seams; no server authority proof'})+'\n');
+{
+ const f=setup();await f.load();const n=f.calls.length;f.model.games[0].gameId=R;f.model.games[0].actions[0].disabled=true;f.ui.render();assert.equal(f.model.games[0].gameId,G);assert.equal(f.model.games[0].actions[0].disabled,false);assert.doesNotMatch(JSON.stringify(f.model),/metadata|sourceDigest|csrf/);assert.equal(f.calls.length,n);checks++;
+ await assert.rejects(f.ui.actions.start(R,'4','list'));await assert.rejects(f.ui.actions.start(G,'999','list'));f.consent(false);await f.start();assert.equal(f.posts().length,0);assert.equal(f.journal.size,0);checks++;
+}
+process.stdout.write(JSON.stringify({checks,scope:'Actual management controller with owned display/session/transport seams; no server authority proof'})+'\n');

@@ -43,7 +43,7 @@ const artifact = mkdtempSync('.dragon-analysis/release-readiness/publication-cha
 const origin = 'https://owned-editor.invalid', playerOrigin = 'https://reader.test';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(systemroot|windir|path|pathext|temp|tmp|comspec|appdata|localappdata)$/i.test(k)));
-const files = ['index.html','style.css','client.txt','draft.txt','stage.txt','library.txt','catalog.txt','management.txt','publish.txt','stronghold.txt','general.txt','mapview.txt','stageassets.txt'];
+const files = ['index.html','style.css','shell-ui.txt','shell-ui.css','client.txt','draft.txt','stage.txt','library.txt','catalog.txt','management.txt','publish.txt','stronghold.txt','general.txt','mapview.txt','stageassets.txt'];
 const sources = Object.fromEntries(files.map(name => ['server/public/' + name, sha(readFileSync('server/public/' + name))]));
 for (const path of ['reader/site.js', 'reader/worker.js']) sources[path] = sha(readFileSync(path));
 const checks = [], calls = [], errors = [], consoleErrors = [], failed = [], failedDetails = [], completedStreamFailures = [], outside = [], posts = [];
@@ -173,7 +173,7 @@ try {
   stage = 'actual administrator listing, then current admission and all 20 chapters';
   let adminPage;
   const adminIdle = () => adminPage.waitForFunction(() => !document.querySelector('#management-load').disabled);
-  const adminShow = async () => { await adminPage.waitForSelector('#menu button[data-view="admin"]'); await adminPage.click('#menu button[data-view="admin"]'); };
+  const adminShow = async () => { await adminPage.waitForSelector('#menu button[data-view="management-editor"]'); await adminPage.click('#menu button[data-view="management-editor"]'); };
   const adminQuery = async () => { await adminPage.click('#management-query'); await adminIdle(); };
   const adminAction = async name => {
     await adminPage.click('#management-forget'); await adminIdle();

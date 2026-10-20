@@ -4,9 +4,11 @@
 
 ## 1. 接续状态
 
-- 本轮提交整理以`d04e5fd`（首次受限部署）为基线；用户已明确授权提交此后的编辑器／受限部署改动，未授权push。实际提交身份查Git日志。§9–10为更早性能批次收据。受限服务已在`https://dragon-editor.720108.xyz`上线，连接基线见§11，首次部署见§12；提交后的固定库／私有Trial接续见§13，密码强度调整见§15，当前vps6资源门与巡检接续见§16；不能将未提交代码视为已在GitHub／Cloudflare发布。
+- 当前本地`main`为`a11e448`（`feat: harden editor workflows and guarded VPS publication`），已按用户授权提交§13–16的113个实际变更文件，未push；前一提交为`d04e5fd`。最新接续摘要见§18，本次checkpoint文档更新在`a11e448`之后，尚未提交。§9–10为更早性能批次收据。受限服务已在`https://dragon-editor.720108.xyz`上线，连接基线见§11，首次部署见§12；提交后的固定库／私有Trial接续见§13，密码强度调整见§15，当前vps6资源门与巡检接续见§16；不能将本地提交视为已在GitHub／Cloudflare发布。
 - 发布主线仍未就绪：当前版本唯一政策已有局部接线，完整链及生产条件见§6。旧版续玩成绩不能用于当前放行；程序归档固定资源前缀也不授权旧游戏内容续玩。
 - §8提速与纯文档整理已随v0.1.8发布；§10修复已进入当前本地HEAD，本轮已核GitHub main和线上静态核心身份，不冒性能／完整发布验收。无实际diff的M标记保留，不批量重写。
+
+- 后续独立批次 **EDITOR-UI-1**：用户已批准后台框架重构，本地Vue壳／独立账户页及验证见§19；该批没有提交、推送或部署，不改变以上生产状态。
 
 ## 2. 已关闭批次与历史索引
 
@@ -143,3 +145,164 @@
 - 用户本轮明确要求提交代码，不包含推送。范围为§13–16的固定库刷新／工作台离开处理、当前版本唯一资源门与回归、9位四类密码政策及夹具同步、VPS只读巡检和相应合同／收据；保持完整发布仍未就绪的结论，不发Release、不改VERSION或再部署。
 - 提交候选113个实际变更／新增文件均固定本次字节SHA；其余仅换行／Git缓存造成的M标记保留，不批量重写或纳入提交。旧固定库清单、新密码策略回归和两份巡检Python为正式新增文件；凭据、临时SSH副本、缓存、截图与验证产物均排除。
 - 提交前串行重跑八个Node入口（密码策略、认证、单用户、共享HTTP、固定库策略、资源门Node／workerd、drainer）及巡检13项，全部通过；证据在`.dragon-analysis/commit-editor-vps6-20261019/`。重型联合浏览器与生产切换沿用§13–16已完成的独立证据，本次不重复操作生产账户／数据；提交不等于GitHub／Cloudflare已更新或维护门解除。
+- **提交结果**：本地`main`已生成`a11e448`，113份提交blob逐项等于审核暂存清单；提交后无实际diff、无暂存或未忽略的新文件。保留的63个M逐项经Git过滤后的blob均与HEAD相同，不reset／renormalize。提交前另核94份JS/MJS/Text模块及两Python语法、相对文档目标、敏感值和暂存私钥头检查通过；六个重点路径主动LSP clean，session mode=all覆盖124会话文件无error，未声称全仓无warning。没有push、Release或再部署。
+
+## 18. 下个对话接续摘要（a11e448之后）
+
+### 本轮目标
+
+继续完成受限编辑器VPS部署中尚未完成的功能，落实用户要求的密码强度，随后按明确授权提交代码。本轮已完成下述独立批次，**完整编辑／试玩／发布主线仍未完成**；本次请求仅更新checkpoint，不实施新功能、再提交或推送。
+
+### 已完成工作与验证入口
+
+- 固定素材库五个消费者经历史差异审计，以新身份登记并保留旧清单／旧注册；工作台库身份和native beforeunload处理修复。生产私有库安装与新Trial门已独立开放，实际Trial运行证据仍是自有隔离环境，不是生产创建游戏验收，见§13／[R2§2.71](r2-player-connection.md#271-固定素材库消费者刷新及私有工作台library-refresh-2)。
+- 当前版本唯一的默认publisher资源门修复；Node／workerd各45组及两条20章联合浏览器链通过，资源门已部署vps6并在断网Docker再跑45组，见§14、§16及[R2§2.72](r2-player-connection.md#272-当前版本唯一的共同发布联合复验current-publication-1)。浏览器链用进程内运输桥，不冒生产云发布。
+- 密码政策、页面提示、初始化工具与夹具同步；独立策略17组、认证25、单用户7、共享HTTP12及隔离账户浏览器六组通过。已上线并用真实HTTPS原管理员登录／非法新密码拒绝／正常退出复验，没有重设生产密码，见§15。
+- 只读巡检补强：当前运行内任何fault不能被后续事件遮盖，预检最多30分钟，异常观察及不合法健康返回保守报警；两平台13项fake-port测试、真实VPS及systemd成功，见§16。提交前八个Node入口与巡检又串行通过，见§17。
+
+### 关键决策
+
+- 新密码为9–128个Unicode码点，含ASCII大写／小写／数字及Unicode标点或符号；空白不算符号。历史密码登录／scrypt保持兼容，不重设账户；[认证合同](editor-backend-auth.md#已实现的账户api边界)为详细维护源。
+- 新版确认后旧游戏版本作废、旧局禁存／退休；仅同版下架可继续。程序不可变归档不授权历史游戏续玩，不恢复已撤销的旧政策。
+- 发布／上下架／限制解除／删除维护门继续关闭；不因healthy、库登记或本地联合链通过而放行。禁止合成生产根、改预期SHA、绕资源门或按game_id改写全局冻结payload／永久链。
+- VPS只最小覆盖独立验证文件；不把当前整个工作树或Git提交直接覆盖远端应用，不动其它站点／probe／panel。所有备份仍保留，不以清理名义删除未知真实数据。
+
+### 失败尝试与避免重踩
+
+- 素材UI123–125超时、密码浏览器r1端口8787 EACCES／r2未主动打开账户菜单、联合公开链r1–r4的首根pending／Miniflare错误／投影拒绝／错误占用槽保存均保留失败记录；修测试请求或交互后重跑，没有放宽产品门，详见§13–15及R2§2.72。
+- Docker验证漏tmpfs导致EROFS；最初镜像漏tools、HTML307、FLAC MIME和Node fetch丢自定义Host均被严格门拒绝，按实际装配修复，不改准入条件，见§12–13。
+- vps6匿名POST检查首次未带JSON Content-Type，正确返回415；补正确请求后401。巡检坏／重复JSON补验最终13项通过，未忽略损坏事件。
+- 原SSH密钥有字面转义换行，只能新建私有临时规范化副本使用，不能覆盖原文件；规范化副本已删除。连接／主机指纹与凭据位置见§11–12，不必重复向用户索取既有SSH／R2信息，禁止把env内容回显或写入Git。
+
+### 相关文件与证据
+
+- 运行代码：`server/security.js`、`server/sourcecatalogpolicy.js`、`server/available-library.txt`、`server/pinned/available-library-8993b360.txt`、`server/public/index.html`与`server/public/{client,catalog,library,draft,stage}.txt`；`vps/distribution-resources.mjs`、`monitor-publication.{sh,py}`、`nginx.publication.locations.conf.example`及`tools/start_editor_backend.mjs`。
+- 回归：`tools/verify_editor_password_policy.mjs`、`verify_publication_monitor.py`、`verify_distribution_resources{,_workerd}.mjs`、`verify_publication_chain_browser.mjs`及相应fixtures；其它密码夹具迁移以`git show --stat a11e448`为完整清单。
+- 合同／状态维护源：[产品设计](game-editor-design.md)、[工程合同](game-editor-technical-design.md)、[迁移计划](game-map-migration-plan.md)、[准入原证](re-notes-editor-map-admission.md)、[需求矩阵](editor-requirements-matrix.md)、[R2接线](r2-player-connection.md)、[VPS就绪](vps-editor-readiness.md)。后续做机制实现仍须加载相关SKILL及原始证据，journal不代替它们。
+- 本地独立产物目录均仍存在：`.dragon-analysis/editor-phase/editor-completion-20261019/`、`password-policy-20261019/`、`publication-vps6-20261019/`、`commit-editor-vps6-20261019/`（后三者同在`.dragon-analysis/`）。含失败轮、源码／暂存blob清单、测试及部署收据，全部未入Git。
+
+### 当前状态
+
+- **Git**：`main/a11e448`已提交、未push，未改VERSION／创建Release；本次journal为提交后的唯一实际文档改动，不自动沿用上一条提交授权。63个仅状态标记的M已核等于HEAD，保留即可。
+- **VPS末次实测**：`https://dragon-editor.720108.xyz`，独立项目`/srv/dragon-editor/publication`，镜像`20261019-current-only-vps6`；镜像ID、文件SHA与同机备份`publication-20261019T153944Z`见§16。容器healthy、uid1000／只读根、loopback8788、env0600／data0700，monitor成功，其它容器保持运行。本次纯文档任务没有重新连VPS，以上是末次收据，不是实时健康保证。
+- **公开／数据边界**：末次首页及health200，五项发布／管理／删除入口503 no-store，两私有API匿名JSON POST401；签名GET `control/current.json`仍404，正式registry为空。本轮未在生产创建测试游戏、执行物理删除或访问存档；没有推GitHub／触发Cloudflare新构建。远端采用逐次覆盖包，不等于完整Git检出`a11e448`。
+
+### 阻塞点（区分内部待做与外部信息）
+
+1. **内部待实现：物理回收**。非空全局冻结账本inventory仍正确拒绝，deleteAllowed保持false。须闭合跨游戏payload引用、可审阅检查点／压缩合同、全部历史R2／SQL、在途及legacy写屏障、备份保留／清除和恢复验证；不得把删除栅栏或元数据观察当成已清理。
+2. **内部待查证／验证：作者准入与资源**。G-INIT空白初始化仍缺原证，完整资源Q69、遗留privatebytes旧库身份及两端兼容／重lane缺口须按矩阵分别审计。未知项只阻塞相关能力，不阻塞独立工作；不能凭完整复制／整包归档证明任意空白章可玩。
+3. **外部信息待指定：异地备份与外部告警**。现有只是同机root私有备份、隔离SQLite完整性检查和systemd journal；尚无异地目标／保留与恢复安排、外部告警接收端。不得擅自上传含凭据备份或声称灾备／通知已配置。SSH／域名／R2凭据不是当前缺口。
+
+### 下一步
+
+1. 新对话先核用户范围、Git实际diff及上述合同；需要远端操作再用已固定指纹严格校验连接，保护现有数据和静态核心，不重新部署整个未审工作树。
+2. 优先继续独立的物理回收闭环：读`server/deletioninventory.js`／`distributionledger.js`及R2§2.72，明确全局引用／永久链／检查点与写屏障边界，先做自有SQLite／R2／备份夹具的拒绝和恢复验证，证据闭合前不改生产门、不删生产对象。
+3. 并行推进可独立核验的作者／资源缺口；原版初始化未知继续查原始程序／数据，不能补经验默认值。异地备份和告警需向用户一次性明确目标及敏感材料处理方案，不重复索取已有连接信息。
+4. 完整云发布仅在相关条件分别完成后安排；测试使用全新profile／自有数据。提交、push、Release分别依用户明确授权；本次不做这些操作。纯文档仅核链接／锚点、diff与支持的LSP，不重跑无关游戏回归或生产冒烟。
+
+## 19. 后台框架壳（EDITOR-UI-1）
+
+- **授权／范围**：用户明确批准先按Vue＋组件库方案重构后台；落实为Vue 3＋Element Plus独立展示层，详见[框架壳维护源](editor-framework-shell.md)。独立登录／强制改密、侧栏单模块、个人资料／改密／登出菜单，账户／上架／库登记拆页。原生业务DOM暂通过容器接入，现有CAS／幂等追踪／后端权限保持；没有改引擎、Trial束、正式存档、数据库或部署。起始既有改动保留，包括本页§18。
+- **构建**：仅`editor-ui/`安装固定依赖，生成同源脚本／CSS及8个实际输出包的完整许可证；重建逐字节check通过，npm audit报告0漏洞。首次选定的Vue旧补丁版audit报SSR高危项，已升级3.5.44并复核，不留下已知告警版本；依赖不进入玩家／Trial。两份AGENTS、产品设计／工程合同同步记录用户批准的独立例外。
+- **验证**：静态壳矩阵66检查；新隔离浏览器19组覆盖CSP、登录／改密门、角色菜单、单模块、个人页、后退、忙门、未保存取消、保存409保留输入、退出清理和会话失效。新浏览器为真实静态网关＋显式API夹具，不冒后端权限证明。共同VPS HTTP普通／冻结模式各12组，真实workerd／SQLite／HTTPS账户浏览器另外通过，包含9位四类策略、账户创建／禁用／恢复／重设、CAS、会话和服务重启持久化；均为自有临时数据／全新profile。
+- **失败／边界**：真实账户首轮8799端口EACCES，未通过；改用自有18787端口重跑通过，没有修改系统权限或生产监听。Jev最小无敏感摘要preview后实调HTTP451，未绕过，不代替验证。LSP主动探测17路径无error／warning，含4 clean、1既有typos信息、12超时或push-only未确认，不能称全clean；后续补探5路径无error／warning（1 clean、1既有typos、3 push-only未确认）；8个JS/MJS／Text模块语法、288个本地链接目标、新源空白及git diff检查通过。没有完整发布／地图编辑／战役回归或线上视觉验收，不能据外壳完成关闭既有功能缺口。
+- **收据／交付**：本地`.dragon-analysis/editor-workbench/`保存各独立轮、截图和真实账户收据（最终浏览器`run-kg2ubG`、真实账户`real-accounts-4`）。尚未提交／推送／部署；用户线上页面不会因此自动改变。后继按模块继续组件化及共享游戏上下文，当前只交付外壳／账户页，不宣称所有业务UI已迁移。
+
+## 20. 账户管理组件化（EDITOR-UI-2）
+
+- **授权／范围**：用户要求继续，沿已批准的后台分层方案，将创作者账户页迁为Vue表格／创建表单；登录及个人资料／改密拆成独立组件。新增关键词／状态筛选、独立动作列和可横向滚动语义表格；没有新增依赖、改服务端API／数据库／游戏引擎／Trial束或部署。详细边界维护于[框架壳文档](editor-framework-shell.md#账户页操作边界editor-ui-2)。
+- **所有权／安全**：`accounts.js`复用client的api／authority／串行work，投影显示字段，不传CSRF／密码；Vue独占账户DOM，原生忙门不再反向覆盖Vue禁用条件。操作绑定原账户ID／查询版本，冲突或未知写入锁定至明确重载，不自动重试；会话切换清空输入／筛选／清单并丢弃迟到读包。新增账户输入纳入原离开守卫。后端仍是权限／CSRF／CAS／epoch权威。
+- **验证**：8组内存适配器测试；66项静态壳检查；26项新隔离浏览器检查（真实网关／CSP＋显式API夹具），覆盖转义、筛选目标／版本、409禁用后手动重载、取消、创建脏离开、表单清空和原壳回归。真实workerd／SQLite／HTTPS浏览器通过创建／停用／恢复／重设、CAS、强制改密、会话撤销及重启持久化。共同HTTP普通／冻结模式各12组通过。生成物逐字节check通过：JS 211697字节、CSS 33707字节、8包许可证；npm audit仍为0漏洞。没有读写用户profile／正式IndexedDB／真实SAVE.DAT。
+- **诊断／边界**：主动LSP首轮13路径全部未确认（含client.txt无服务）；5秒补探12路径有1 clean、1嵌套三元warning、10未确认，warning已改为显式分支并复探无告警。补探3路径1 clean／2 push-only未确认，journal另探clean；最终session mode=all在27个已诊断文件无warning，不能声称所有文件LSP clean。8个JS/MJS／文本模块语法、36个本地文档链接目标及git diff检查通过。Jev无敏感摘要preview后调用仍HTTP451地区限制，未绕过。没有跑无关地图编辑、发布全链或游戏战役；这些模块尚未全部组件化。
+- **收据／交付**：最终夹具浏览器`.dragon-analysis/editor-workbench/run-CTRH3Q`；真实账户`ui2-real-accounts-2`；早期通过轮保留为`run-hJdjrC`、`ui2-real-accounts-1`，截图人工检查账户布局。保留既有未提交修改，本批同样未提交／推送／部署；线上不变。后续候选为游戏／章节列表及共同当前游戏上下文，不把本批账户迁移算成完整后台完成。
+
+## 21. 草稿与章节组件化（EDITOR-UI-3）
+
+- **授权／范围**：用户明确要求使用`/goal`直到全部任务完成，已建立持续目标，并新增[逐模块验收清单](editor-ui-migration-checklist.md)，范围是已批准的现有后台展示层迁移，不是未实现产品功能或生产部署。第三批完成Vue草稿页、章动作与只读当前草稿栏；其余模块尚未迁移，goal保持active。
+- **边界**：`DraftPanel.vue`独占表单／列表／资源DOM，`draft.txt`拆成显示投影与无框架控制器；原输入、已保存目标、原操作body／key仍不进入Vue运行对象树。保持原CAS、未知回包／查询／原键重试及无正文恢复；章结构完整校验后才替换显示。会话失效清除显示而不伪造原操作已完成，统一beforeunload仍保护失效后的脏数据。副本列表跳转用内部选择方法，避免被外层串行busy与合成change冲突拦住；直接用户选择仍锁定。详见[维护源](editor-framework-shell.md#草稿页操作边界editor-ui-3)。未改后端API、数据库、游戏机制、Trial束或正式存档。
+- **验证**：13组草稿控制器＋8组账户测试通过；69项静态壳检查；34项隔离浏览器检查通过，含四种章动作、稳定章ID、取消、转义、只读资源、脏选择恢复、失效会话私有字段清空及beforeunload。真实workerd／SQLite／R2／HTTPS浏览器通过实际保存后丢包、412冲突、原键原修订重试、重载恢复、元数据no-op、独立作者隔离、无正文404及实际改密撤销后恢复；不冒充完整Trial引擎或新章节准入验证。共同HTTP普通／冻结模式各12组通过。构建check逐字节一致（JS226458字节、CSS33707字节、8包许可证），npm audit为0；8个JS/MJS／文本模块语法和git diff空白检查通过。
+- **失败与诊断**：真实草稿首轮ui-r31仅设置临时端口未同步临时EDITOR_ORIGIN，预期来源门返回403；已同时设置临时配置的端口与origin，不改产品门。ui-r32整轮600秒预算耗尽，未作通过记录；加入API超时与阶段日志，以1500秒预算ui-r33／34／最终35完成。未终止无关进程。主动LSP11路径：2 clean、1仅已有await括号hint、2文本不支持、6超时／push-only未确认，不称全clean。Jev686字节无敏感摘要preview后仍HTTP451地区限制，未绕过，不阻塞权威验证。
+- **收据与状态**：最终工作台`.dragon-analysis/editor-workbench/run-KTpaS1`（先前33项轮`run-hAgEET`截图已人工看过）；真实后端`.dragon-analysis/editor-phase/backend-draft-ui-session-r1/ui-r35.json`／`.png`。所有运行使用自有临时数据和新profile，未访问用户正式IndexedDB或真实SAVE.DAT。保留原有其它改动，未提交／推送／部署；继续剩余模块，不将本批完成当作goal完成。
+
+## 22. 阶段任务与结构展示（EDITOR-UI-4）
+
+- **范围**：`StageJobsPanel.vue`／`StageAssetsPanel.vue`独占两页DOM，原生控制器经publish提供显示投影；任务关联、原键／固定body／CAS、校验下载与只读结构准入不变。client统一显隐、busy、pagehide及离开／URL回收。未改服务端业务、游戏／Trial或库注册号；详见[维护源](editor-framework-shell.md#阶段任务页editor-ui-4)。
+- **已通过**：37组控制器（账户8／草稿13／阶段结构6／阶段任务10）；71项静态；38项隔离壳浏览器；普通／冻结HTTP各12组。构建逐字节一致（JS235973字节、CSS33707字节、8许可证包），audit为0。真实workerd轮41通过数据／图像任务的原键恢复、丢回包、SHA下载、作者隔离与改密撤销；扩展后的真实Node／SQLite／FileBucket／HTTPS轮48以显式`--jobs-only`通过全部六用途任务及相同恢复／撤销流程，输出`structuralGetChecked:false`，不包括成功结构GET。
+- **未通过的独立缺口**：真实结构GET轮42超时，workerd43／44与Node46返回500；Node临时观察子类轮47定位`STAGE_PLAN_LIBRARY_REGISTRY`。`stageassetplan.js:73`固定旧库76cdf28，当前`sourcecatalogpolicy.js:63`固定f4ba804b；不是Vue可以放宽的权限。临时观察代码已撤销，默认完整测试仍要求GET200并保留失败入口，没有把500写成预期成功。旧stage-asset测试归档hash前置也不匹配当前代码，未改旧证据／hash；撤销本轮对该旧入口的临时适配。Node首轮45因operator R2条件对象与FileBucket Headers接口不同而失败，仅在测试引导阶段精确转换同义If-None-Match:*，产品桶接口不变。
+- **诊断**：主动LSP10路径0 confirmed、2文本不支持、8超时／push-only未确认；不能称全部clean。Jev654字节人工审核摘要preview后HTTP451地区限制，未绕过。
+- **收据／状态**：最终壳浏览器`.dragon-analysis/editor-workbench/run-5EOzkG`；真实任务`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r48.json`／`.png`；失败轮不作通过。阶段结构展示及夹具验证已完成，但真实成功GET仍有上述缺口，见[逐项清单](editor-ui-migration-checklist.md)。全部数据／profile隔离，无真实SAVE.DAT或正式IndexedDB操作。未提交／推送／部署，goal保持active，继续素材库等独立迁移。
+
+## 23. 只读素材库组件化（EDITOR-UI-5）
+
+- **范围**：新增`LibraryPanel.vue`，移除旧素材DOM；`library.txt`经publish输出显示投影，不再绑定控件／生成列表。原398／20、固定库身份、精确修订、全部下载校验不变。新目录代际＋稳定assetId防陈旧按钮换目标；Vue只本地筛选，不持有目录root／digest／bytes／凭据。client同步busy最终render和pagehide／URL清理。详见[维护源](editor-framework-shell.md#只读素材库页editor-ui-5)。
+- **通过**：新增6控制器组，合计43组全部通过；71静态／38隔离壳浏览器；普通与冻结HTTP各12组；构建逐字节一致JS240328／CSS33707字节、8包许可证，audit0，5个JS／文本模块语法与git diff检查通过。实际Node／SQLite／FileBucket／HTTPS流程轮50覆盖目录398／缺项20、筛选原ID、下载正文SHA、伪造root无下载、作者禁用及改密清理，仍串行覆盖前批六阶段任务，不包含结构成功GET。
+- **失败／限制**：轮49真实目录GET超过默认30秒等候而超时；只把该测试响应／展示等待调整300秒，轮50完成，不改产品超时或后端。结构GET固定库身份缺口仍见§22，没有以素材GET成功冲销。主动LSP8路径全部未确认（2文本不支持、6超时／push-only），不称clean；Jev546字节审核摘要preview后HTTP451，未绕过。
+- **收据／状态**：壳`.dragon-analysis/editor-workbench/run-G5R3ht`；真实`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r50.json`、`library-r50.png`，失败轮49单独保留。无用户profile／SAVE.DAT／正式IndexedDB或生产写入，未改引擎／API／库注册号、未提交／推送／部署。剩余模块及结构GET缺口仍见[清单](editor-ui-migration-checklist.md)，goal未完成。
+
+## 24. 据点表格组件化（EDITOR-UI-6）
+
+- **范围**：新增`StrongholdPanel.vue`，语义表格、固定表头、内部滚动、游戏／章选择及单行保存；移除旧DOM，`stronghold.txt`保留无框架业务与显示投影。既有192锁定、troops／prod记录上限、章ID／slot／CAS不变，不开放新增／删城／改图。输入不被render重建清空；其它脏行在单行保存后保留；共同导航／卸载加入脏提示，迟到身份响应拒绝安装，已确认保存而重读失败时锁写。维护源见[据点页边界](editor-framework-shell.md#据点页editor-ui-6)。
+- **通过**：原假DOM据点测试改为7组控制器回归，连同既有43组合计50通过；71静态、38隔离壳浏览器、普通／冻结HTTP各12组。真实Node／SQLite／FileBucket／隔离HTTPS轮54验证192行、原目标原修订保存2与服务读回、越界无POST、脏导航取消、竞争保存3后的实际412保留输入、成功保存4回包丢失后不重发且明确刷新读取4、作者不可见他人数据；草稿栏与六任务仍固定保存1，不偷偷换目标。仍显式`--jobs-only`，不含已知失败的结构GET。
+- **展示与诊断**：人工查看截图后把长表改为内部滚动，修正空章名显示为原章ID；轮53／最终54均通过。构建逐字节一致JS248866／CSS33707字节、8包许可证，audit0；6个JS／文本模块语法及git diff检查通过。主动LSP10路径0确认、2文本不支持、8超时／push-only未确认，不称全部clean。Jev518字节摘要审核preview后HTTP451地区限制，未绕过。
+- **收据／状态**：最终壳`.dragon-analysis/editor-workbench/run-xBAah0`；真实`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r54.json`与`stronghold-r54.png`，早期51／52／53轮保留。无正式存档／真实SAVE.DAT／用户profile或生产操作，未改引擎／后端／固定库身份，未提交／推送／部署。剩余武将、地图及管理模块和结构GET缺口继续按清单处理，goal保持active。
+
+## 25. 只读地图展示（EDITOR-UI-7）
+
+- **范围**：`MapPanel.vue`迁移选择、状态与道路描述；Canvas元素由Vue管理生命周期，像素仍由原生`mapview.txt`绘制，几何不进入响应式树。换游戏清图不自动GET，身份／请求代际挡迟到回包，原选定修订读取与独立拓扑GET保持；意向失败明确未知，不冒充无阻挡。无内容写入／游戏机制／后端变化，见[维护源](editor-framework-shell.md#只读地图页editor-ui-7)。
+- **通过**：7组地图控制器＋此前50组合计57，71静态；壳浏览器扩至41项覆盖所有已迁页面单活动页；普通／冻结HTTP各12组。真实Node／SQLite／FileBucket／隔离HTTPS轮55读取保存4地图192据点／254道路及意向，核实际据点像素，点击／切页返回无写入或自动读，独立作者空清单、改密清空Canvas；草稿上下文仍1。仍显式`--jobs-only`，结构GET固定库身份缺口未被掩盖。
+- **检查／失败**：首轮壳测试仍只统计旧DOM与部分Vue页，地图迁出后计数0而非1；改为共同父节点下活动section统计并增测阶段、素材与据点，不放宽单页要求，后41通过。构建逐字节JS252864／CSS33707字节、8许可证包，audit0；主动LSP10路径0确认、2文本不支持、8超时／push-only未确认，不称全部clean。Jev590字节摘要preview后HTTP451地区限制，未绕过。
+- **收据／状态**：壳`.dragon-analysis/editor-workbench/run-JayK4r`；真实`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r55.json`与`map-r55.png`，地图截图已人工查看。新隔离profile／自有临时数据，无正式存档或生产操作；未提交／推送／部署。武将及其它管理页继续按清单推进，goal保持active。
+
+## 26. 固定库登记展示（EDITOR-UI-8）
+
+- **范围**：`CatalogPanel.vue`独占登记页，`catalog.txt`移除DOM事件与绘制，保留固定schema、原键／账户版本／目录绑定、空body重放及本机关联。pagehide统一桥接，未知操作仍受共同导航与beforeunload守卫；只输出文字与禁用事实，不把登记当运行许可。未改后端、库身份合同或游戏引擎，见[维护源](editor-framework-shell.md#固定库登记页editor-ui-8)。
+- **通过**：新增6控制器，连同此前57组合计63；71静态、41隔离壳浏览器、普通／冻结HTTP各12组。真实Node／SQLite／FileBucket／隔离HTTPS轮56执行400角色登记，取消无POST、实际提交回包丢失、离开取消、重载无请求、查看registered不确认原键、相同key与空body重放、明确本机放弃均通过；原阶段／素材／据点／地图链继续通过。显式`--jobs-only`依旧不包含已知失败的结构GET，不因登记成功而假称结构合同闭合。
+- **检查**：构建逐字节JS256669／CSS33707字节、8包许可证，audit0；6个JS／文本模块语法与git diff检查通过。主动LSP11路径2 clean、2文本不支持、7超时／push-only未确认，不称全clean。Jev585字节人工审核摘要preview后HTTP451地区限制，未绕过。
+- **收据／状态**：壳`.dragon-analysis/editor-workbench/run-5DNOZA`；真实`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r56.json`与`catalog-r56.png`，截图人工查看正常。自有临时数据／新profile，无正式存档、真实SAVE.DAT或生产操作；未提交／推送／部署。剩余武将、复制、发布、删除、上架限制及跨模块审计继续，goal保持active。
+
+## 27. 武将与势力展示（EDITOR-UI-9）
+
+- **范围**：`GeneralsPanel.vue`独占游戏／章选择、势力和武将滚动表格及唯读画像目录；`general.txt`仅发布显示投影，保留原章／槽位、读取原修订metadata、新键单次保存和清单核验流程。取消不请求，未知／冲突锁写至明确重读；身份／请求代际避免迟到安装或跨会话续发POST。原生prompt输入仍为暂态，不宣称持久恢复。详见[维护源](editor-framework-shell.md#武将与势力页editor-ui-9)。
+- **输入防损**：旧`Number(raw)`可能产生NaN，再经JSON变成null，使无效军师编号被误作辞退；现在非整数／空白先拒绝，只有明确q可清空。8组控制器覆盖四种势力动作原body、取消、原修订、画像稳定ID、冲突／未知、格式和代际；没有改后端任免规则、128锁定、画像准入、玩家／Trial或原版机制。
+- **通过**：连同此前63组合计71控制器；71静态、42隔离壳浏览器、普通／冻结HTTP各12组。真实Node／SQLite／FileBucket／隔离HTTPS最终轮61以`--generals-only`验证128行、改名、画像绑定／清除、解散取消、非法编号不POST、实际412锁定／显式重读、独立作者空清单和实际改密后GET401清理。四种势力规则未据UI测试重新认证；该独立入口不执行六用途任务或结构GET，报告scope和`structuralGetChecked:false`。
+- **失败及分级**：组合轮57到达武将步骤后超出1500秒整轮预算，不作通过；增加复用同一真实服务的独立武将入口，不替换服务／数据门。轮58竞争写入采用相同metadata，实际是no-op，未制造预期冲突；改用不同元数据后59／60通过，补非法编号实际浏览器断言后61再通过。静态检查中的旧factionPanel／DOM标识改核Vue四动作及控制器接线，仍保留覆盖。
+- **检查／收据**：构建逐字节JS270774／CSS33707字节、8包许可证，audit0；7个JS／文本模块语法、10本地文档链接目标及git diff通过。主动LSP11路径1 clean、2文本不支持、8超时／push-only未确认，不称全clean；Jev534字节人工审核摘要preview后HTTP451地区限制，未绕过。壳`.dragon-analysis/editor-workbench/run-8FqyfR`，真实`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r61.json`／`generals-r61.png`；先前59截图已人工查看表格与章选择正常。
+- **状态**：自有临时数据和新profile，不访问真实SAVE.DAT、用户正式IndexedDB或生产环境；未提交／推送／部署。剩余复制、发布、删除、上架限制、跨模块审计与已记录的阶段结构真实GET缺口，goal仍active，不把本批完成当作全部完成。
+
+## 28. 完整测试副本组件化（EDITOR-UI-10）
+
+- **范围**：`CopyPanel.vue`及无框架`editor-ui/src/copy.js`取代client中的命令／DOM代码，保持固定来源查看／登记、预约／执行／取消、自有清单和草稿跳转。服务端`AdminFullCopy`的原键、rowRevision、租约与独立草稿合同未改；摘要／源和凭据不进Vue树。详见[维护源](editor-framework-shell.md#完整测试副本页editor-ui-10)。
+- **恢复／安全**：原用户隔离的sessionStorage单键格式不变，重载无自动POST；未知预约／命令先显式查询，不另键绕过。存储不可写先拒绝POST；404不再自动清除追踪，404／操作epoch撤销后只可明确确认本机清除，绝不表示SQL取消／回滚。输入、未确认和未完成操作加入共同离开守卫，身份／pagehide代际阻止迟到回包。自有游戏跳转仍只选择草稿，不自动读源或开Trial。
+- **通过**：9新增控制器组，累计80；静态64、隔离壳浏览器43、普通／冻结HTTP各12组。静态首轮因旧own-games字段断言仍读client而失败，已定位新控制器；移除的9个原DOM q查找随实现迁出，另加2项Vue所有权／控制器守卫检查，故71→64，不拿数量伪装新增覆盖。真实Node／SQLite／FileBucket／隔离HTTPS轮62及最终63 `--copy-only`通过实际来源登记、预约202／执行200提交后丢回包、重载不POST、原键GET恢复独立保存1、草稿选择跳转、原CAS取消及实际改密后401清理。未重新运行组合大链或阶段结构成功GET，报告明确限定scope。
+- **检查／收据**：构建逐字节JS285750／CSS33707字节、8包许可证，audit0；7个JS／文本模块语法、10本地文档目标与git diff通过。真实63后仅清理client尾部多余空行，并重跑语法／静态／diff，不把空白清理写成新一轮真实后端测试。主动LSP10路径0 confirmed、1文本不支持、9超时／push-only未确认，不称全部clean；Jev590字节人工审核preview后HTTP451地区限制，未绕过。壳`.dragon-analysis/editor-workbench/run-mId67d`；真实`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r63.json`／`copy-r63.png`，截图已人工检查。
+- **状态**：数据／浏览器profile隔离，无真实SAVE.DAT、用户正式IndexedDB或生产操作；保留其它改动，未提交／推送／部署。继续发布、删除、上架限制和跨模块审计；阶段结构后端库身份缺口仍单独记录，goal保持active。
+
+## 29. 发布管理组件化（EDITOR-UI-11）
+
+- **范围**：`PublishPanel.vue`接管发布表单、版本／公告与原操作展示；`publish.txt`保留无DOM控制器、原tuple及全部回执校验，Vue只收显示投影。保持原actor／版本／gameId／key／名称恢复、存储写后读回、GET404后明确同键原名称重试及本地提交／历史分发确认／当前上架区分。新增未提交名称的换游戏／刷新／离开确认，取消保留输入；更正遗留旧局续玩文案，与已批准当前版本唯一政策一致，不改引擎／服务端。详见[维护源](editor-framework-shell.md#发布管理页editor-ui-11)。
+- **通过**：9发布控制器组，累计89；65静态；43壳浏览器；9发布专用夹具浏览器；普通／冻结HTTP各12组。真实`verify_publication_chain_browser.mjs --node-service`通过10组：实际作者登录、20章编译及SQL/R2提交后丢回包、重载原操作查询、根已写但收据故障仍pending、恢复后历史确认、独立上架与reader20章、第二版拒旧票、下架只拒新准入、删除栅栏410与文件SQLite重开后publisher空闲。实际发布2次、确认5代、R2外部请求0；管理／删除本轮为鉴权API操作，不冒充其UI或物理回收完成，也不是生产云端／正式玩家App验收。
+- **检查**：构建逐字节JS293061／CSS33707字节、8包许可证，audit0。主动LSP11路径2 clean、2文本不支持、7超时／push-only未确认；初次测试JSON.parse规则发现已改为带try/catch助手，旧行缓存标注已过期，不写ignore；最终mode=all仍列出这条旧行缓存（63文件范围），不能称缓存全clean。8个JS／文本模块语法、10本地文档链接目标及git diff检查通过。Jev660字节人工审核preview后HTTP451地区限制，未绕过。
+- **收据／状态**：壳`.dragon-analysis/editor-workbench/run-iNwSBJ`；发布夹具`.dragon-analysis/release-readiness/publication-ui-browser-C3Fj4l`；真实发布链`publication-chain-browser-qiNFpu`，confirmed截图已人工检查。全部临时数据／新profile隔离，无真实SAVE.DAT、用户正式IndexedDB或生产操作；未提交／推送／部署。继续删除、上架限制与共享上下文审计，阶段结构GET固定库身份缺口仍未解决，goal保持active。
+
+## 30. 上架限制与删除追踪组件化（EDITOR-UI-12）
+
+- **范围**：`ManagementPanel.vue`／`DeletionPanel.vue`接管最后两页业务DOM，`management.txt`改为显示投影及原生控制器；HTML已无业务section，仍留空兼容容器待共同收尾。原tuple、存储读回、body／原CAS、完整名称预览确认、GET404后同键重试、身份／代际和离开守卫保留。稳定gameId／查询修订重新定位原行，拒绝陈旧或伪造目标；不修改后端／游戏／Trial或物理删除策略。详见[维护源](editor-framework-shell.md#上架限制与删除追踪页editor-ui-12)。
+- **通过**：管理48／删除54项控制器检查，保留原46／52全部案例并各增投影无别名／原目标检查；其它89控制器组、66静态、43隔离壳浏览器和普通／冻结HTTP各12组通过。真实`verify_publication_chain_browser.mjs --node-service --management-ui --deletion-ui --admin-deletion-ui`通过11组；管理员Vue上架、下架限制、解除限制与跨作者删除，经真实Node共享服务／文件SQLite／自有workerd R2／默认publisher和reader核实际提交后丢回包、重载原键查询、分发pending／历史confirmed、旧票拒绝、删除柵栏410及数据库重开。发布2次、管理POST3次、删除POST1次、确认6代；不是生产TCP／云、玩家App或物理清理验收。
+- **检查**：构建逐字节JS303197／CSS33707字节、8许可证包，audit0；7个JS／文本模块语法及git diff检查通过。主动LSP11路径0 confirmed、2文本不支持、9超时／push-only未确认；mode=all在68文件范围仍报告上一批已修复的publish测试第32行过期unchecked-throwing-call缓存，不能称全clean。Jev712字节审核preview后HTTP451地区限制，未绕过。
+- **收据／状态**：壳`.dragon-analysis/editor-workbench/run-yhB8LT`；真实链`.dragon-analysis/release-readiness/publication-chain-browser-hm8F6b`，管理及删除confirmed截图均人工检查。全部数据／新profile隔离，无真实SAVE.DAT／正式IndexedDB／生产写入；未提交／推送／部署。现有页面逐模块迁移已落地，但共同上下文与全量收尾审计、阶段结构GET库身份缺口仍未闭合，goal保持active，不能据此宣布全部完成。
+
+## 31. 共同收尾与逐项审计（EDITOR-UI-13）
+
+- **收尾**：移除已无消费者的空`#main`／DOM岛挂载、原生逐页显隐循环、双重`data-shell-active`门及旧容器样式。所有13菜单页由Vue独占DOM和显隐；原生地图绘制、下载与登录／个人资料／改密FormData保留。串行busy不再批量解锁业务DOM。增加完整13页导航无API验证；未改业务控制器、后端库身份或引擎。
+- **最终验证**：89控制器组＋48管理／54删除检查、65静态、46壳浏览器、9发布夹具组、真实账户及11组真实发布／管理／跨作者删除链通过；普通／冻结HTTP各12组。构建逐字节JS302453／CSS33707字节、8许可证包，audit0。真实轮50／54／55／56／61／63的素材库、据点、地图、固定库登记、武将、复制控制器及Vue共12文件SHA与原收据相同，收尾共同壳另跑最终真实链；不把历史轮拼成新的全量成功。源码语法、diff与本地文档链接检查通过。
+- **收据**：壳`run-UTh7HX`，发布夹具`publication-ui-browser-ENkoPX`，真实账户`ui13-final-accounts`，真实发布链`publication-chain-browser-MsfdUZ`；完整路径、逐项目标映射和边界见[最终审计](editor-ui-final-audit.md)。均为自有数据／新profile，无生产、实际SAVE.DAT或正式IndexedDB操作；未提交／推送／部署。
+- **诊断限制**：主动LSP8路径0 confirmed、1文本不支持、7超时／push-only未确认；最终mode=all在69文件范围仍有上一批publish测试第32行过期unchecked-throwing-call缓存。已核当前该行及带try/catch解析助手，不写ignore、不称全clean。本批仅删除无消费者展示兼容代码及补审计，没有新增多风险业务行为，未重复发送Jev；上一批地区限制记录保留。
+- **目标状态**：页面迁移及共同收尾已完成，**整体不标完成**。唯一功能回归阻塞是既有`stageassetplan`旧76cdf28与现行`sourcecatalogpolicy`的f4ba804b固定库身份不一致，真实结构GET500。需用户授权服务端固定库身份合同的定点核对／修复和完整真实回归；不擅自换库或放宽校验。记录为待审批阻塞，需明确授权并`/goal resume`后继续。
+
+## 32. 固定库身份合同授权修复与目标闭合（EDITOR-UI-14）
+
+- **新增授权**：用户明确“同意授权 继续”，随后目标恢复active，允许定点核对／修复阻塞的服务端固定库身份合同及完整真实回归；不含提交、推送或部署。此节取代此前UI-4至13关于该缺口“仍阻塞”的当前状态，历史失败收据不改。
+- **最小修复**：`sourcecatalogpolicy.js`导出固定`AVAILABLE_LIBRARY_REGISTRY_ID`并在原策略中复用；`stageassetplan.js`以该常量替换旧76cdf28字面量。现行f4ba804b清单SHA／93632字节、400角色、消费者指纹、权限／所有权／epoch、全量资源读回及四项false准入均不变。不接受双身份，不退回旧清单。实际diff为两处产品文件5增／2删。
+- **真实闭合**：`verify_editor_backend_stage_ui.mjs 64`使用实际Node／SQLite／FileBucket／自有HTTPS及全新Chromium，默认完整combined链17组通过，`structuralGetChecked:true`、errors/outside为空。六用途ready→结构GET200，44描述／398共享引用／26缺项及内外四项false；独立重组实际任务回执／报告／库目录与GET相同，旧76cdf28、未知身份、错误修订和runtime声明明确拒绝。后续据点、地图、武将及改密撤销也通过。收据`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r64.json`，实际结构输入`stage-plan-input-r64.json`。
+- **其它复核**：`verify_library_refresh.mjs`普通／workerd各8组通过，保留旧8993b360注册／432对象与永久键，不允许旧根移植、跨await撤销、损坏字节或重启导入旧capture；该历史库样本与本次76cdf28拒绝分别测试。普通／冻结HTTP各12；89控制器组、管理48／删除54、静态65、最终壳浏览器46通过（`run-vY4Dis`、`ui14-controller.log`）。构建仍逐字节JS302453／CSS33707、8许可证包、audit0。
+- **诊断／交付边界**：主动LSP6路径3 clean／3未确认，最终session mode=all在71文件范围仍列出已核为过期的publish测试第32行缓存；不称全部clean。Jev595字节审核摘要preview后HTTP451地区限制，未绕过。语法、diff和文档链接检查通过。全部为自有临时数据，无真实SAVE.DAT、用户正式IndexedDB或生产操作。依据[最终逐项审计](editor-ui-final-audit.md)，本地展示层迁移及获授权的缺口修复已闭合，可完成持续目标；完整编辑器产品、任意地图、全战役、物理清理和部署不在本目标完成声明内。未提交／推送／部署，原有其它改动保留。

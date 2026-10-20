@@ -62,7 +62,8 @@ try {
   const client = await http('/client.js');
   assert.equal(client.status, 200);
   const modules = [...client.text.matchAll(/^import .* from '(\/[^']+\.js)';$/gm)].map(match => match[1]);
-  assert.equal(modules.length, 10);
+  assert.equal(modules.length, 11);
+  assert.ok(modules.includes('/shell-ui.js'));
   assert.ok(modules.includes('/publish.js'));
   for (const path of ['/client.js', ...modules]) {
     const asset = await http(path);
@@ -74,6 +75,14 @@ try {
     assert.equal(asset.text, readFileSync('server/public/' + name, 'utf8'), path);
   }
   assert.equal((await http('/style.css')).status, 200);
+  const shellCss = await http('/shell-ui.css');
+  assert.equal(shellCss.status, 200);
+  assert.match(shellCss.headers['content-type'], /^text\/css/);
+  assert.equal(shellCss.text, readFileSync('server/public/shell-ui.css', 'utf8'));
+  const licenses = await http('/shell-ui-licenses.txt');
+  assert.equal(licenses.status, 200);
+  assert.match(licenses.headers['content-type'], /^text\/plain/);
+  assert.equal(licenses.text, readFileSync('server/public/shell-ui-licenses.txt', 'utf8'));
   check('shared management shell and text assets');
   assert.equal(json(await http('/api/health')).initialized, false);
   assert.equal((await http('/server/security.js')).status, 404);

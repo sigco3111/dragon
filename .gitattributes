@@ -6,6 +6,11 @@ web/intro/styles.css text eol=lf
 server/public/trialweb.txt text eol=lf
 server/public/trialapp.txt text eol=lf
 server/public/playapp.txt text eol=lf
+# Reproducible editor-only framework bundle and notices.
+server/public/shell-ui.txt text eol=lf
+server/public/shell-ui.css text eol=lf
+server/public/shell-ui-licenses.txt text eol=lf
+editor-ui/** text eol=lf
 web/src/content/authoring/gamesource.js text eol=crlf
 web/src/game/navigation/originalroadarrival.js text eol=crlf
 # Immutable generated packages are SHA-256 admitted, including original CRLF.

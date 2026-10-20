@@ -1,6 +1,5 @@
 // Author-only operation tracking. Browser records never grant server authority.
-export function installPublish({ api, authority, work, isBusy }) {
- const q = id => document.querySelector('#' + id);
+export function installPublish({ api, authority, work, isBusy, publish: emit = () => {}, storage = globalThis.sessionStorage, confirm = text => globalThis.confirm(text) }) {
  const uuid = v => typeof v === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v);
  const revision = v => typeof v === 'string' && /^[1-9][0-9]{0,30}$/.test(v);
  const ordinal = v => typeof v === 'string' && /^1\.(0|[1-9][0-9]{0,30})$/.test(v);
@@ -9,23 +8,23 @@ export function installPublish({ api, authority, work, isBusy }) {
  const fields = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === [...keys].sort().join(',');
  const errors = { PUBLISH_STALE: '草稿已變更，請核對原操作及目前已保存草稿。', PUBLISH_NAME: '發布名稱無效（須非空且最多40字元）。', DISTRIBUTION_GAME_PENDING: '此遊戲仍有待確認分發，不能發布下一版。', DISTRIBUTION_NOT_CONFIGURED: '服務尚未配置分發狀態；不推定已公開。', DISTRIBUTION_STATUS_UNAVAILABLE: '原發布缺少可核對的分發關聯；不推定成功或失敗。', GAME_DELETING: '遊戲已進入刪除流程，不能繼續此操作。' };
  let identity = null, generation = 0, games = [], versions = [], announcement = null, announced = false;
- let pending = null, badJournal = false, checked = false, published = null, distribution = null, sending = false, querySerial = 0, nameGame = null;
+ let pending = null, badJournal = false, checked = false, published = null, distribution = null, sending = false, querySerial = 0, selectedId = null, publishName = '', initialName = '', messageText = '';
  const allowed = () => Boolean(identity?.user) && !identity.user.mustChangePassword && ['author', 'admin'].includes(identity.user.role);
- const message = text => { q('publish-message').textContent = text; };
+ const message = text => { messageText = text; };
  const journalKey = id => 'editor-publication-operation:' + id;
  function tuple(v) { return fields(v, ['actorId','version','gameId','key','name']) && uuid(v.actorId) && uuid(v.gameId) && Number.isSafeInteger(v.version) && v.version > 0 && typeof v.key === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(v.key) && typeof v.name === 'string' && v.name.isWellFormed() && v.name.length <= 1024 && v.name.trim().length > 0; }
  function current(ctx) { const live = authority(); return allowed() && live?.user.id === ctx.id && live.user.version === ctx.version && live.user.role === identity.user.role && !live.user.mustChangePassword && generation === ctx.generation; }
  function capture() { const ctx = { id: identity?.user.id, version: identity?.user.version, generation }; if (!current(ctx)) throw new Error('請重新核對登入的作者帳戶。'); return ctx; }
  function store(value) {
   const key = journalKey(identity.user.id), text = value ? JSON.stringify(value) : null;
-  try { if (value) sessionStorage.setItem(key, text); else sessionStorage.removeItem(key); if (sessionStorage.getItem(key) !== text) throw new Error('journal readback'); }
+  try { if (value) storage.setItem(key, text); else storage.removeItem(key); if (storage.getItem(key) !== text) throw new Error('journal readback'); }
   catch { badJournal = true; render(); throw new Error('無法保留發布操作關聯；不發送新請求。'); }
   pending = value; checked = false; badJournal = false; querySerial++;
  }
  function restore() {
   pending = null; checked = false; badJournal = false; published = null; distribution = null; querySerial++;
   if (!allowed()) return;
-  try { const text = sessionStorage.getItem(journalKey(identity.user.id)); if (text !== null) { if (text.length > 4096) throw new Error('journal budget'); let value; try { value = JSON.parse(text); } catch { throw new Error('journal JSON'); } if (!tuple(value) || value.actorId !== identity.user.id) throw new Error('journal tuple'); pending = Object.freeze(value); } }
+  try { const text = storage.getItem(journalKey(identity.user.id)); if (text !== null) { if (text.length > 4096) throw new Error('journal budget'); let value; try { value = JSON.parse(text); } catch { throw new Error('journal JSON'); } if (!tuple(value) || value.actorId !== identity.user.id) throw new Error('journal tuple'); pending = Object.freeze(value); } }
   catch { badJournal = true; }
  }
  function gameList(value) {
@@ -44,35 +43,25 @@ export function installPublish({ api, authority, work, isBusy }) {
   if (published && ['gameId','name','ordinal','revision','sourceDigest','publishedAt'].some(k => published[k] !== result[k]) || published && JSON.stringify(published.chapters) !== JSON.stringify(result.chapters)) throw new Error('原發布回執不一致。');
   return { pin: result, distribution: Object.freeze({ ...d }) };
  }
- function selected() { const id = q('publish-game').value; return uuid(id) ? id : null; }
+ const selected = () => selectedId;
+ function select(id) { if (id !== selectedId) { selectedId = id; publishName = games.find(g => g.gameId === id)?.name ?? ''; initialName = publishName; } versions = []; announcement = null; announced = false; }
  function render() {
-  q('publish-editor').hidden = !allowed();
-  if (!allowed()) q('publish-name').value = '';
-  const select = q('publish-game'), keep = selected(); select.replaceChildren();
-  for (const g of games) { const option = document.createElement('option'); option.value = g.gameId; option.textContent = (g.name ?? '未命名') + '／草稿' + g.draftRevision + '／' + (g.listed ? '本地上架標記' : '未上架'); select.append(option); }
-  if (keep && games.some(g => g.gameId === keep)) select.value = keep;
-  if (nameGame !== selected()) { nameGame = selected(); q('publish-name').value = games.find(g => g.gameId === nameGame)?.name ?? ''; }
-  const box = q('publish-versions'); box.replaceChildren();
-  if (!versions.length) { const empty = document.createElement('p'); empty.textContent = '尚未讀取或尚無正式版本。'; box.append(empty); }
-  for (const v of versions) { const row = document.createElement('p'); row.textContent = '版本 ' + v.ordinal + '／草稿修訂 ' + v.draftRevision + '／定版 ' + v.createdAt; box.append(row); }
+  const visible = current({ id: identity?.user.id, version: identity?.user.version, generation });
   let tracking = '沒有追蹤中的發布請求。';
   if (badJournal) tracking = '本機發布關聯損壞或不可讀；不發送新操作。';
   else if (pending) tracking = '原請求 ' + pending.key + '／目標 ' + pending.gameId + '／原名稱「' + pending.name + '」' + (pending.version !== identity?.user.version ? '；帳戶版本已變，不重送。' : '') + (checked ? '；GET尚未找到回執，不代表已取消。' : '；可只讀查詢，不自動重送。');
-  q('publish-operation').textContent = allowed() ? tracking : '';
-  const result = q('publish-result'); result.replaceChildren();
-  if (published) { const done = document.createElement('p'); let text = '本地已提交：目標 ' + published.gameId + '／版本 ' + published.ordinal + '／修訂 ' + published.revision + '（發布≠上架）。';
-   text += distribution?.state === 'confirmed' ? ' 此次分發曾於 ' + distribution.visibleAt + ' 確認；不是目前上架或最新遠端狀態。' : ' 分發待確認；不能據此宣稱玩家已可見。';
-   if (distribution?.recoveryRequired) text += ' 分發處於恢復鎖，須由管理者核對；本頁不解除。'; done.textContent = text; result.append(done); }
-  const ann = q('publish-announcement'); ann.replaceChildren(); if (announced) { const row = document.createElement('p'); row.textContent = announcement ? '公告：' + announcement.name + '／版本 ' + announcement.ordinal + '／作者 ' + announcement.creatorAccount + '／首次上架 ' + announcement.firstOnlineAt : '目前無公告可顯示；不據此推斷分發或上架狀態。'; ann.append(row); }
-  const disabled = !allowed() || isBusy() || sending;
-  q('publish-games-refresh').disabled = disabled; q('publish-game').disabled = disabled;
-  for (const id of ['publish-versions-refresh','publish-ann-preview']) q(id).disabled = disabled || !selected();
-  q('publish-button').disabled = disabled || !selected() || Boolean(pending) || badJournal;
-  q('publish-query').disabled = disabled || !pending || badJournal;
-  q('publish-retry').disabled = disabled || !pending || badJournal || !checked || Boolean(published) || pending.version !== identity?.user.version;
-  q('publish-forget').disabled = disabled || (!pending && !badJournal);
+  let result = '';
+  if (published) { result = '本地已提交：目標 ' + published.gameId + '／版本 ' + published.ordinal + '／修訂 ' + published.revision + '（發布≠上架）。';
+   result += distribution?.state === 'confirmed' ? ' 此次分發曾於 ' + distribution.visibleAt + ' 確認；不是目前上架或最新遠端狀態。' : ' 分發待確認；不能據此宣稱玩家已可見。';
+   if (distribution?.recoveryRequired) result += ' 分發處於恢復鎖，須由管理者核對；本頁不解除。'; }
+  const ann = announced ? (announcement ? '公告：' + announcement.name + '／版本 ' + announcement.ordinal + '／作者 ' + announcement.creatorAccount + '／首次上架 ' + announcement.firstOnlineAt : '目前無公告可顯示；不據此推斷分發或上架狀態。') : '';
+  const disabled = !visible || isBusy() || sending;
+  emit({ games: visible ? games.map(g => ({gameId:g.gameId,label:(g.name ?? '未命名') + '／草稿' + g.draftRevision + '／' + (g.listed ? '本地上架標記' : '未上架')})) : [], selected: visible ? selectedId : null, name: visible ? publishName : '',
+   versions: visible ? versions.map(v => '版本 ' + v.ordinal + '／草稿修訂 ' + v.draftRevision + '／定版 ' + v.createdAt) : [], operation: visible ? tracking : '', result: visible ? result : '', announcement: visible ? ann : '', message: visible ? messageText : '', locked: disabled,
+   readDisabled: disabled || !selected(), publishDisabled: disabled || !selected() || Boolean(pending) || badJournal, queryDisabled: disabled || !pending || badJournal,
+   retryDisabled: disabled || !pending || badJournal || !checked || Boolean(published) || pending.version !== identity?.user.version, forgetDisabled: disabled || (!pending && !badJournal) });
  }
- async function refresh() { const ctx = capture(), value = await api('/api/games'); if (!current(ctx)) return; games = gameList(value); versions = []; announcement = null; announced = false; render(); }
+ async function refresh() { const ctx = capture(); if (dirty() && !confirm('發布名稱尚未提交；重新讀取清單可能更換選中遊戲，是否繼續？')) return; const value = await api('/api/games'); if (!current(ctx)) return; games = gameList(value); select(games.some(g => g.gameId === selectedId) ? selectedId : games[0]?.gameId ?? null); render(); }
  async function versionsRefresh() { const ctx = capture(), id = selected(); if (!id) throw new Error('請先選擇遊戲。'); const value = await api('/api/games/' + id + '/releases'); if (!current(ctx) || selected() !== id) return; versions = versionList(value); render(); }
  async function query() {
   const ctx = capture(), t = pending; if (!t || badJournal) throw new Error('沒有可核對的原發布關聯。'); const serial = ++querySerial; checked = false; render();
@@ -89,16 +78,18 @@ export function installPublish({ api, authority, work, isBusy }) {
  }
  async function publish() {
   const ctx = capture(), id = selected(); if (!id || !games.some(g => g.gameId === id)) throw new Error('請先選擇自己的遊戲。'); if (pending || badJournal) throw new Error('請先核對原發布請求，不另起鍵。');
-  const t = Object.freeze({ actorId: ctx.id, version: ctx.version, gameId: id, key: crypto.randomUUID(), name: q('publish-name').value }); if (!tuple(t)) throw new Error('發布名稱或請求格式無效。');
-  if (!confirm('定版發布目前已保存草稿？新版不能讀取舊版存檔；已准入舊局仍固定使用舊資源，不熱換。發布≠上架；已上架遊戲更新後保持上架。\n' + id)) return;
+  const t = Object.freeze({ actorId: ctx.id, version: ctx.version, gameId: id, key: crypto.randomUUID(), name: publishName }); if (!tuple(t)) throw new Error('發布名稱或請求格式無效。');
+  if (!confirm('定版發布目前已保存草稿？新版不能讀取舊版存檔；確認更新後舊局停止且禁存，不熱換資源。發布≠上架；已上架遊戲更新後保持上架。\n' + id)) return;
   store(t); published = null; distribution = null; render(); await send(t, ctx);
  }
  async function retry() { const ctx = capture(), t = pending; if (!t || !checked || published || badJournal || t.version !== ctx.version) throw new Error('須先查詢，且只能明確同鍵、同名稱重送。'); if (!confirm('同鍵、原名稱重送？若已提交，只取原結果；若尚未提交，服務將校驗當時的已保存草稿。請先核對草稿；不另起鍵。')) return; await send(t, ctx); }
  function forget() { capture(); if (!confirm('只停止本分頁追蹤？不取消在途請求、不回滾或刪除服務收據，也不表示未生效。另起鍵可能產生下一個正式版本。')) return; store(null); published = null; distribution = null; message('已停止本機追蹤；服務原請求不受影響。'); render(); }
  async function preview() { const ctx = capture(), id = selected(); const value = await api('/api/announcements'); if (!current(ctx) || selected() !== id) return; if (!Array.isArray(value?.announcements) || value.announcementsError) throw new Error('公告暫不可用。'); const hit = value.announcements.find(row => row?.gameId === id); if (hit && (!ordinal(hit.ordinal) || ['name','creatorAccount','firstOnlineAt'].some(k => typeof hit[k] !== 'string'))) throw new Error('公告欄位無效。'); announcement = hit ? { name: hit.name, ordinal: hit.ordinal, creatorAccount: hit.creatorAccount, firstOnlineAt: hit.firstOnlineAt } : null; announced = true; render(); }
- q('publish-games-refresh').onclick = () => work(refresh); q('publish-versions-refresh').onclick = () => work(versionsRefresh);
- q('publish-form').onsubmit = event => { event.preventDefault(); return work(publish); };
- q('publish-query').onclick = () => work(query); q('publish-retry').onclick = () => work(retry); q('publish-forget').onclick = () => work(forget); q('publish-ann-preview').onclick = () => work(preview);
- q('publish-game').onchange = () => { versions = []; announcement = null; announced = false; render(); };
- return Object.freeze({ render, setIdentity(value) { const next = value?.user ? { user: { id: value.user.id, version: value.user.version, role: value.user.role, mustChangePassword: value.user.mustChangePassword } } : null; const changed = JSON.stringify(identity) !== JSON.stringify(next); identity = next; if (changed) { generation++; games = []; versions = []; announcement = null; announced = false; nameGame = null; q('publish-name').value = ''; message(''); restore(); } render(); }, canLeave(forUnload = false) { return (!pending && !badJournal) || (!forUnload && confirm('原發布仍保留在本分頁。離開不取消請求；返回後先查詢。')); } });
+ const action = fn => (...args) => work(async () => { const ctx = capture(); try { return await fn(...args); } catch (error) { if (current(ctx)) message((errors[error.code] ?? error.message) + ' 原關聯不自動重送或取消。'); throw error; } finally { render(); } });
+ const dirty = () => publishName !== initialName;
+ const actions = Object.freeze({ refresh: action(refresh), versions: action(versionsRefresh), publish: action(publish), query: action(query), retry: action(retry), forget: action(forget), preview: action(preview),
+  setName(value) { if (!allowed() || isBusy() || typeof value !== 'string') return; capture(); publishName = value; render(); },
+  select(id) { if (!allowed() || isBusy() || !games.some(g => g.gameId === id)) return; capture(); if (dirty() && !confirm('發布名稱尚未提交；更換遊戲會清除這份輸入，原追蹤請求不受影響。')) return; select(id); render(); }
+ });
+ return Object.freeze({ actions, render, setIdentity(value) { const next = value?.user ? { user: { id: value.user.id, version: value.user.version, role: value.user.role, mustChangePassword: value.user.mustChangePassword } } : null; const changed = JSON.stringify(identity) !== JSON.stringify(next); identity = next; if (changed) { generation++; games = []; versions = []; announcement = null; announced = false; selectedId = null; publishName = ''; initialName = ''; message(''); restore(); } render(); }, canLeave(forUnload = false) { return (!pending && !badJournal && !dirty()) || (!forUnload && confirm('發布名稱或原請求仍保留在本分頁。離開不保存輸入或取消請求；返回後先查詢。')); } });
 }

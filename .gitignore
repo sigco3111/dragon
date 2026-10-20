@@ -4,6 +4,8 @@
 /server/.wrangler/
 /server/.local/
 /node_modules/
+/editor-ui/node_modules/
+/editor-ui/dist/
 .env
 .env.*
 .dev.vars

@@ -4,7 +4,7 @@
 
 ## 1. 边界与当前主线
 
-- 原生 JavaScript ES Modules＋Canvas 2D 重写1995 DOS《臥龍傳》，无模拟器、框架、npm运行时依赖；完整`web/`可直接静态服务，部署打包另有工具。
+- 原生 JavaScript ES Modules＋Canvas 2D 重写1995 DOS《臥龍傳》，玩家／Trial引擎及共同核心无模拟器、框架、npm运行时依赖；完整`web/`可直接静态服务，部署打包另有工具。互联网编辑器展示层是用户批准的独立例外：`editor-ui/`采用Vue 3＋Element Plus与独立构建，生成资源仅由编辑器同源提供，不进入游戏引擎，见[框架壳边界](docs/editor-framework-shell.md)。
 - 仓库`E:/Dragon/web-port`；原程序`E:/Dragon/Dragon/`，官方基准`E:/Dragon/原版/`，改版库`上/中/下/后/`。自动化禁止访问真实`SAVE.DAT`、用户存档/profile；只用内存、mock或新隔离profile。
 - 软件版本以`VERSION`为准，规则基线`web-0.1.1`；游戏正式版本`1.n`与软件版本、source修订、程序摘要相互独立。
 - fresh／restore走v2原生道路与固定表，生产v1路径已退役；未知消费点fail-closed，保已提交前缀、hold和禁存。不凭现代码、体验或测试补公式，不宣称完整战役已经认证。
@@ -25,6 +25,7 @@
 | `game/savegame.js`、`core/gamesavestore.js`、`saverepository.js` | 完整快照、IndexedDB事务、CAS及存档归属 |
 | `render/`、`ui/`、`game/playerqueries.js` | 只读绘制、界面、消息FIFO与查询 |
 | `player/` | 正式目录／准入／资源／存档／宿主；旧`reader/`客户端文件仅再导出 |
+| 仓库`editor-ui/`、`server/public/` | Vue后台外壳及原生业务模块适配；不持有响应式游戏状态、不替代服务端权限 |
 | 仓库`server/editorapp.js`、`vps/` | Node与workerd共用业务／鉴权；VPS SQLite、文件桶、发布CLI和drainer |
 | 仓库`reader/site.js`、`wrangler.jsonc` | Workers同源游戏API、程序归档资源与Static Assets路由 |
 
@@ -96,6 +97,10 @@ node tools/verify_start_flow.mjs
 node tools/verify_clock_transition.mjs
 node tools/verify_march_navigation.mjs
 node --test tools/verify_native_road_movement.mjs
+npm --prefix editor-ui ci --ignore-scripts  # 仅修改后台展示层时安装固定构建依赖
+npm --prefix editor-ui run build           # 只生成编辑器壳，不部署
+npm --prefix editor-ui run check           # 重建逐字节比对生成物
+node tools/verify_editor_workbench_browser.mjs
 node tools/verify_editor_schema_sources.mjs
 node tools/verify_player_site.mjs
 node tools/verify_reader.mjs

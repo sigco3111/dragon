@@ -11,7 +11,7 @@ const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODUL
 const root = '.dragon-analysis/release-readiness'; mkdirSync(root, { recursive: true }); const out = mkdtempSync(join(root, 'publication-ui-browser-'));
 const origin = 'https://owned-editor.invalid', G = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', A = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb', R = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const time = '2026-10-15T00:00:00.000Z', journalKey = 'editor-publication-operation:' + A;
-const files = { '/': 'index.html', '/style.css': 'style.css', '/client.js':'client.txt', '/draft.js':'draft.txt', '/stage.js':'stage.txt', '/library.js':'library.txt', '/catalog.js':'catalog.txt', '/management.js':'management.txt', '/publish.js':'publish.txt', '/stronghold.js':'stronghold.txt', '/general.js':'general.txt', '/mapview.js':'mapview.txt', '/stage-assets.js':'stageassets.txt' };
+const files = { '/shell-ui.js':'shell-ui.txt', '/shell-ui.css':'shell-ui.css', '/': 'index.html', '/style.css': 'style.css', '/client.js':'client.txt', '/draft.js':'draft.txt', '/stage.js':'stage.txt', '/library.js':'library.txt', '/catalog.js':'catalog.txt', '/management.js':'management.txt', '/publish.js':'publish.txt', '/stronghold.js':'stronghold.txt', '/general.js':'general.txt', '/mapview.js':'mapview.txt', '/stage-assets.js':'stageassets.txt' };
 const payloads = new Map(Object.entries(files).map(([url, file]) => [url, readFileSync('server/public/' + file)]));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(systemroot|windir|path|pathext|temp|tmp|comspec|appdata|localappdata)$/i.test(k)));

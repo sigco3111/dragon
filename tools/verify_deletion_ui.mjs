@@ -1,4 +1,4 @@
-// Actual UI module with owned DOM/transport/session seams. No browser or authority proof.
+// Actual controller with owned display/transport/session seams. No browser or authority proof.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const moduleURL='data:text/javascript;base64,'+Buffer.from(readFileSync('server/public/management.txt')).toString('base64');
@@ -7,22 +7,22 @@ const A='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',G='bbbbbbbb-bbbb-4bbb-bbbb-bbbbbb
 const actor={user:{id:A,version:1,role:'author',mustChangePassword:false}},key='editor-deletion-operation:'+A;
 const error=(status,code)=>Object.assign(new Error(code),{status,code});
 const parse=text=>{try{return JSON.parse(text);}catch(cause){throw new Error('owned JSON',{cause});}};
-class Element{children=[];textContent='';disabled=false;append(...v){this.children.push(...v);}replaceChildren(...v){this.children=[...v];}}
 let checks=0;
 function setup(){
- const nodes=Object.fromEntries([...readFileSync('server/public/index.html','utf8').matchAll(/id="(deletion-[^"]+)"/g)].map(m=>[m[1],new Element()]));
+ let model;
+ // Legacy assertion labels resolve only display facts; no fake DOM or event wiring.
+ const nodes=new Proxy({}, {get(_target,id){if(id==='deletion-games')return {children:model.games.map(g=>({children:[{textContent:g.label},{disabled:g.disabled}]}))};if(id==='deletion-admin-load')return {hidden:!model.admin};const name=id.slice('deletion-'.length);return {disabled:model[name+'Disabled'],textContent:model[name]??''};}});
  const journal=new Map(),calls=[],dialogs=[];let identity=structuredClone(actor),consent=true,name='測試',mode='ok';
  const game={gameId:G,ownerId:A,rowRevision:'4',listed:false,metadata:{name:'測試'}};
  const result={gameId:G,state:'fenced',rowRevision:'5',createdAt:T};
  const observed={version:1,gameId:G,result,distribution:{gameId:G,operationId:R,generation:2,kind:'delete-fence',state:'pending',visibleAt:null,recoveryRequired:false}};
  let post=async()=>structuredClone(result),get=async()=>structuredClone(result),status=async()=>structuredClone(observed),preview=async()=>({gameId:G,rowRevision:'4',confirmationName:'測試'});
  const managed={gameId:G,rowRevision:'4',listed:false,name:null,creatorAccount:'other-author'};
- globalThis.document={querySelector:s=>nodes[s.slice(1)],createElement:()=>new Element()};
- globalThis.sessionStorage={getItem:k=>journal.get(k)??null,setItem(k,v){if(mode==='throw')throw new Error('quota');if(mode!=='silent')journal.set(k,v);},removeItem:k=>journal.delete(k)};
- globalThis.prompt=text=>{dialogs.push(text);return name;};globalThis.confirm=text=>{dialogs.push(text);return consent;};
+ const storage={getItem:k=>journal.get(k)??null,setItem(k,v){if(mode==='throw')throw new Error('quota');if(mode!=='silent')journal.set(k,v);},removeItem:k=>journal.delete(k)};
+ const prompt=text=>{dialogs.push(text);return name;},confirm=text=>{dialogs.push(text);return consent;};
  const api=async(path,value,options)=>{calls.push({path,value:structuredClone(value),options:structuredClone(options)});if(value!==undefined)return post();if(path==='/api/games')return {games:[game]};if(path==='/api/admin/games')return {games:[managed]};if(path.endsWith('/deletion-preview'))return preview();if(path.endsWith('/distribution'))return status();if(path.includes('/deletion-operations/'))return get();throw new Error('unexpected route');};
- let ui;const mount=()=>{ui=installGameDeletion({api,authority:()=>identity,work:fn=>fn(),isBusy:()=>false});ui.setIdentity(identity);};mount();
- return {nodes,journal,calls,dialogs,game,result,observed,mount,managed,preview:fn=>{preview=fn;},adminLoad:()=>nodes['deletion-admin-load'].onclick(),get ui(){return ui;},load:()=>nodes['deletion-load'].onclick(),start:()=>nodes['deletion-games'].children[0].children[1].onclick(),query:()=>nodes['deletion-query'].onclick(),retry:()=>nodes['deletion-retry'].onclick(),forget:()=>nodes['deletion-forget'].onclick(),text:()=>nodes['deletion-result'].textContent,posts:()=>calls.filter(c=>c.value!==undefined),post:fn=>{post=fn;},get:fn=>{get=fn;},status:fn=>{status=fn;},mode:v=>{mode=v;},name:v=>{name=v;},consent:v=>{consent=v;},identity:v=>{identity=v;ui.setIdentity(v);}};
+ let ui;const mount=()=>{ui=installGameDeletion({api,authority:()=>identity,work:fn=>fn(),isBusy:()=>false,storage,confirm,prompt,publish:value=>{model=value;}});ui.setIdentity(identity);};mount();
+ return {nodes,get model(){return model;},journal,calls,dialogs,game,result,observed,mount,managed,preview:fn=>{preview=fn;},adminLoad:()=>ui.actions.managed(),get ui(){return ui;},load:()=>ui.actions.refresh(),start:()=>ui.actions.start(model.games[0].gameId,model.games[0].rowRevision),query:()=>ui.actions.query(),retry:()=>ui.actions.retry(),forget:()=>ui.actions.forget(),text:()=>nodes['deletion-result'].textContent,posts:()=>calls.filter(c=>c.value!==undefined),post:fn=>{post=fn;},get:fn=>{get=fn;},status:fn=>{status=fn;},mode:v=>{mode=v;},name:v=>{name=v;},consent:v=>{consent=v;},identity:v=>{identity=v;ui.setIdentity(v);}};
 }
 {
  const f=setup();await f.load();f.post(async()=>{assert.ok(f.journal.has(key));return f.result;});await f.start();const saved=parse(f.journal.get(key));assert.deepEqual(f.posts()[0],{path:'/api/games/'+G+'/deletion',value:{gameId:G,expectedRowRevision:'4',confirmationName:'測試'},options:{key:saved.key}});assert.match(f.text(),/非物理清理完成.*分發待確認/);assert.equal(f.nodes['deletion-retry'].disabled,true);checks++;
@@ -74,4 +74,8 @@ for(const bad of [{gameId:R,rowRevision:'4',confirmationName:'測試'},{gameId:G
 {
  const f=setup();f.identity({user:{...actor.user,role:'admin'}});await f.adminLoad();let release;f.preview(()=>new Promise(r=>{release=r;}));const first=f.start();f.preview(async()=>({gameId:G,rowRevision:'4',confirmationName:'測試'}));await f.start();release({gameId:G,rowRevision:'4',confirmationName:'測試'});await assert.rejects(first);assert.equal(f.posts().length,1);checks++;
 }
-process.stdout.write(JSON.stringify({checks,scope:'Actual deletion UI with owned DOM/session/transport seams; not physical purge or authority proof'})+'\n');
+{
+ const f=setup();await f.load();const n=f.calls.length;f.model.games[0].gameId=R;f.model.games[0].disabled=true;f.ui.render();assert.equal(f.model.games[0].gameId,G);assert.equal(f.model.games[0].disabled,false);assert.doesNotMatch(JSON.stringify(f.model),/confirmationName|metadata|csrf/);assert.equal(f.calls.length,n);checks++;
+ await assert.rejects(f.ui.actions.start(R,'4'));await assert.rejects(f.ui.actions.start(G,'999'));assert.equal(f.posts().length,0);assert.equal(f.dialogs.length,0);assert.equal(f.journal.size,0);checks++;
+}
+process.stdout.write(JSON.stringify({checks,scope:'Actual deletion controller with owned display/session/transport seams; not physical purge or authority proof'})+'\n');

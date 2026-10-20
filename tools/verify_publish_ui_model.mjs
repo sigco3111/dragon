@@ -1,150 +1,62 @@
-// A2 publish UX model: author release dialog, version list and announcement
-// preview (NOT a browser certificate). Usage: node tools/verify_publish_ui_model.mjs
+// Display/controller contracts, not authority or full publication admission.
+import test from 'node:test';
+import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-
-let passed = 0;
-const check = (name, cond, extra = '') => {
-  if (cond) { passed++; process.stdout.write(`ok ${name}\n`); return; }
-  process.stderr.write(`FAIL ${name} ${extra}\n`); process.exitCode = 1;
-};
-
-class Element {
-  children = []; textContent = ''; hidden = false; disabled = false;
-  onclick = null; onsubmit = null; type = ''; value = '';
-  append(...v) { this.children.push(...v); if (this.isSelect && !this.value) this.value = v[0]?.value ?? ''; }
-  replaceChildren(...v) { this.children = [...v]; if (this.isSelect) this.value = v[0]?.value ?? ''; }
+const { installPublish } = await import('data:text/javascript;base64,' + Buffer.from(readFileSync(new URL('../server/public/publish.txt', import.meta.url))).toString('base64'));
+function parse(value) { try { return JSON.parse(value); } catch (cause) { throw new Error('invalid test journal', {cause}); } }
+const GAME='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',OTHER='bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb',RELEASE='dddddddd-dddd-4ddd-addd-dddddddddddd';
+const author=()=>({user:{id:'11111111-1111-4111-8111-111111111111',role:'author',version:1,mustChangePassword:false}});
+const row=(gameId=GAME)=>({gameId,metadata:{name:'臥龍',introduction:'原文'},listed:false,draftRevision:'3'});
+const pin=()=>({gameId:GAME,name:'臥龍',revision:'3',sourceDigest:'d'.repeat(64),chapters:['ch1'],publishedAt:'2026-10-15T01:00:00.000Z',ordinal:'1.2'});
+const receipt=(state='pending')=>({version:1,gameId:GAME,releaseId:RELEASE,pin:pin(),distribution:{gameId:GAME,operationId:RELEASE,generation:1,kind:'publish',state,visibleAt:state==='pending'?null:'2026-10-15T02:00:00.000Z',recoveryRequired:false}});
+function setup(customStorage) {
+ let identity=author(),busy=false,model,allow=true;
+ const calls=[],journal=new Map();
+ const storage=customStorage??{getItem:key=>journal.get(key)??null,setItem:(key,value)=>journal.set(key,value),removeItem:key=>journal.delete(key)};
+ let response=async(path)=>{
+  if(path==='/api/games')return {games:[row(),row(OTHER)]};
+  if(path.endsWith('/releases'))return {releases:[{releaseId:RELEASE,ordinal:'1.2',draftRevision:'3',createdAt:'2026-10-15T00:00:00.000Z'}]};
+  if(path==='/api/publish')return pin();
+  if(path.includes('/publish-operations/'))return receipt();
+  if(path==='/api/announcements')return {announcements:[{gameId:GAME,name:'臥龍',ordinal:'1.2',creatorAccount:'author1',firstOnlineAt:'2026-10-15T02:00:00.000Z'}]};
+  throw new Error(path);
+ };
+ const ui=installPublish({api:async(...args)=>{calls.push(args);return response(...args);},authority:()=>identity,isBusy:()=>busy,work:async fn=>{if(busy)return;busy=true;try{return await fn();}finally{busy=false;ui.render();}},publish:value=>{model=value;},storage,confirm:()=>allow});ui.setIdentity(identity);
+ return {ui,calls,journal,get model(){return model;},get actor(){return identity;},reply:fn=>{response=fn;},confirm:value=>{allow=value;},identity(value){identity=value;ui.setIdentity(value);}};
 }
-const GAME = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', OTHER = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
-const gameRow = { gameId: GAME, metadata: { name: '臥龍', introduction: '自建' }, listed: false, draftRevision: '3' };
-const releaseRow = { gameId: GAME, releaseId: 'dddddddd-dddd-4ddd-addd-dddddddddddd', ordinal: '1.2', draftRevision: '3', sourceDigest: 'd'.repeat(64), createdAt: '2026-10-15T00:00:00.000Z' };
-const pinRow = { gameId: GAME, name: '臥龍', revision: '3', sourceDigest: 'd'.repeat(64), chapters: ['ch1'], publishedAt: '2026-10-15T01:00:00.000Z', ordinal: '1.2' };
-const annRow = { announcementId: 7, gameId: GAME, releaseId: releaseRow.releaseId, ordinal: '1.2', name: '臥龍', creatorAccount: 'author1', publishedAt: releaseRow.createdAt, firstOnlineAt: '2026-10-15T02:00:00.000Z' };
-function setup({ games = [gameRow], releases = [releaseRow], publish = pinRow, publishError = null, announcements = [annRow], confirmValue = true } = {}) {
-  const nodes = {};
-  for (const id of ['publish-editor', 'publish-game', 'publish-name', 'publish-button', 'publish-games-refresh', 'publish-versions-refresh', 'publish-versions', 'publish-form', 'publish-result', 'publish-message', 'publish-ann-preview', 'publish-announcement', 'publish-operation', 'publish-query', 'publish-retry', 'publish-forget']) {
-    nodes[id] = new Element();
-  }
-  nodes['publish-game'].isSelect = true;
-  const journal = new Map();
-  globalThis.sessionStorage = { getItem: key => journal.get(key) ?? null, setItem: (key, value) => journal.set(key, value), removeItem: key => journal.delete(key) };
-  const calls = [];
-  globalThis.document = { querySelector: q => nodes[q.slice(1)] ?? null, createElement: () => new Element() };
-  globalThis.confirm = () => confirmValue;
-  const api = async (path, value, _options) => {
-    calls.push({ path, value });
-    if (path === '/api/games') return { games };
-    if (path === `/api/games/${GAME}/releases`) return { releases };
-    if (path === '/api/publish') {
-      if (publishError) { const e = new Error(publishError.message); e.status = publishError.status; e.code = publishError.code; throw e; }
-      if (value?.gameId !== GAME) { const e = new Error('GAME_NOT_FOUND'); e.status = 404; e.code = 'GAME_NOT_FOUND'; throw e; }
-      return publish;
-    }
-    if (path.startsWith(`/api/games/${GAME}/publish-operations/`)) return { version: 1, gameId: GAME, releaseId: releaseRow.releaseId, pin: publish, distribution: { gameId: GAME, operationId: releaseRow.releaseId, generation: 1, kind: 'publish', state: 'pending', visibleAt: null, recoveryRequired: false } };
-    if (path === '/api/announcements') return { revision: 5, announcements, nextCursor: null };
-    throw new Error(`unexpected ${path}`);
-  };
-  return { nodes, calls, api };
-}
-const source = readFileSync('server/public/publish.txt', 'utf8');
-const module = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
-const author = { user: { id: '11111111-1111-4111-8111-111111111111', role: 'author', version: 1, mustChangePassword: false } };
-const admin = { user: { id: '22222222-2222-4222-8222-222222222222', role: 'admin', version: 1, mustChangePassword: false } };
-const stale = { user: { id: '11111111-1111-4111-8111-111111111111', role: 'author', version: 1, mustChangePassword: true } };
-const work = fn => fn();
-{
-  const { nodes, api } = setup();
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  check('author section visible', nodes['publish-editor'].hidden === false);
-  check('game option rendered', nodes['publish-game'].children.length === 1 && nodes['publish-game'].children[0].value === GAME);
-}
-{
-  const { nodes, api } = setup();
-  const ui = module.installPublish({ api, authority: () => stale, work, isBusy: () => false });
-  ui.setIdentity(stale);
-  check('must-change hidden', nodes['publish-editor'].hidden === true);
-}
-{
-  const { nodes, api, calls } = setup();
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  await nodes['publish-versions-refresh'].onclick();
-  check('versions fetched', calls.some(c => c.path === `/api/games/${GAME}/releases`));
-  check('version row rendered', nodes['publish-versions'].children.some(n => n.textContent.includes('1.2') && n.textContent.includes('草稿修訂 3')));
-}
-{
-  const { nodes, api, calls } = setup();
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  await nodes['publish-form'].onsubmit({ preventDefault() {} });
-  check('publish POST sent', calls.some(c => c.path === '/api/publish' && c.value?.gameId === GAME));
-  check('publish result rendered', nodes['publish-result'].children.some(n => n.textContent.includes('版本 1.2') && n.textContent.includes('發布≠上架')));
-}
-{
-  const { nodes, api } = setup({ publishError: { message: 'stale', status: 409, code: 'PUBLISH_STALE' } });
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  let threw = false;
-  try { await nodes['publish-form'].onsubmit({ preventDefault() {} }); } catch { threw = true; }
-  check('stale message mapped', nodes['publish-message'].textContent.includes('草稿已變更'));
-  check('stale propagates', threw === true);
-}
-{
-  const { nodes, api, calls } = setup({ confirmValue: false });
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  await nodes['publish-form'].onsubmit({ preventDefault() {} });
-  check('confirm cancel no POST', !calls.some(c => c.path === '/api/publish'));
-}
-{
-  const { nodes, api } = setup();
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  await nodes['publish-ann-preview'].onclick();
-  check('announcement preview hit', nodes['publish-announcement'].children.some(n => n.textContent.includes('公告：臥龍') && n.textContent.includes('作者 author1')));
-}
-{
-  const { nodes, api } = setup({ announcements: [] });
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  await nodes['publish-ann-preview'].onclick();
-  check('unlisted no announcement', nodes['publish-announcement'].children.some(n => n.textContent.includes('無公告')));
-}
-{
-  const { nodes, api } = setup({ games: [{ ...gameRow, gameId: OTHER }] });
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  ui.setIdentity(author);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  check('other game listed', nodes['publish-game'].children.length === 1);
-}
-{
-  const { nodes, api } = setup();
-  const ui = module.installPublish({ api, authority: () => admin, work, isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['publish-games-refresh'].onclick();
-  nodes['publish-game'].value = GAME;
-  check('admin section visible', nodes['publish-editor'].hidden === false);
-}
-{
-  const { nodes, api } = setup();
-  const ui = module.installPublish({ api, authority: () => author, work, isBusy: () => false });
-  check('canLeave true without a tracked operation', ui.canLeave() === true);
-  check('empty versions text', nodes['publish-versions'].children.length === 0);
-}
-
-process.stdout.write(`passed ${passed} checks\n`);
+test('explicit own games, versions, announcement and text-only copies; no automatic reads',async()=>{
+ const h=setup();assert.equal(h.calls.length,0);await h.ui.actions.refresh();assert.equal(h.model.selected,GAME);assert.equal(h.model.name,'臥龍');assert.equal(h.model.games.length,2);h.model.games[0].gameId='forged';h.ui.render();assert.equal(h.model.games[0].gameId,GAME);
+ await h.ui.actions.versions();assert.match(h.model.versions[0],/1.2.*草稿修訂 3/);await h.ui.actions.preview();assert.match(h.model.announcement,/公告：臥龍.*author1/);assert.doesNotMatch(JSON.stringify(h.model),/sourceDigest|chapters|csrf/);
+ h.reply(async()=>({announcements:[]}));await h.ui.actions.preview();assert.match(h.model.announcement,/無公告/);
+});
+test('publish confirmation cancellation, original body/key, local commit differs from distribution',async()=>{
+ const h=setup();await h.ui.actions.refresh();h.confirm(false);await h.ui.actions.publish();assert.equal(h.calls.filter(c=>c[1]).length,0);h.confirm(true);await h.ui.actions.publish();const post=h.calls.find(c=>c[0]==='/api/publish');assert.deepEqual(post[1],{gameId:GAME,name:'臥龍'});assert.equal(parse([...h.journal.values()][0]).key,post[2].key);assert.match(h.model.result,/版本 1.2.*發布≠上架.*分發待確認/);assert.equal(h.model.publishDisabled,true);assert.equal(h.model.retryDisabled,true);
+ h.reply(async()=>receipt('confirmed'));await h.ui.actions.query();assert.match(h.model.result,/曾於.*不是目前上架/);assert.equal(h.ui.canLeave(true),false);
+});
+test('lost POST preserves original name/key; GET404 only permits explicit same-body retry',async()=>{
+ const h=setup();await h.ui.actions.refresh();h.ui.actions.setName('原名稱');h.reply(async()=>{throw Object.assign(new Error('stale'),{code:'PUBLISH_STALE',status:409});});await assert.rejects(h.ui.actions.publish());assert.match(h.model.message,/草稿已變更/);const post=h.calls.at(-1);h.ui.actions.setName('不能重定向');h.ui.actions.select(OTHER);assert.equal(h.model.publishDisabled,true);
+ h.reply(async()=>{throw Object.assign(new Error('missing'),{code:'PUBLISH_OPERATION_NOT_FOUND',status:404});});await assert.rejects(h.ui.actions.query());assert.equal(h.model.retryDisabled,false);const n=h.calls.length;h.confirm(false);await h.ui.actions.retry();assert.equal(h.calls.length,n);
+ h.confirm(true);h.reply(async path=>path==='/api/publish'?pin():receipt());await h.ui.actions.retry();const replay=h.calls.findLast(c=>c[0]==='/api/publish');assert.deepEqual(replay.slice(1),post.slice(1));assert.equal(h.model.retryDisabled,true);
+});
+test('reload restores only original tuple; current account version change disables replay',async()=>{
+ const h=setup();await h.ui.actions.refresh();h.reply(async()=>{throw new Error('lost');});await assert.rejects(h.ui.actions.publish());const n=h.calls.length;h.identity(author()); // Same identity facts retain live state.
+ assert.equal(h.calls.length,n);h.identity(null);h.identity(author());assert.equal(h.model.games.length,0);assert.match(h.model.operation,/原請求/);assert.equal(h.calls.length,n);
+ h.identity({user:{...author().user,version:2}});h.reply(async()=>{throw Object.assign(new Error('missing'),{code:'PUBLISH_OPERATION_NOT_FOUND',status:404});});await assert.rejects(h.ui.actions.query());assert.equal(h.model.retryDisabled,true);assert.match(h.model.operation,/帳戶版本已變/);
+});
+test('successful POST plus failed GET remains local commit, cannot retry; forget local only',async()=>{
+ const h=setup();await h.ui.actions.refresh();h.reply(async path=>{if(path==='/api/publish')return pin();throw new Error('observation unavailable');});await h.ui.actions.publish();assert.match(h.model.result,/本地已提交.*分發待確認/);assert.equal(h.model.retryDisabled,true);const n=h.calls.length;h.confirm(false);await h.ui.actions.forget();assert.equal(h.journal.size,1);h.confirm(true);await h.ui.actions.forget();assert.equal(h.journal.size,0);assert.equal(h.calls.length,n);assert.equal(h.model.result,'');
+});
+test('malformed receipts never grant confirmed distribution; original association retained',async()=>{
+ const h=setup();await h.ui.actions.refresh();h.reply(async()=>({...pin(),gameId:OTHER}));await assert.rejects(h.ui.actions.publish());assert.equal(h.model.result,'');assert.equal(h.model.publishDisabled,true);h.reply(async()=>({...receipt(),distribution:{...receipt().distribution,state:'confirmed',visibleAt:null}}));await assert.rejects(h.ui.actions.query());assert.equal(h.model.result,'');assert.equal(h.model.retryDisabled,true);
+});
+test('broken storage and readback mismatch stop POST before unknown key can be lost',async()=>{
+ for(const storage of [{getItem:()=>'{bad',setItem(){},removeItem(){}},{getItem:()=>null,setItem(){},removeItem(){}}]){const h=setup(storage);await h.ui.actions.refresh();await assert.rejects(h.ui.actions.publish());assert.equal(h.calls.some(c=>c[1]),false);assert.equal(h.model.publishDisabled,true);}
+});
+test('dirty name guards selection and unload; cancellation preserves old selection/input',async()=>{
+ const h=setup();await h.ui.actions.refresh();assert.equal(h.ui.canLeave(true),true);h.ui.actions.setName('未提交');h.confirm(false);h.ui.actions.select(OTHER);assert.equal(h.model.selected,GAME);assert.equal(h.model.name,'未提交');assert.equal(h.ui.canLeave(),false);const n=h.calls.length;await h.ui.actions.refresh();assert.equal(h.calls.length,n);h.confirm(true);h.ui.actions.select(OTHER);assert.equal(h.model.name,'臥龍');assert.equal(h.ui.canLeave(true),true);
+});
+test('unauthorized accounts and late replies cannot show private data or continue POST',async()=>{
+ for(const actor of [null,{user:{...author().user,mustChangePassword:true}},{user:{...author().user,role:'viewer'}}]){const h=setup();h.identity(actor);await assert.rejects(h.ui.actions.refresh());assert.equal(h.calls.length,0);assert.deepEqual(h.model.games,[]);assert.equal(h.model.locked,true);}
+ const h=setup();let resolve;h.reply(()=>new Promise(done=>{resolve=done;}));const p=h.ui.actions.refresh();h.identity(null);resolve({games:[row()]});await p;assert.deepEqual(h.model.games,[]);
+ const k=setup();await k.ui.actions.refresh();k.reply(()=>new Promise(done=>{resolve=done;}));const post=k.ui.actions.publish();k.identity(null);resolve(pin());await post;assert.equal(k.model.result,'');assert.equal(k.calls.filter(c=>c[0].includes('/publish-operations/')).length,0);
+});

@@ -6,6 +6,8 @@ import { FIXED_TRIAL_ASSET_PATHS, TRIAL_ASSET_PROFILE } from '../web/src/editor/
 const revision = 'map-2-47e35876cd32ff3b7eee27da3be95eaa1b52a6d108a6f94c1f5989bc68861d23';
 const entities = '086ca8a87e2dafb2b7c9d657a74b70c81b5da3e98776e5d7d8c21dcfc5a982a5';
 const sourceDigest = '87742af76b54a13711541eefbb2dd2066ba06d30602027b9bfcf9ae43bf9f2b1';
+// Shared fixed identity for policy and structural consumers; not a capability.
+export const AVAILABLE_LIBRARY_REGISTRY_ID = 'approved-available-library-f4ba804b-1';
 const policies = new WeakSet();
 export const isInstalledSourcePolicy = value => policies.has(value);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -60,6 +62,6 @@ export function installedAvailableLibraryPolicy(input) {
   }
   roles.sort((a, b) => { if (a.path < b.path) return -1; if (a.path > b.path) return 1; return 0; });
   if (roles.length !== 400 || new Set(roles.map(row => row.path)).size !== 400) fail(503, 'LIBRARY_MANIFEST_ROLE');
-  const policy = Object.freeze({ registryId: 'approved-available-library-f4ba804b-1', revision, sourceDigest, profileRevision: TRIAL_ASSET_PROFILE, mode: library.mode, manifestDigest: manifestHash, runtimeDataSha256: library.runtimeDataSha256, programHashes: Object.freeze({ ...library.programHashes }), unresolvedReferences: Object.freeze(library.unresolvedReferences.map(ref => Object.freeze({ ...ref }))), roles: Object.freeze(roles.map(Object.freeze)) });
+  const policy = Object.freeze({ registryId: AVAILABLE_LIBRARY_REGISTRY_ID, revision, sourceDigest, profileRevision: TRIAL_ASSET_PROFILE, mode: library.mode, manifestDigest: manifestHash, runtimeDataSha256: library.runtimeDataSha256, programHashes: Object.freeze({ ...library.programHashes }), unresolvedReferences: Object.freeze(library.unresolvedReferences.map(ref => Object.freeze({ ...ref }))), roles: Object.freeze(roles.map(Object.freeze)) });
   policies.add(policy); return policy;
 }

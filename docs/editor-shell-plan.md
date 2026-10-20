@@ -3,6 +3,10 @@
 > 设计依据：§1 编辑系统独立入口、独立端口、首页为登录页；§4 左侧模块菜单＋右侧主窗口＋"当前游戏"共享上下文；
 > §4.6 用户管理与个人资料；§4.7 编辑器专属交互例外；§4.8 草稿测试运行。
 
+## 后续后台框架迁移
+
+用户已批准后台展示层采用Vue 3＋Element Plus；首批外壳／独立账户页及既有业务DOM适配见[EDITOR-UI-1](editor-framework-shell.md)。以下B1–B4e保留为历史功能切片，不再把手写壳、账号页上下堆叠或旧文件布局作为现行架构要求；本次框架迁移也不宣称补齐这些历史切片的功能缺口。
+
 ## 当前摘要（本地 98f0630 小范围审计）
 
 B1–B4e 已有本机限定链；BOOT-1 已补 installed-source→copy→read/save→publish→pack/assets→上下架，以下各批“bootstrap 缺口”仅为当时记录。当前地图示意仍唯读，据点192／武将128仍锁定，不能据壳齐全宣布完整编辑器。B4e API 生命周期不等全部 UI／上传安全通过，后继[头像UI修正](editor-portrait-ui-fix.md)已补清除按钮／预览守卫／源限制／可调裁剪确认及当前聚焦回归；后继[运行时身份](editor-portrait-identity.md)已修全局byte覆盖及所属world／实体消费者接线，聚焦22项；后继[真实workerd链](editor-portrait-workerd.md)已补上传／保存／发布API／匿名App串行14项，并修隐藏父容器、render后的菜单视图和匿名资源路径；后继[PNG安全切片](editor-portrait-png-safety.md)已补游戏库PNG有界解码／规范重编码；后继[JPEG有界实现](editor-portrait-jpeg-safety.md)补游戏库JPEG规范PNG输出；后继[当前SHA真实链](editor-portrait-workerd-safety.md)补原JPEG公开API／发布／匿名App串行17项；后继[Trial PNG切片](editor-trial-portrait-png-safety.md)补源矩形规范化／存储预算／提交前写门；后继[Trial JPEG切片](editor-trial-portrait-jpeg-safety.md)补旧16384像素预算内矩形规范PNG；更大JPEG源／裁剪／隔离／独立彩色精度与完整格式、完整App、同时游玩／保存、发布UI与完整消费者组合仍缺，见[审计详细源](editor-closeout-audit.md)。node 上传 UI 不属本 workerd 壳范围。

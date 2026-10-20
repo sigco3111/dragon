@@ -1,152 +1,47 @@
-// N3-3 stronghold UI model: fake DOM/storage/API ports for
-// server/public/stronghold.txt (NOT a browser certificate).
-// Usage: node tools/verify_stronghold_ui_model.mjs
+// Projection/controller regression, not a browser or original-rule certificate.
+import assert from 'node:assert/strict';
+import test from 'node:test';
 import { readFileSync } from 'node:fs';
-
-let passed = 0;
-const check = (name, cond, extra = '') => {
-  if (!cond) { console.error(`FAIL ${name} ${extra}`); process.exitCode = 1; }
-  else { passed++; console.log(`ok ${name}`); }
-};
-
-class Element {
-  children = []; textContent = ''; hidden = false; disabled = false;
-  onclick = null; onchange = null; type = ''; value = '';
-  dataset = {}; min = ''; max = '';
-  append(...v) { this.children.push(...v); }
-  replaceChildren(...v) { this.children = [...v]; }
+const {installStronghold} = await import('data:text/javascript;base64,' + Buffer.from(readFileSync('server/public/stronghold.txt')).toString('base64'));
+const GAME = '77777777-7777-4777-8777-777777777777', CH = 'chapter-1';
+const game = {gameId:GAME,metadata:{name:'<img>',introduction:''},draftRevision:'1'};
+const city = {idx:3,name:'北平',faction:14,troops:118,prod:20714,troopsCap:169,maxProd:21000};
+const detail = {gameId:GAME,draftRevision:'1',metadata:game.metadata,privateSource:'not-reactive',chapters:[{chapterId:CH,name:'第一章',cities:[city,{...city,idx:4}]}],strongholds:[{runtimeSlot:3,placed:true,roads:['road-0'],chapters:[CH]}]};
+function setup() {
+  let actor = {user:{id:'u',role:'author',mustChangePassword:false}}, model, busy = false, confirmResult = true, hook = null;
+  const rows = [structuredClone(game)], body = structuredClone(detail), calls = [];
+  const ui = installStronghold({authority:()=>actor,isBusy:()=>busy,publish:m=>{model=m;},confirm:()=>confirmResult,
+    work:async fn=>{if(busy)return;busy=true;try{return await fn();}finally{busy=false;ui.render();}},
+    api:async(path,value,options)=>{calls.push({path,value,options});if(hook){const result=await hook(path,value,options);if(result!==undefined)return result;}
+      if(path==='/api/games')return {games:rows};
+      if(path.includes('/draft?revision='))return structuredClone(body);
+      if(path.endsWith('/draft/save')) { assert.equal(options.revision,body.draftRevision);for(const edit of value.chapterEdits)Object.assign(body.chapters[0].cities.find(c=>c.idx===edit.cityIdx),edit.values);body.draftRevision=String(Number(body.draftRevision)+1);return {draftRevision:body.draftRevision}; }
+      throw new Error('Unexpected API');
+    }});
+  ui.setIdentity(actor);
+  return {ui,a:ui.actions,calls,body,rows,get model(){return model;},set confirm(value){confirmResult=value;},set hook(value){hook=value;},set identity(value){actor=value;ui.setIdentity(value);}};
 }
-const GAME = '77777777-7777-4777-8777-777777777777';
-const CH = 'chapter-1';
-const cityRow = { idx: 3, name: '北平', faction: 14, troops: 118, prod: 20714, troopsCap: 169, maxProd: 21000 };
-const apiGame = { gameId: GAME, metadata: { name: 'S3UI', introduction: '' }, draftRevision: '1' };
-const apiDetail = {
-  gameId: GAME, draftRevision: '1', metadata: apiGame.metadata,
-  chapters: [{ chapterId: CH, name: '第一章', cities: [{ ...cityRow }] }],
-  strongholds: [{ cityId: 'city-003', runtimeSlot: 3, x: 1, y: 2, placed: true, roads: ['road-0'], chapters: [CH] }],
-};
-function setup({ games = [apiGame], detail = apiDetail, save = null, failSave = null } = {}) {
-  const nodes = {};
-  const ids = ['stronghold-editor', 'stronghold-games', 'stronghold-inspect', 'stronghold-refresh', 'stronghold-chapters', 'stronghold-cities', 'stronghold-message'];
-  for (const id of ids) nodes[id] = new Element();
-  const calls = [];
-  globalThis.document = {
-    querySelector: q => nodes[q.slice(1)] ?? null,
-    querySelectorAll: q => {
-      if (q === '#stronghold-cities input') {
-        const out = [];
-        const walk = el => { for (const c of el.children) { if (c.type === 'number') out.push(c); walk(c); } };
-        walk(nodes['stronghold-cities']);
-        return out;
-      }
-      return [];
-    },
-    createElement: () => new Element(),
-  };
-  globalThis.crypto ??= { randomUUID: () => 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa' };
-  const api = async (path, value, options) => {
-    calls.push({ path, value, options });
-    if (path === '/api/games') return { games };
-    if (path.startsWith('/api/games/') && path.includes('/draft?revision=')) return structuredClone(detail);
-    if (path.endsWith('/draft/save')) {
-      if (failSave) { const e = new Error(failSave.message); e.status = failSave.status; throw e; }
-      if (save) return save(value, options);
-      return { draftRevision: '2' };
-    }
-    throw new Error('unexpected path ' + path);
-  };
-  return { nodes, calls, api };
-}
-const source = readFileSync('server/public/stronghold.txt', 'utf8');
-const module = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-const admin = { user: { id: 'u', role: 'admin', mustChangePassword: false } };
-const author = () => ({ user: { id: 'u', role: 'author', mustChangePassword: false } });
-
-{
-  const { nodes, api } = setup();
-  const ui = module.installStronghold({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(null);
-  check('hidden pre-login', nodes['stronghold-editor'].hidden === true);
-  ui.setIdentity(admin);
-  check('shown post-login', nodes['stronghold-editor'].hidden === false);
-}
-{
-  const { nodes, api, calls } = setup();
-  const ui = module.installStronghold({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['stronghold-refresh'].onclick();
-  check('games listed', nodes['stronghold-games'].children.length === 1);
-  check('chapter selected', nodes['stronghold-chapters'].children.length === 1 && nodes['stronghold-chapters'].value === CH);
-  check('city row + inputs', nodes['stronghold-cities'].children.length === 1);
-  const rowText = nodes['stronghold-cities'].children[0].children[0].textContent;
-  check('refs shown', rowText.includes('道路 1') && rowText.includes('章節 1') && rowText.includes('北平'));
-  check('no auto save POST', calls.filter(c => c.path.endsWith('/draft/save')).length === 0);
-}
-{
-  const { nodes, api, calls } = setup();
-  const ui = module.installStronghold({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['stronghold-refresh'].onclick();
-  const saveBtn = nodes['stronghold-cities'].children[0].children.find(c => c.type === 'button' && c.textContent === '保存據點數值');
-  const inputs = [];
-  const walk = el => { for (const c of el.children) { if (c.type === 'number') inputs.push(c); walk(c); } };
-  walk(nodes['stronghold-cities']);
-  inputs.find(i => i.dataset.field === 'troops').value = '100';
-  inputs.find(i => i.dataset.field === 'prod').value = '20000';
-  await saveBtn.onclick();
-  const post = calls.find(c => c.path.endsWith('/draft/save'));
-  check('save POST shape', !!post && post.value.chapterEdits.length === 1 && post.value.chapterEdits[0].op === 'city' &&
-    post.value.chapterEdits[0].chapterId === CH && post.value.chapterEdits[0].cityIdx === 3 &&
-    post.value.chapterEdits[0].values.troops === 100 && post.value.chapterEdits[0].values.prod === 20000 &&
-    Array.isArray(post.value.resourceEdits) && post.options.revision === '1' && typeof post.options.key === 'string');
-  check('success message', nodes['stronghold-message'].textContent.includes('修訂 2'));
-  check('re-inspected', calls.filter(c => c.path.includes('/draft?revision=2')).length === 1);
-}
-{
-  const { nodes, api, calls } = setup();
-  const ui = module.installStronghold({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['stronghold-refresh'].onclick();
-  const walk = el => { const out = []; const go = n => { for (const c of n.children) { if (c.type === 'number') out.push(c); go(c); } }; go(el); return out; };
-  const inputs = walk(nodes['stronghold-cities']);
-  inputs.find(i => i.dataset.field === 'troops').value = '99999';
-  const saveBtn = nodes['stronghold-cities'].children[0].children.find(c => c.type === 'button' && c.textContent === '保存據點數值');
-  await saveBtn.onclick().catch(() => {});
-  check('over-cap blocked pre-POST', calls.filter(c => c.path.endsWith('/draft/save')).length === 0 &&
-    nodes['stronghold-message'].textContent.includes('上限'));
-  inputs.find(i => i.dataset.field === 'troops').value = '100';
-  inputs.find(i => i.dataset.field === 'prod').value = 'abc';
-  await saveBtn.onclick().catch(() => {});
-  check('non-int blocked pre-POST', calls.filter(c => c.path.endsWith('/draft/save')).length === 0);
-}
-{
-  const { nodes, api } = setup({ failSave: { message: '修訂已變，請重讀。', status: 412 } });
-  const ui = module.installStronghold({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['stronghold-refresh'].onclick();
-  const walk = el => { const out = []; const go = n => { for (const c of n.children) { if (c.type === 'number') out.push(c); go(c); } }; go(el); return out; };
-  const inputs = walk(nodes['stronghold-cities']);
-  inputs.find(i => i.dataset.field === 'troops').value = '100';
-  const saveBtn = nodes['stronghold-cities'].children[0].children.find(c => c.type === 'button' && c.textContent === '保存據點數值');
-  await saveBtn.onclick().catch(() => {});
-  check('conflict message', nodes['stronghold-message'].textContent.includes('修訂已變'));
-}
-{
-  const { nodes, api, calls } = setup();
-  const ui = module.installStronghold({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['stronghold-refresh'].onclick();
-  const delBtn = nodes['stronghold-cities'].children[0].children.find(c => c.type === 'button' && c.textContent === '刪除檢查');
-  await delBtn.onclick();
-  check('delete-check lists blockers', nodes['stronghold-message'].textContent.includes('道路引用') && nodes['stronghold-message'].textContent.includes('192 座'));
-  check('delete-check no POST', calls.filter(c => c.path.endsWith('/draft/save')).length === 0);
-}
-{
-  const { nodes, api } = setup();
-  const ui = module.installStronghold({ api, authority: () => author(), work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(author());
-  await nodes['stronghold-refresh'].onclick();
-  check('author sees own list', nodes['stronghold-games'].children.length === 1);
-}
-
-console.log(`passed ${passed} checks`);
+test('explicit own-list read, display-only copies, references and no automatic POST',async()=>{
+  const s=setup();assert.equal(s.calls.length,0);await s.a.refresh();assert.equal(s.model.games.length,1);assert.equal(s.model.chapterId,CH);assert.equal(s.model.cities[0].roadCount,1);assert.equal(s.model.cities[0].chapterCount,1);assert.equal(s.model.cities[0].name,'北平');assert.ok(!JSON.stringify(s.model).includes('not-reactive'));s.model.cities[0].name='changed';s.ui.render();assert.equal(s.model.cities[0].name,'北平');assert.equal(s.calls.filter(c=>c.value).length,0);
+});
+test('bounded absolute values use original chapter/slot/revision; save rereads receipt revision and preserves other dirty rows',async()=>{
+  const s=setup();await s.a.refresh();s.a.edit(3,'troops','100');s.a.edit(3,'prod','20000');s.a.edit(4,'troops','101');await s.a.save(3);
+  const post=s.calls.find(c=>c.value);assert.deepEqual(post.value.chapterEdits,[{op:'city',chapterId:CH,cityIdx:3,values:{troops:100,prod:20000}}]);assert.deepEqual(post.value.resourceEdits,[]);assert.equal(post.options.revision,'1');assert.match(post.options.key,/^[a-f0-9-]{36}$/);assert.ok(s.calls.some(c=>c.path.endsWith('/draft?revision=2')));assert.match(s.model.message,/修訂 2/);assert.equal(s.model.cities[1].troops,'101');assert.equal(s.model.dirty,true);
+  await s.a.save(3);assert.equal(s.calls.filter(c=>c.value).length,1);assert.match(s.model.message,/未發送/);
+});
+test('caps, blank, noninteger, negative and unknown caps reject before POST',async()=>{
+  const s=setup();await s.a.refresh();for(const value of ['99999','','abc','-1','1.5']){s.a.edit(3,'troops',value);await assert.rejects(s.a.save(3));assert.equal(s.calls.filter(c=>c.value).length,0);assert.equal(s.model.cities[0].troops,value);}
+  s.body.chapters[0].cities[0].troopsCap=null;await s.a.inspect();s.a.edit(3,'troops','100');await assert.rejects(s.a.save(3),/上限未知/);assert.equal(s.calls.filter(c=>c.value).length,0);
+});
+test('conflict or unknown write keeps typed values and queried revision, no implicit retry',async()=>{
+  const s=setup();await s.a.refresh();s.a.edit(3,'troops','100');s.hook=async(_p,v)=>{if(v)throw new Error('修訂已變，請重讀。');};await assert.rejects(s.a.save(3),/修訂已變/);s.ui.render();assert.equal(s.model.cities[0].troops,'100');assert.match(s.model.context,/修訂 1/);assert.match(s.model.message,/修訂已變/);assert.equal(s.calls.filter(c=>c.value).length,1);assert.equal(s.ui.canLeave(true),false);
+});
+test('dirty cancel protects read/refresh/selection; delete report cannot POST',async()=>{
+  const s=setup();s.body.chapters.push({chapterId:'other',name:'第二章',cities:[]});await s.a.refresh();s.a.edit(3,'troops','100');s.confirm=false;const n=s.calls.length;await s.a.inspect();await s.a.refresh();s.a.selectChapter('other');assert.equal(s.calls.length,n);assert.equal(s.model.chapterId,CH);assert.equal(s.model.cities[0].troops,'100');await s.a.blockers(3);assert.match(s.model.message,/道路引用/);assert.match(s.model.message,/192 座/);assert.equal(s.calls.filter(c=>c.value).length,0);s.confirm=true;s.a.selectChapter('other');assert.equal(s.model.cities.length,0);
+});
+test('invalid reply cannot partly install; acknowledged save/read failure locks further writes and retains inputs',async()=>{
+  const s=setup();await s.a.refresh();s.hook=async path=>path.includes('/draft?')?{...s.body,draftRevision:'999'}:undefined;await assert.rejects(s.a.inspect(),/修訂無效/);assert.equal(s.model.cities[0].troops,'118');s.hook=null;s.a.edit(3,'troops','100');s.hook=async path=>{if(path.endsWith('revision=2'))throw new Error('read unavailable');};await assert.rejects(s.a.save(3),/read unavailable/);assert.equal(s.model.saveDisabled,true);assert.equal(s.model.cities[0].troops,'100');assert.match(s.model.context,/保存已確認/);await assert.rejects(s.a.save(3));assert.equal(s.calls.filter(c=>c.value).length,1);s.hook=null;await s.a.inspect();assert.equal(s.model.saveDisabled,false);assert.equal(s.model.dirty,false);
+});
+test('anonymous/forced identity and late replies never expose another user display',async()=>{
+  const s=setup();await s.a.refresh();let finish;s.hook=path=>path.includes('/draft?')?new Promise(resolve=>{finish=resolve;}):undefined;const pending=s.a.inspect();s.identity={user:{id:'other',role:'author',mustChangePassword:false}};finish(structuredClone(s.body));await pending;assert.deepEqual(s.model.cities,[]);assert.deepEqual(s.model.games,[]);s.identity=null;const n=s.calls.length;await assert.rejects(s.a.refresh());assert.equal(s.calls.length,n);s.identity={user:{id:'u',role:'admin',mustChangePassword:true}};await assert.rejects(s.a.refresh());assert.equal(s.calls.length,n);
+});

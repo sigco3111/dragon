@@ -1,134 +1,96 @@
-// Stronghold browser (§4.2, N3): chapter city troops/prod bounded edits plus
-// the read-only reference/delete-blocker report. Base cities stay 192-locked
-// (no add/edit/delete of base records); only chapter-state troops/prod within
-// the record's own caps are writable. Saves use absolute values, so a retry
-// with a fresh key is safe (re-applying identical values is a no-op server
-// side). Unknown-outcome failures keep inputs on screen and say so.
-export function installStronghold({ api, authority, work, isBusy }) {
-  const q = (id) => document.querySelector('#' + id);
-  let identity = null, games = [], selected = null, detail = null, summary = null, chapterId = null;
-  const allowed = () => Boolean(identity?.user) && !identity.user.mustChangePassword;
-  const message = (text) => { q('stronghold-message').textContent = text; };
-  function refsFor(idx) {
-    return (detail?.strongholds ?? []).find(r => r.runtimeSlot === idx) ?? null;
-  }
-  function blockers(r) {
-    const list = [];
-    if (!r) return ['查無引用資料，先讀取管理清單。'];
-    if (r.placed) list.push('已放入地圖，須先從地圖移除');
-    for (const road of r.roads ?? []) list.push(`道路引用：${road}`);
-    for (const chapter of r.chapters ?? []) list.push(`章節引用：${chapter}`);
-    list.push('基礎據點鎖定 192 座，不開放增刪');
-    return list;
-  }
-  function chapter() {
-    return (detail?.chapters ?? []).find(c => c.chapterId === chapterId) ?? null;
-  }
+// Presentation adapter only: chapter troops/prod keep their existing record caps.
+// Base records remain locked. Explicit absolute-value retries retain the queried
+// revision; unknown writes are never replayed automatically or promoted to latest.
+export function installStronghold({ api, authority, work, isBusy, publish = () => {}, confirm = text => globalThis.confirm(text) }) {
+  let identity = null, generation = 0, actionGeneration = 0, games = [], selected = null, detail = null, summary = null, chapterId = null, fields = new Map(), message = '', needsRead = false;
+  const allowed = () => Boolean(identity?.user) && identity === authority() && !identity.user.mustChangePassword;
+  const chapter = () => (detail?.chapters ?? []).find(c => c.chapterId === chapterId) ?? null;
+  const city = idx => chapter()?.cities.find(c => c.idx === idx);
+  const refsFor = idx => detail?.strongholds?.find(r => r.runtimeSlot === idx);
+  const dirtyRow = c => ['troops','prod'].some(key => fields.get(c.idx)?.[key] !== String(c[key] ?? ''));
+  const dirty = () => Boolean(chapter()?.cities.some(dirtyRow));
+  function canLeave(forUnload = false) { return !dirty() || !forUnload && confirm('據點數值尚未保存；此操作不會自動保存。確定繼續？'); }
+  function resetFields() { fields = new Map((chapter()?.cities ?? []).map(c => [c.idx, {troops:String(c.troops ?? ''),prod:String(c.prod ?? '')}])); }
+  function clear() { games = []; selected = null; detail = null; summary = null; chapterId = null; fields = new Map(); needsRead = false; message = ''; }
   function render() {
-    q('stronghold-editor').hidden = !allowed();
-    q('stronghold-games').replaceChildren();
-    for (const game of games) {
-      const option = document.createElement('option');
-      option.value = game.gameId; option.textContent = game.metadata.name + '／草稿 ' + game.draftRevision;
-      q('stronghold-games').append(option);
-    }
-    if (games.some((game) => game.gameId === selected)) q('stronghold-games').value = selected;
-    q('stronghold-chapters').replaceChildren();
-    for (const c of detail?.chapters ?? []) {
-      const option = document.createElement('option');
-      option.value = c.chapterId; option.textContent = (c.name ?? c.chapterId);
-      q('stronghold-chapters').append(option);
-    }
-    if ((detail?.chapters ?? []).some((c) => c.chapterId === chapterId)) q('stronghold-chapters').value = chapterId;
-    q('stronghold-cities').replaceChildren();
-    const st = chapter();
-    if (!st) return;
-    for (const c of st.cities ?? []) {
-      const row = document.createElement('div'), label = document.createElement('p');
-      const r = refsFor(c.idx);
-      label.textContent = `#${c.idx} ${c.name}／勢力 ${c.faction ?? '—'}／道路 ${(r?.roads ?? []).length}／章節 ${(r?.chapters ?? []).length}`;
-      row.append(label);
-      for (const [field, cap] of [['troops', c.troopsCap], ['prod', c.maxProd]]) {
-        const lab = document.createElement('label');
-        lab.textContent = field + '（上限 ' + (cap ?? '?') + '）';
-        const input = document.createElement('input');
-        input.type = 'number'; input.min = '0';
-        if (Number.isSafeInteger(cap)) input.max = String(cap);
-        input.value = String(c[field] ?? '');
-        input.dataset.cityIdx = String(c.idx); input.dataset.field = field;
-        lab.append(input); row.append(lab);
-      }
-      const save = document.createElement('button');
-      save.type = 'button'; save.textContent = '保存據點數值'; save.disabled = isBusy();
-      save.onclick = () => work(() => saveCity(c.idx));
-      row.append(save);
-      const del = document.createElement('button');
-      del.type = 'button'; del.textContent = '刪除檢查';
-      del.disabled = isBusy();
-      del.onclick = () => work(async () => {
-        message(`「${c.name}」不可刪除：${blockers(r).join('；')}。`);
-      });
-      row.append(del);
-      q('stronghold-cities').append(row);
-    }
+    const permitted = allowed(), locked = !permitted || isBusy();
+    publish({ selected: permitted ? selected : null, chapterId: permitted ? chapterId : null, locked, saveDisabled: locked || !detail || needsRead,
+      games: permitted ? games.map(g => ({gameId:g.gameId,label:g.metadata.name + '／草稿 ' + g.draftRevision})) : [],
+      chapters: permitted ? (detail?.chapters ?? []).map(c => ({chapterId:c.chapterId,name:c.name || c.chapterId})) : [],
+      cities: permitted ? (chapter()?.cities ?? []).map(c => { const refs = refsFor(c.idx); return {idx:c.idx,name:c.name,faction:c.faction ?? '—',roadCount:refs?.roads?.length ?? 0,chapterCount:refs?.chapters?.length ?? 0,troopsCap:c.troopsCap,maxProd:c.maxProd,...fields.get(c.idx)}; }) : [],
+      context: permitted && summary ? summary.gameId + '／已讀取修訂 ' + (detail?.draftRevision ?? summary.draftRevision) + (needsRead ? '／保存已確認，須重新讀取' : '') : '', message:permitted ? message : '', dirty:permitted && dirty() });
   }
-  function readInputs(idx) {
-    const out = {};
-    for (const input of document.querySelectorAll('#stronghold-cities input')) {
-      if (Number(input.dataset.cityIdx) !== idx) continue;
-      const value = input.value.trim() === '' ? NaN : Number(input.value);
-      out[input.dataset.field] = value;
+  const revision = value => typeof value === 'string' && /^[1-9][0-9]{0,63}$/.test(value);
+  function acceptGames(data) {
+    if (!Array.isArray(data?.games)) throw new Error('遊戲清單回應無效。');
+    const ids = new Set();
+    return data.games.map(g => { if (typeof g?.gameId !== 'string' || !g.gameId || ids.has(g.gameId) || !revision(g.draftRevision) || typeof g.metadata?.name !== 'string') throw new Error('遊戲清單回應無效。'); ids.add(g.gameId); return {gameId:g.gameId,draftRevision:g.draftRevision,metadata:{name:g.metadata.name}}; });
+  }
+  function acceptDetail(data, target) {
+    if (data?.gameId !== target.gameId || data.draftRevision !== target.draftRevision || !data.metadata || typeof data.metadata.name !== 'string' || !Array.isArray(data.chapters) || !Array.isArray(data.strongholds)) throw new Error('據點回應身份／修訂無效。');
+    const ids = new Set();
+    for (const c of data.chapters) {
+      if (typeof c?.chapterId !== 'string' || ids.has(c.chapterId) || !Array.isArray(c.cities)) throw new Error('章節據點清單無效。'); ids.add(c.chapterId);
+      const slots = new Set();
+      for (const row of c.cities) { if (!Number.isSafeInteger(row?.idx) || slots.has(row.idx) || typeof row.name !== 'string') throw new Error('章節據點清單無效。'); slots.add(row.idx); }
     }
-    return out;
+    return structuredClone(data);
+  }
+  function ticket() { const actor = identity, serial = ++generation; return () => allowed() && identity === actor && serial === generation; }
+  async function inspect(preserve = null) {
+    if (!allowed()) throw new Error('請先登入。');
+    const target = games.find(g => g.gameId === selected); if (!target) throw new Error('請先選擇遊戲。');
+    const captured = {...target}, valid = ticket();
+    const result = await api('/api/games/' + encodeURIComponent(captured.gameId) + '/draft?revision=' + encodeURIComponent(captured.draftRevision));
+    if (!valid()) return false;
+    const next = acceptDetail(result, captured); if (!valid()) return false;
+    detail = next; summary = captured; needsRead = false;
+    if (!detail.chapters.some(c => c.chapterId === chapterId)) chapterId = detail.chapters[0]?.chapterId ?? null;
+    resetFields();
+    if (preserve) for (const [idx, values] of preserve) if (fields.has(idx)) fields.set(idx, values);
+    message = '據點數值僅 troops／prod 可寫且受上限門；基礎 192 鎖定不開放增刪。';
+    return true;
+  }
+  async function refresh() {
+    if (!allowed()) throw new Error('請先登入。'); if (!canLeave()) return;
+    const valid = ticket(), result = await api('/api/games'); if (!valid()) return;
+    games = acceptGames(result); selected = games[0]?.gameId ?? null; detail = null; summary = null; chapterId = null; fields = new Map(); needsRead = false;
+    if (selected) await inspect();
   }
   async function saveCity(idx) {
-    const st = chapter();
-    const current = (st?.cities ?? []).find(c => c.idx === idx);
-    if (!current || !summary || !detail) throw new Error('請先選擇遊戲與章節。');
-    const values = readInputs(idx), patch = {};
-    for (const field of ['troops', 'prod']) {
-      const value = values[field], cap = field === 'troops' ? current.troopsCap : current.maxProd;
-      if (typeof value !== 'number' || !Number.isInteger(value)) throw new Error(`${field}須為整數。`);
+    if (!allowed() || needsRead) throw new Error('請重新讀取據點表。');
+    const current = city(idx); if (!current || !summary || !detail) throw new Error('請先選擇遊戲與章節。');
+    const patch = {};
+    for (const field of ['troops','prod']) {
+      const text = fields.get(idx)[field], value = text.trim() === '' ? NaN : Number(text), cap = field === 'troops' ? current.troopsCap : current.maxProd;
+      if (!Number.isInteger(value)) throw new Error(`${field}須為整數。`);
       if (value < 0) throw new Error(`${field}不可為負。`);
       if (!Number.isSafeInteger(cap)) throw new Error('上限未知，拒絕寫入。');
       if (value > cap) throw new Error(`${field}超過上限 ${cap}，已攔截未發送。`);
       if (value !== current[field]) patch[field] = value;
     }
-    if (!Object.keys(patch).length) { message('與目前值相同，未發送。'); return; }
-    let result;
-    try {
-      result = await api('/api/games/' + encodeURIComponent(summary.gameId) + '/draft/save',
-        { metadata: detail.metadata, resourceEdits: [], chapterEdits: [{ op: 'city', chapterId, cityIdx: idx, values: patch }] },
-        { key: crypto.randomUUID(), revision: summary.draftRevision });
-    } catch (error) {
-      message(error instanceof Error ? error.message : String(error));
-      return;
-    }
-    const stored = games.find((game) => game.gameId === summary.gameId);
-    if (stored) stored.draftRevision = result.draftRevision;
-    await inspect();
-    message(`已保存城 #${idx}，草稿修訂 ${result.draftRevision}。`);
+    if (!Object.keys(patch).length) { message = '與目前值相同，未發送。'; return; }
+    const target = {...summary}, valid = ticket(), preserved = new Map(chapter().cities.filter(c => c.idx !== idx && dirtyRow(c)).map(c => [c.idx,{...fields.get(c.idx)}]));
+    const result = await api('/api/games/' + encodeURIComponent(target.gameId) + '/draft/save',
+      {metadata:detail.metadata,resourceEdits:[],chapterEdits:[{op:'city',chapterId,cityIdx:idx,values:patch}]},
+      {key:crypto.randomUUID(),revision:target.draftRevision});
+    if (!valid()) return;
+    if (!revision(result?.draftRevision)) throw new Error('保存回應未確認；保留原輸入與修訂。');
+    const stored = games.find(g => g.gameId === target.gameId); if (stored) stored.draftRevision = result.draftRevision;
+    needsRead = true;
+    if (await inspect(preserved)) message = `已保存城 #${idx}，草稿修訂 ${result.draftRevision}。`;
   }
-  async function refresh() {
-    if (!allowed()) throw new Error('請先登入。');
-    const result = await api('/api/games');
-    if (!Array.isArray(result.games)) throw new Error('遊戲清單回應無效。');
-    games = result.games; selected = games[0]?.gameId ?? null; detail = null; summary = null; chapterId = null; render();
-    if (selected) await inspect();
-  }
-  async function inspect() {
-    const gameId = q('stronghold-games').value;
-    summary = games.find((game) => game.gameId === gameId);
-    if (!summary) throw new Error('請先選擇遊戲。');
-    selected = gameId;
-    detail = await api('/api/games/' + encodeURIComponent(gameId) + '/draft?revision=' + encodeURIComponent(summary.draftRevision));
-    const chapters = detail?.chapters ?? [];
-    if (!chapters.some((c) => c.chapterId === chapterId)) chapterId = chapters[0]?.chapterId ?? null;
-    render();
-    message('據點數值僅 troops／prod 可寫且受上限門；基礎 192 鎖定不開放增刪。');
-  }
-  q('stronghold-refresh').onclick = () => work(refresh);
-  q('stronghold-inspect').onclick = () => work(inspect);
-  q('stronghold-chapters').onchange = () => { chapterId = q('stronghold-chapters').value; render(); };
-  return Object.freeze({ render, setIdentity(value) { identity = value; if (!allowed()) { games = []; selected = null; detail = null; summary = null; chapterId = null; } render(); }, canLeave() { return true; } });
+  function action(callback) { return work(async () => { const actor = identity, serial = ++actionGeneration; try { await callback(); } catch (error) { if (identity === actor && allowed() && serial === actionGeneration) message = error instanceof Error ? error.message : String(error); throw error; } finally { render(); } }); }
+  const actions = Object.freeze({
+    refresh: () => action(refresh), inspect: () => action(async () => { if (canLeave()) await inspect(); }), save: idx => action(() => saveCity(idx)),
+    selectGame(value) { if (!allowed() || isBusy() || value === selected) return; if (!canLeave()) { render(); return; } if (!games.some(g => g.gameId === value)) return; generation++; selected = value; detail = null; summary = null; chapterId = null; fields = new Map(); needsRead = false; message = ''; render(); },
+    selectChapter(value) { if (!allowed() || isBusy() || value === chapterId) return; if (!canLeave()) { render(); return; } if (!detail?.chapters.some(c => c.chapterId === value)) return; chapterId = value; resetFields(); render(); },
+    edit(idx, field, value) { if (!allowed() || isBusy() || needsRead || !fields.has(idx) || !['troops','prod'].includes(field) || typeof value !== 'string') return; fields.get(idx)[field] = value; render(); },
+    blockers: idx => action(async () => { if (!allowed()) return; const c = city(idx); if (!c) return; const r = refsFor(idx), list = [];
+      if (!r) list.push('查無引用資料，先讀取管理清單。');
+      else { if (r.placed) list.push('已放入地圖，須先從地圖移除'); for (const road of r.roads ?? []) list.push(`道路引用：${road}`); for (const ch of r.chapters ?? []) list.push(`章節引用：${ch}`); list.push('基礎據點鎖定 192 座，不開放增刪'); }
+      message = `「${c.name}」不可刪除：${list.join('；')}。`;
+    }),
+  });
+  render(); return Object.freeze({render, actions, canLeave, setIdentity(value) { if (identity !== value) { generation++; actionGeneration++; identity = value; clear(); } render(); }});
 }

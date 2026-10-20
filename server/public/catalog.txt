@@ -8,28 +8,32 @@ function definition(value) { if (!exact(value, ['registryId', 'definitionDigest'
 function registered(value, def) { if (!exact(value, ['registryId', 'definitionDigest', 'rootDigest', 'rootByteLength', 'rowRevision', 'registeredAt']) || value.registryId !== def.registryId || value.definitionDigest !== def.definitionDigest || !positive(value.rowRevision) || typeof value.registeredAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value.registeredAt)) throw new Error('登記事實描述無效。'); root({ sha256: value.rootDigest, byteLength: value.rootByteLength }); return Object.freeze({ ...value }); }
 function snapshot(value) { if (!exact(value, ['definition', 'mode', 'unresolvedReferences', 'staged', 'registered']) || value.mode !== MODE || value.unresolvedReferences !== 20) throw new Error('固定庫狀態無效；不是運行資格。'); const def = definition(value.definition); let staged = null; if (value.staged !== null) { if (!exact(value.staged, ['registryId', 'root']) || value.staged.registryId !== REGISTRY) throw new Error('運維裝配關聯無效。'); staged = root(value.staged.root); } const fact = value.registered === null ? null : registered(value.registered, def); return Object.freeze({ definition: def, staged, registered: fact }); }
 function association(value) { if (!exact(value, ['key', 'userVersion', 'registryId', 'definitionDigest', 'root', 'state']) || typeof value.key !== 'string' || !/^[a-zA-Z0-9_-]{16,128}$/.test(value.key) || !Number.isSafeInteger(value.userVersion) || value.userVersion < 1 || value.registryId !== REGISTRY || !sha(value.definitionDigest) || !['unknown', 'confirmed'].includes(value.state)) throw new Error('原操作關聯損壞；不能新起鍵或重造請求。'); return { key: value.key, userVersion: value.userVersion, registryId: value.registryId, definitionDigest: value.definitionDigest, root: root(value.root), state: value.state }; }
-export function installLibraryRegistration({ api, authority, work, isBusy }) {
-  const q = id => document.querySelector('#' + id);
+export function installLibraryRegistration({ api, authority, work, isBusy, publish = () => {}, storage = globalThis.sessionStorage, confirm = text => globalThis.confirm(text) }) {
   let actor = null, generation = 0, view = null, op = null, broken = false, queried = false, message = '尚未明確查看固定素材庫；裝配不是登記或運行許可。';
   const permitted = () => actor && authority() === actor && actor.user.role === 'admin' && !actor.user.mustChangePassword;
   const storeKey = () => 'editor-library-registration:' + actor.user.id;
-  function restore() { op = null; broken = false; if (!permitted()) return; try { const text = sessionStorage.getItem(storeKey()); if (text !== null) { if (text.length > 2048) throw new Error('操作關聯過大。'); let value; try { value = JSON.parse(text); } catch { throw new Error('操作關聯JSON無效。'); } op = association(value); } } catch { broken = true; message = '原關聯損壞或儲存不可讀；只可明確放棄本機關聯，不自動另鍵。'; } }
-  function persist(value) { try { sessionStorage.setItem(storeKey(), JSON.stringify(value)); } catch { broken = true; throw new Error('無法保留原鍵；本次未提交，請明確處理本機關聯。'); } }
+  function restore() { op = null; broken = false; if (!permitted()) return; try { const text = storage.getItem(storeKey()); if (text !== null) { if (text.length > 2048) throw new Error('操作關聯過大。'); let value; try { value = JSON.parse(text); } catch { throw new Error('操作關聯JSON無效。'); } op = association(value); } } catch { broken = true; message = '原關聯損壞或儲存不可讀；只可明確放棄本機關聯，不自動另鍵。'; } }
+  function persist(value) { try { storage.setItem(storeKey(), JSON.stringify(value)); } catch { broken = true; throw new Error('無法保留原鍵；本次未提交，請明確處理本機關聯。'); } }
   const ticket = () => ({ actor, generation });
   const valid = item => permitted() && item.actor === actor && item.generation === generation;
   const bound = () => op && view?.staged && op.userVersion === actor.user.version && op.registryId === view.definition.registryId && op.definitionDigest === view.definition.definitionDigest && op.root.sha256 === view.staged.sha256 && op.root.byteLength === view.staged.byteLength;
   function render() {
-    q('catalog-editor').hidden = !permitted();
-    q('catalog-state').textContent = view ? view.definition.registryId + '／400角色／20未閉合引用 — ' + (view.registered ? '服務已登記（僅庫事實，非原鍵成功或運行許可）' : view.staged ? '已裝配，尚未登記' : '未裝配；操作員須停止服務後以 --stage-library 明確裝配') : '尚無本次會話明確查得的固定庫狀態。';
-    q('catalog-operation').textContent = broken ? '原操作關聯不可用；沒有權限或成功保證。' : op ? '原鍵 ' + op.key + ' — ' + (op.state === 'confirmed' ? '已收到並核對該次登記回應；非運行准入' : '回應未確認；先查看事實，再明確同鍵重放') + (op.userVersion !== actor?.user.version ? '／帳戶版本已變，禁止重放；這不是SQL取消' : '') : '尚無本機原操作關聯。';
-    q('catalog-message').textContent = message;
-    const enabled = permitted() && !isBusy();
-    q('catalog-read').disabled = !enabled;
-    q('catalog-install').disabled = !enabled || broken || Boolean(op) || !queried || !view?.staged;
-    q('catalog-replay').disabled = !enabled || broken || !queried || !bound();
-    q('catalog-forget').disabled = !enabled || (!op && !broken);
+    const visible = permitted(), enabled = visible && !isBusy();
+    let state = '尚無本次會話明確查得的固定庫狀態。', operation = '尚無本機原操作關聯。';
+    if (view) {
+      let fact = '未裝配；操作員須停止服務後以 --stage-library 明確裝配';
+      if (view.staged) fact = '已裝配，尚未登記';
+      if (view.registered) fact = '服務已登記（僅庫事實，非原鍵成功或運行許可）';
+      state = view.definition.registryId + '／400角色／20未閉合引用 — ' + fact;
+    }
+    if (op) operation = '原鍵 ' + op.key + ' — ' + (op.state === 'confirmed' ? '已收到並核對該次登記回應；非運行准入' : '回應未確認；先查看事實，再明確同鍵重放') + (op.userVersion !== actor?.user.version ? '／帳戶版本已變，禁止重放；這不是SQL取消' : '');
+    if (broken) operation = '原操作關聯不可用；沒有權限或成功保證。';
+    publish({state:visible ? state : '',operation:visible ? operation : '',message:visible ? message : '',
+      readDisabled:!enabled,installDisabled:!enabled || broken || Boolean(op) || !queried || !view?.staged,
+      replayDisabled:!enabled || broken || !queried || !bound(),forgetDisabled:!enabled || (!op && !broken)});
   }
   async function readState() {
+    if (!permitted()) throw new Error('請以管理員登入並完成改密。');
     const t = ticket(); view = null; queried = false; render();
     try { const result = snapshot(await api('/api/admin/library')); if (!valid(t)) return; view = result; queried = true; message = op && !bound() ? '服務描述或帳戶版本與原關聯不同，不能重放；請保留原鍵並明確處理。' : '已明確查看庫事實；registered不證明原鍵曾執行，亦不是Q69／Trial／發布。'; }
     catch (error) { if (valid(t)) message = '查看未確認：' + error.message; throw error; } finally { render(); }
@@ -49,12 +53,9 @@ export function installLibraryRegistration({ api, authority, work, isBusy }) {
       op.state = 'confirmed'; persist(op); view = Object.freeze({ ...view, registered: fact }); message = '已收到並核對原鍵登記回應；400角色的可用庫事實，不是完整運行／Q69／Trial／發布。';
     } catch (error) { if (valid(t) && op === captured) message = '原鍵回應未確認；保留關聯，請先明確查看事實：' + error.message; throw error; } finally { render(); }
   }
-  q('catalog-read').onclick = () => work(readState);
-  q('catalog-install').onclick = () => work(() => submit(false));
-  q('catalog-replay').onclick = () => work(() => submit(true));
-  q('catalog-forget').onclick = () => work(async () => { if (!permitted() || (!op && !broken)) return; if (!confirm('只放棄本機原鍵關聯？服務操作不會取消、回滾或刪除；未知回應不能因此視為失敗，新請求必須重新明確建立。')) return; try { sessionStorage.removeItem(storeKey()); } catch { throw new Error('無法移除本機關聯；不另起鍵。'); } op = null; broken = false; queried = false; message = '僅已放棄本機關聯；服務登記與操作保留，須重新明確查看。'; render(); });
-  window.addEventListener('beforeunload', event => { if (permitted() && (broken || op?.state === 'unknown')) { event.preventDefault(); event.returnValue = ''; } });
-  window.addEventListener('pagehide', () => { generation++; view = null; queried = false; message = '頁面離開已清除本次狀態；保留原鍵關聯但不自動請求或重放。'; render(); });
+  const actions = Object.freeze({read:() => work(readState), install:() => work(() => submit(false)), replay:() => work(() => submit(true)),
+    forget:() => work(async () => { if (!permitted() || (!op && !broken)) return; if (!confirm('只放棄本機原鍵關聯？服務操作不會取消、回滾或刪除；未知回應不能因此視為失敗，新請求必須重新明確建立。')) return; try { storage.removeItem(storeKey()); } catch { throw new Error('無法移除本機關聯；不另起鍵。'); } op = null; broken = false; queried = false; message = '僅已放棄本機關聯；服務登記與操作保留，須重新明確查看。'; render(); })});
+  function pagehide() { generation++; view = null; queried = false; message = '頁面離開已清除本次狀態；保留原鍵關聯但不自動請求或重放。'; render(); }
   render();
-  return Object.freeze({ render, setIdentity(next) { if (actor === next) return render(); generation++; actor = next; view = null; queried = false; message = '會話已更換；須明確查看，原關聯不是權限。'; restore(); render(); }, canLeave(forUnload = false) { return !permitted() || (!broken && op?.state !== 'unknown') || (!forUnload && confirm('固定庫原鍵回應未確認。離開只保留關聯，不自動提交或取消服務操作；仍要離開？')); } });
+  return Object.freeze({ render, actions, pagehide, setIdentity(next) { if (actor === next) return render(); generation++; actor = next; view = null; queried = false; message = '會話已更換；須明確查看，原關聯不是權限。'; restore(); render(); }, canLeave(forUnload = false) { return !permitted() || (!broken && op?.state !== 'unknown') || (!forUnload && confirm('固定庫原鍵回應未確認。離開只保留關聯，不自動提交或取消服務操作；仍要離開？')); } });
 }

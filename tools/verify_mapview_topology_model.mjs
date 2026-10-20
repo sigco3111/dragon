@@ -1,97 +1,45 @@
-// B-3b mapview overlay model: fake DOM + recording canvas for
-// server/public/mapview.txt topology overlay (NOT a browser certificate).
-// Usage: node tools/verify_mapview_topology_model.mjs
+// UI projection + recording native canvas; not an original-rule certificate.
+import assert from 'node:assert/strict';
+import test from 'node:test';
 import { readFileSync } from 'node:fs';
-
-let passed = 0;
-const check = (name, cond, extra = '') => {
-  if (!cond) { console.error(`FAIL ${name} ${extra}`); process.exitCode = 1; }
-  else { passed++; console.log(`ok ${name}`); }
-};
-
-class Element {
-  children = []; textContent = ''; hidden = false; disabled = false;
-  onclick = null; value = ''; width = 0; height = 0;
-  append(...v) { this.children.push(...v); }
-  replaceChildren(...v) { this.children = [...v]; }
+const {installMapViewer} = await import('data:text/javascript;base64,'+Buffer.from(readFileSync('server/public/mapview.txt')).toString('base64'));
+const GAME='eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee';
+const game={gameId:GAME,metadata:{name:'<img>',introduction:''},draftRevision:'1'};
+const road={id:'road-0',fromCityId:'city-000',toCityId:'city-002',travelKind:'land',geometry:[{x:1,y:1},{x:2,y:1}]};
+const detail={gameId:GAME,draftRevision:'1',map:{placements:2,roads:[road]},strongholds:[{cityId:'city-000',x:5,y:5}],privateSource:'NOT_FOR_VUE'};
+const topology={gameId:GAME,moves:[{cityId:'city-000',x:9,y:9}],rebuilds:[],blocked:true};
+function setup() {
+  let actor={user:{id:'u',role:'author',mustChangePassword:false}},model,busy=false,hook=null;
+  const log=[],calls=[],rows=[structuredClone(game)],body=structuredClone(detail),topo=structuredClone(topology),context={};
+  for(const name of ['clearRect','fillRect','beginPath','moveTo','lineTo','stroke'])context[name]=(...args)=>log.push([name,...args]);
+  for(const name of ['fillStyle','strokeStyle','lineWidth'])Object.defineProperty(context,name,{set:value=>log.push([name,value])});
+  const canvas={width:384,height:256,getContext:()=>context};
+  const ui=installMapViewer({authority:()=>actor,isBusy:()=>busy,getCanvas:()=>canvas,publish:value=>{model=value;},work:async fn=>{if(busy)return;busy=true;try{return await fn();}finally{busy=false;ui.render();}},api:async(path,value)=>{
+    assert.equal(value,undefined);calls.push(path);if(hook){const result=await hook(path);if(result!==undefined)return result;}
+    if(path==='/api/games')return {games:rows};if(path.includes('/draft?'))return structuredClone(body);if(path.endsWith('/topology'))return structuredClone(topo);throw new Error(path);
+  }});ui.setIdentity(actor);
+  return {ui,a:ui.actions,log,calls,rows,body,topo,get model(){return model;},set hook(value){hook=value;},set identity(value){actor=value;ui.setIdentity(value);}};
 }
-const makeCtx = log => ({
-  log,
-  clearRect(...a) { log.push(['clearRect']); },
-  fillRect(...a) { log.push(['fillRect', ...a]); },
-  beginPath() { log.push(['beginPath']); },
-  moveTo(...a) { log.push(['moveTo', ...a]); },
-  lineTo(...a) { log.push(['lineTo', ...a]); },
-  stroke() { log.push(['stroke']); },
-  set fillStyle(v) { log.push(['fillStyle', v]); },
-  set strokeStyle(v) { log.push(['strokeStyle', v]); },
-  set lineWidth(v) {},
+test('explicit read only, projected text no raw geometry/source, native colors and exact coordinates unchanged',async()=>{
+  const s=setup();assert.equal(s.calls.length,0);await s.a.refresh();assert.deepEqual(s.calls,['/api/games','/api/games/'+GAME+'/draft?revision=1','/api/games/'+GAME+'/topology']);assert.ok(s.model.lines.some(x=>x.includes('道路 1')));assert.ok(s.model.lines.some(x=>x.includes('拓撲意向 1')&&x.includes('斷路 1')&&x.includes('存盘发布阻挡')));assert.ok(s.log.some(x=>x[0]==='fillStyle'&&x[1]==='#d08000'));assert.ok(s.log.some(x=>x[0]==='strokeStyle'&&x[1]==='#d00000'));assert.ok(s.log.some(x=>JSON.stringify(x)===JSON.stringify(['fillRect',7,7,5,5])));assert.ok(s.log.some(x=>JSON.stringify(x)===JSON.stringify(['lineTo',2,1])));assert.ok(!JSON.stringify(s.model).includes('NOT_FOR_VUE'));s.model.games[0].label='bad';s.ui.render();assert.equal(s.model.games[0].label,'<img>／草稿 1');assert.deepEqual(s.body,detail);
 });
-const GAME = 'eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee';
-const apiGame = { gameId: GAME, metadata: { name: 'M3UI', introduction: '' }, draftRevision: '1' };
-const road = { id: 'road-0', fromCityId: 'city-000', toCityId: 'city-002', travelKind: 'land', geometry: [{ x: 1, y: 1 }, { x: 2, y: 1 }] };
-const apiDetail = {
-  gameId: GAME, draftRevision: '1', map: { placements: 2, roads: [road] },
-  strongholds: [{ cityId: 'city-000', runtimeSlot: 0, x: 5, y: 5, placed: true, roads: ['road-0'], chapters: [] }],
-  chapters: [],
-};
-const apiTopo = { gameId: GAME, moves: [{ cityId: 'city-000', x: 9, y: 9, updatedAt: 't' }], rebuilds: [], blocked: true };
-function setup({ topo = apiTopo, topoFail = false } = {}) {
-  const nodes = {};
-  for (const id of ['mapview-editor', 'mapview-games', 'mapview-inspect', 'mapview-refresh', 'mapview-canvas', 'mapview-roads', 'mapview-message']) {
-    nodes[id] = new Element();
+test('optional topology failure is explicitly unknown, original base drawing remains',async()=>{
+  const s=setup();s.hook=async path=>{if(path.endsWith('/topology'))throw new Error('503');};await s.a.refresh();assert.ok(s.model.lines.some(x=>x.includes('未確認')));assert.ok(!s.log.some(x=>x[0]==='fillStyle'&&x[1]==='#d08000'));assert.ok(s.log.some(x=>JSON.stringify(x)===JSON.stringify(['fillRect',4,4,3,3])));
+});
+test('all geometry drawn while description stays bounded to first200',async()=>{
+  const s=setup();s.body.map.roads=Array.from({length:202},(_,i)=>({...road,id:'road-'+i}));await s.a.refresh();assert.equal(s.model.lines.length,203);assert.equal(s.model.lines.at(-1),'…另 2 條未列出');assert.ok(s.log.filter(x=>x[0]==='lineTo'&&x[1]===2&&x[2]===1).length>=202);
+});
+test('selection clears pixels/overlay and does not read automatically; explicit read keeps original selected revision',async()=>{
+  const s=setup();s.rows.push({...game,gameId:'second',draftRevision:'7'});await s.a.refresh();const n=s.calls.length;s.log.length=0;s.a.select('second');assert.equal(s.calls.length,n);assert.deepEqual(s.model.lines,[]);assert.deepEqual(s.log,[['clearRect',0,0,384,256]]);s.body.gameId='second';s.body.draftRevision='7';s.topo.gameId='second';await s.a.inspect();assert.ok(s.calls.some(x=>x.endsWith('second/draft?revision=7')));
+});
+test('identity change while draft or overlay awaits cannot resurrect pixels or old status',async()=>{
+  for(const suffix of ['/draft?revision=1','/topology']) {
+    const s=setup();await s.a.refresh();let resolve,reached;const waiting=new Promise(done=>{reached=done;});s.hook=path=>{if(path.endsWith(suffix)){reached();return new Promise(done=>{resolve=done;});}};const pending=s.a.inspect();await waiting;s.identity={user:{id:'other',mustChangePassword:false}};s.log.length=0;resolve(suffix.includes('draft')?structuredClone(s.body):structuredClone(s.topo));await pending;assert.deepEqual(s.model.games,[]);assert.deepEqual(s.model.lines,[]);assert.ok(s.log.every(x=>x[0]==='clearRect'));
   }
-  nodes['mapview-canvas'].width = 384; nodes['mapview-canvas'].height = 256;
-  const log = [];
-  nodes['mapview-canvas'].getContext = () => makeCtx(log);
-  const calls = [];
-  globalThis.document = {
-    querySelector: q => nodes[q.slice(1)] ?? null,
-    createElement: () => new Element(),
-  };
-  const api = async path => {
-    calls.push(path);
-    if (path === '/api/games') return { games: [apiGame] };
-    if (path.includes('/draft?revision=')) return structuredClone(apiDetail);
-    if (path.endsWith('/topology')) {
-      if (topoFail) { const e = new Error('down'); e.status = 503; throw e; }
-      return structuredClone(topo);
-    }
-    throw new Error('unexpected ' + path);
-  };
-  return { nodes, calls, log, api };
-}
-const source = readFileSync('server/public/mapview.txt', 'utf8');
-const module = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-const admin = { user: { id: 'u', role: 'admin', mustChangePassword: false } };
-
-{
-  const { nodes, api } = setup();
-  const ui = module.installMapViewer({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(null);
-  check('hidden pre-login', nodes['mapview-editor'].hidden === true);
-  ui.setIdentity(admin);
-  await nodes['mapview-refresh'].onclick();
-  check('summary line', nodes['mapview-roads'].children.some(c => c.textContent.includes('道路 1')));
-}
-{
-  const { nodes, api, log } = setup();
-  const ui = module.installMapViewer({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['mapview-refresh'].onclick();
-  check('amber marker', log.some(e => e[0] === 'fillStyle' && e[1] === '#d08000') && log.some(e => e[0] === 'fillRect' && e[3] === 5 && e[4] === 5));
-  const strokes = log.filter(e => e[0] === 'strokeStyle').map(e => e[1]);
-  check('broken red overlay', strokes.includes('#d00000'));
-  check('status counts', nodes['mapview-roads'].children.some(c => c.textContent.includes('拓撲意向 1') && c.textContent.includes('斷路 1') && c.textContent.includes('存盘发布阻挡')));
-  check('topology fetched', true);
-}
-{
-  const { nodes, api, log } = setup({ topoFail: true });
-  const ui = module.installMapViewer({ api, authority: () => admin, work: fn => fn(), isBusy: () => false });
-  ui.setIdentity(admin);
-  await nodes['mapview-refresh'].onclick();
-  check('degrades without topo', !log.some(e => e[0] === 'fillStyle' && e[1] === '#d08000') &&
-    nodes['mapview-roads'].children.some(c => c.textContent.includes('道路 1')));
-}
-
-console.log(`passed ${passed} checks`);
+});
+test('wrong draft binding rejects atomically; malformed or foreign overlay never grants an unblocked label',async()=>{
+  const s=setup();await s.a.refresh();const prior=[...s.model.lines];s.hook=async path=>path.includes('/draft?')?{...s.body,gameId:'foreign'}:undefined;await assert.rejects(s.a.inspect(),/修訂無效/);assert.deepEqual(s.model.lines,prior);s.hook=async path=>path.endsWith('/topology')?{...s.topo,gameId:'foreign',blocked:false}:undefined;await s.a.inspect();assert.ok(s.model.lines.some(x=>x.includes('未確認')));assert.ok(!s.model.lines.some(x=>x.endsWith('無阻挡')));
+});
+test('anonymous/forced accounts cannot read, logout clears canvas and private facts',async()=>{
+  const s=setup();await s.a.refresh();s.identity=null;s.log.length=0;const n=s.calls.length;await assert.rejects(s.a.refresh());assert.equal(s.calls.length,n);assert.deepEqual(s.model.lines,[]);assert.ok(s.log.every(x=>x[0]==='clearRect'));s.identity={user:{id:'u',mustChangePassword:true}};await assert.rejects(s.a.inspect());assert.equal(s.calls.length,n);
+});

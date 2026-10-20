@@ -51,6 +51,9 @@ import generalsClient from './public/general.txt';
 import mapviewClient from './public/mapview.txt';
 import stageAssetsClient from './public/stageassets.txt';
 import style from './public/style.css';
+import shellUI from './public/shell-ui.txt';
+import shellStyle from './public/shell-ui.css';
+import shellLicenses from './public/shell-ui-licenses.txt';
 import trialwebBundle from './public/trialweb.txt';
 import trialappShell from './public/trialapp.txt';
 import playappShell from './public/playapp.txt';
@@ -84,6 +87,9 @@ const TRIAL_WAIT_PAGE = '<!doctype html><html lang="zh-Hant"><meta charset="utf-
 const TRIAL_WEB_TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.txt': 'text/plain', '.flac': 'audio/flac', '.wav': 'audio/wav' };
 const trialWebType = path => TRIAL_WEB_TYPES[path.slice(path.lastIndexOf('.'))] ?? 'application/octet-stream';
 function staticAsset(pathname) {
+  if (pathname === '/shell-ui.js') { return { content: shellUI, type: 'text/javascript' }; }
+  if (pathname === '/shell-ui.css') { return { content: shellStyle, type: 'text/css' }; }
+  if (pathname === '/shell-ui-licenses.txt') { return { content: shellLicenses, type: 'text/plain' }; }
   if (pathname === '/client.js') { return { content: client, type: 'text/javascript' }; }
   if (pathname === '/draft.js') { return { content: draftClient, type: 'text/javascript' }; }
   if (pathname === '/stage.js') { return { content: stageClient, type: 'text/javascript' }; }
@@ -1112,7 +1118,7 @@ export function createEditorGateway({ frozenPublication = false } = {}) {
       // Only this shell allows its generated base; Trial/management retain base-uri 'none'.
       return new Response(playAppPage, { headers: { ...trialHeaders, 'Content-Security-Policy': trialHeaders['Content-Security-Policy'].replace("base-uri 'none'", "base-uri 'self'"), 'Content-Type': 'text/html; charset=utf-8' } });
     }
-    if (request.method === 'GET' && ['/', '/client.js', '/draft.js', '/stage.js', '/library.js', '/catalog.js', '/management.js', '/publish.js', '/stronghold.js', '/general.js', '/mapview.js', '/stage-assets.js', '/style.css'].includes(url.pathname)) {
+    if (request.method === 'GET' && ['/', '/client.js', '/draft.js', '/stage.js', '/library.js', '/catalog.js', '/management.js', '/publish.js', '/stronghold.js', '/general.js', '/mapview.js', '/stage-assets.js', '/style.css', '/shell-ui.js', '/shell-ui.css', '/shell-ui-licenses.txt'].includes(url.pathname)) {
       const asset = staticAsset(url.pathname);
       return new Response(asset.content, { headers: { ...headers, 'Content-Type': `${asset.type}; charset=utf-8` } });
     }

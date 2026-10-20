@@ -6,6 +6,10 @@
 
 项目用于学习、技术研究与非商业怀旧交流，但这不是在 MIT 中增加非商业限制：MIT 代码可按其条款使用，包括商业使用；第三方资源另行判断。
 
+## 编辑器展示层依赖
+
+用户批准的独立后台展示层使用Vue与Element Plus（MIT）；固定版本／构建锁文件位于`editor-ui/`，不进入玩家／Trial引擎。随束附带实际参与输出的Vue运行时、Element Plus及传递依赖的完整[第三方许可文本](server/public/shell-ui-licenses.txt)，由构建器按实际模块生成，编辑器同源`/shell-ui-licenses.txt`也提供该文本。开发期Vite／Vue插件及其依赖许可保留于安装包；版本与升级按锁文件审核，非项目原创代码不能只适用根MIT声明。
+
 ## 服务端第三方代码
 
 - `server/vendor/jpeg-js/decoder.js` 固定取自 jpeg-js v0.4.4、commit `9ccd35fb5f55a6c4f1902ac5b0f270f675750c27` 的 `lib/decoder.js`。原件 SHA256 `a3f175fd6f62d142aad94d3bd90f3a30be4e076baf9b6a6fa31c8e84d9d4aa9f`；保留 Copyright 2011 notmasteryet 及 Apache-2.0 文件头。
