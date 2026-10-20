@@ -4,7 +4,7 @@
 
 用户提出后台登录／个人资料／改密／菜单不应上下堆叠，允许采用轻量框架，游戏有关部分保留原技术；随后明确批准按该规划开始实施。选用 **Vue 3＋Element Plus**，这是Web展示层决定，不是原版机制变更。
 
-首批完成后台外壳与账户页；第二批将创作者账户管理迁为Vue表格／表单；用户随后明确要求使用`/goal`持续推进，第三批迁移游戏／章节草稿及只读当前草稿栏。完整范围与逐项状态见[迁移验收清单](editor-ui-migration-checklist.md)。现有后台页面已逐页组件化，**共同审计及获追加授权的阶段结构GET修复均已完成，但不是完整编辑器产品已完成**。既有地图／据点／武将／草稿／发布／删除能力及准入限制不变，没有操作生产环境、提交或部署。
+首批完成后台外壳与账户页；第二批将创作者账户管理迁为Vue表格／表单；用户随后明确要求使用`/goal`持续推进，第三批迁移游戏／章节草稿及只读当前草稿栏。完整范围与逐项状态见[迁移验收清单](editor-ui-migration-checklist.md)。现有后台页面已逐页组件化，**共同审计及获追加授权的阶段结构GET修复均已完成，但不是完整编辑器产品已完成**。既有地图／据点／武将／草稿／发布／删除能力及准入限制不变。迁移实施期间没有生产操作；用户后继另行授权的提交、推送与受限部署见[journal §33](checkpoint-journal.md#33-后台迁移提交推送与受限上线)。
 
 ## 文件与所有权
 
@@ -168,4 +168,4 @@ node tools/verify_vps_editor_server.mjs --frozen-publication
 
 草稿控制器另测原输入／原键、原修订、收据恢复、迟到响应、失效身份、章动作及Trial窗口回执。隔离浏览器增补四种章操作、文本转义、取消、脏选择恢复和失效会话的beforeunload；真实workerd／SQLite／R2浏览器验证实际保存后丢包、跨页CAS冲突、同键重试、无正文恢复、实际改密撤销及独立作者不可见。章节按钮夹具不冒充原版初始化机制或完整Trial引擎验收。
 
-实际结果、失败轮、LSP限制和未提交状态见[首批journal](checkpoint-journal.md#19-后台框架壳editor-ui-1)、[账户管理journal](checkpoint-journal.md#20-账户管理组件化editor-ui-2)、[草稿journal](checkpoint-journal.md#21-草稿与章节组件化editor-ui-3)、[阶段journal](checkpoint-journal.md#22-阶段任务与结构展示editor-ui-4)及[素材库journal](checkpoint-journal.md#23-只读素材库组件化editor-ui-5)。最终管理／删除结果见[journal UI-12](checkpoint-journal.md#30-上架限制与删除追踪组件化editor-ui-12)。共同收尾、逐项证据及唯一功能回归阻塞见[最终审计](editor-ui-final-audit.md)。不能借壳迁移新增游戏规则或放宽准入；原阶段结构功能阻塞已按追加授权闭合；完成范围不包含未授权产品功能或部署。
+实际结果、失败轮、LSP限制和未提交状态见[首批journal](checkpoint-journal.md#19-后台框架壳editor-ui-1)、[账户管理journal](checkpoint-journal.md#20-账户管理组件化editor-ui-2)、[草稿journal](checkpoint-journal.md#21-草稿与章节组件化editor-ui-3)、[阶段journal](checkpoint-journal.md#22-阶段任务与结构展示editor-ui-4)及[素材库journal](checkpoint-journal.md#23-只读素材库组件化editor-ui-5)。最终管理／删除结果见[journal UI-12](checkpoint-journal.md#30-上架限制与删除追踪组件化editor-ui-12)。共同收尾、逐项证据及唯一功能回归阻塞见[最终审计](editor-ui-final-audit.md)。不能借壳迁移新增游戏规则或放宽准入；原阶段结构功能阻塞已按追加授权闭合；迁移完成范围不包含未授权产品功能；后续部署按单独授权执行，不解除生产维护门。

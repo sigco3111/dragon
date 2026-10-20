@@ -306,3 +306,13 @@
 - **真实闭合**：`verify_editor_backend_stage_ui.mjs 64`使用实际Node／SQLite／FileBucket／自有HTTPS及全新Chromium，默认完整combined链17组通过，`structuralGetChecked:true`、errors/outside为空。六用途ready→结构GET200，44描述／398共享引用／26缺项及内外四项false；独立重组实际任务回执／报告／库目录与GET相同，旧76cdf28、未知身份、错误修订和runtime声明明确拒绝。后续据点、地图、武将及改密撤销也通过。收据`.dragon-analysis/editor-phase/backend-stage-ui-session-r1/ui-r64.json`，实际结构输入`stage-plan-input-r64.json`。
 - **其它复核**：`verify_library_refresh.mjs`普通／workerd各8组通过，保留旧8993b360注册／432对象与永久键，不允许旧根移植、跨await撤销、损坏字节或重启导入旧capture；该历史库样本与本次76cdf28拒绝分别测试。普通／冻结HTTP各12；89控制器组、管理48／删除54、静态65、最终壳浏览器46通过（`run-vY4Dis`、`ui14-controller.log`）。构建仍逐字节JS302453／CSS33707、8许可证包、audit0。
 - **诊断／交付边界**：主动LSP6路径3 clean／3未确认，最终session mode=all在71文件范围仍列出已核为过期的publish测试第32行缓存；不称全部clean。Jev595字节审核摘要preview后HTTP451地区限制，未绕过。语法、diff和文档链接检查通过。全部为自有临时数据，无真实SAVE.DAT、用户正式IndexedDB或生产操作。依据[最终逐项审计](editor-ui-final-audit.md)，本地展示层迁移及获授权的缺口修复已闭合，可完成持续目标；完整编辑器产品、任意地图、全战役、物理清理和部署不在本目标完成声明内。未提交／推送／部署，原有其它改动保留。
+
+## 33. 后台迁移提交、推送与受限上线
+
+- **授权／提交**：用户另行明确“提交并推送部署”。本次73份相关文件提交`8fb4d6c`并推送`github/main`；没有推Gitea。包含迁移代码、独立构建锁定依赖、生成物、回归和接续文档；既有仅换行状态的其它文件未纳入。仓库外`E:/Dragon/AGENTS.md`仍为本地全局约定，不冒充Git提交内容。提交前再次构建逐字节一致、audit0、静态65及diff通过。
+- **Cloudflare**：GitHub上的`Workers Builds: dragon`对应提交检查为success；构建`f690fa2d-1125-4295-8e28-ecaebdf9b072`，生产程序Version ID `2e0a1157-1b32-4f62-85de-c9e10050c6c3`。这是既有Git自动链，不另开部署流水线；不冒充玩家全战役或正式内容发布验证。
+- **VPS最小覆盖**：严格核既定ED25519指纹，既有vps6 healthy。只覆盖本批19个server运行文件，不上传整个工作树、editor-ui依赖或改变web／Trial束。覆盖包SHA=`9f1ab3a2ee333b44b1f58c2aac2a07c7ed22a7ba57f474ec8ed1e83ab3fb0b7e`。首轮原始SHA守卫发现旧远端editorapp为CRLF而Git为LF，未写入；随后逐文件仅消除CRLF后与父提交比对一致，并保存原始SHA和原文件，才覆盖。新镜像断网、只读、uid1000及独立临时数据下冻结HTTP12组通过。
+- **备份／切换**：只临时维护编辑器域，正常停止本项目；同机一致备份`/root/dragon-editor-backups/publication-20261020T154918Z`的SHA及隔离SQLite恢复完整性通过。新镜像`dragon-editor-publication:ui-8fb4d6c`，ID=`sha256:05013a289e52236cecd7b7d5d05125cc03f135f3c6f82d6e9705252edbc25a83`。严格整包预检约5分钟后healthy，原Nginx配置精确恢复，SHA仍`e7a99b1939be24af153e77c64e2d3eec7e028ca758653c8ea1ef21c00749a80a`。运行镜像19文件逐SHA一致，uid1000／只读根／loopback8788、env0600／data0700、monitor timer active及oneshot成功；probe／panel／其它站点未重启。
+- **真实HTTPS冒烟**：全新隔离Chromium核16份公开资源字节与提交包一致、严格CSP、既有管理员正常登录、13菜单各自唯一活动页面且导航无API操作、改密页规则及正常退出。意外错误0；未提交新密码、创建游戏／Trial、保存或访问IndexedDB。匿名五项发布／管理／删除POST仍503 no-store，health200。首次资源探针将stageassets文件名误当路由而404，修为原`/stage-assets.js`后完整通过，没有改产品路由。
+- **收据／范围**：本地`.dragon-analysis/editor-ui-deploy/`保存覆盖清单、构建／切换／运行SHA和`smoke.json`；远端`publication/ui-8fb4d6c/`保留原源码及配置。这里只上线既有后台展示层及固定库合同修复，未解除生产发布／管理／删除门，未进行物理清理或生产内容发布，不宣称完整编辑器产品就绪。
+- **交付检查**：73份提交blob逐值核6项私密值无命中，临时规范化SSH密钥已删除、原密钥不改。三份收尾文档主动LSP clean；session全量仍仅列此前已人工核对的publish测试旧行缓存，不冒全仓clean。最终diff检查通过，部署收据单独提交，不把本地临时脚本、截图、备份或凭据纳入Git。
