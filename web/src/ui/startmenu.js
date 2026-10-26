@@ -161,9 +161,21 @@ export class StartMenu {
       .filter((_s, i) => !origIndices.includes(i));
     const sorted = [...orig, ...others];
     this._sortedScenarios = sorted;
+// 한글화(표시층 전용): 장 번호·부제·[原版] 태그만 한글로 바꾼다.
+// 내부 scenario.name(규칙·세이브 식별용)은 원본 그대로 유지.
+const CHAPTER_NO_KO = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 十三: 13, 十四: 14, 十五: 15, 十六: 16 };
+const CHAPTER_SUBTITLE_KO = { 黃巾之亂: "황건적의 난", 官宦爭權: "환관의 권력 다툼", 董卓亂政: "동탁의 난정", 曹操崛起: "조조의 굴기", 呂布歸天: "여포의 최후", 官渡之戰: "관도대전", 隱伏新野: "신야 은거", 赤壁之戰: "적벽대전", 伏龍鳳雛: "와룡과 봉추", 蜀地偏安: "촉의 편안", 三國鼎立: "삼국 정립", 劉禪即位: "유선 즉위", 六出祁山: "육출기산", 姜維繼志: "강유의 계지", 脣亡齒寒: "순망치한", 穿越時空: "시공 초월" };
+function koreanChapterTitle(rawName) {
+  return String(rawName ?? "")
+    .replace(/\[原版\]/g, "[원판]")
+    .replace(/(章[．.])　　/, "$1 ")
+    .replace(/第?(十六|十五|十四|十三|十二|十一|十|九|八|七|六|五|四|三|二|一)章/g, (m, num) => `제${CHAPTER_NO_KO[num]}장`)
+    .replace(/「([^」]+)」之卷/g, (m, sub) => `「${CHAPTER_SUBTITLE_KO[sub] ?? sub}」의 권`);
+}
+
     return sorted.map((s) => {
       // 仅在新游戏列表标注合集章节；内部 scenario.name 仍保留原始标题。
-      const name = s.name.replace(/(章[．.])　　/, "$1 ");
+      const name = koreanChapterTitle(s.name);
       return {
         name: origIndices.includes(s._origIdx) ? name : `[리메이크]${name}`,
         date: s.start,
