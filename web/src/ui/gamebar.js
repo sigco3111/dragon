@@ -4299,9 +4299,9 @@ export class GameBar {
   }
 
   /** 绘制黑底金框发言框 (左侧头像 64×64，右侧多行对白)
-   *  표시층 자동 줄바꿈(한글화): 상자 텍스트 폭(cw-86)을 넘는 데이터 행만
-   *  measureText 기준 그리디 랩으로 감싼다. 폭에 들어가는 행은 기존과
-   *  픽셀 동일하게 렌더링된다(데이터·문구·색상 토큰 불변).
+   *  표시층 자동 줄바꿈(한글화): 데이터 행을 하나의 흐름으로 잇고(토큰 색상·폰트 유지)
+   *  실제 상자 폭(cw-86)과 실제 폰트 기준으로 감싼다. 줄바꿈은 공백 경계를 우선하고,
+   *  문장부호가 행 머리에 고립되지 않게 한다. 데이터·문구 불변.
    *  랩 후 줄 수가 상자 높이를 넘으면 상자를 위로 키워(하단 앵커 고정)
    *  금 테두리 침범을 막는다. */
   _drawSpeechBox(ctx, px, py, w, h, img, lines) {
@@ -4313,13 +4313,14 @@ export class GameBar {
     const txOff = 8 + 64 + 14;
     const maxTextW = Math.max(40, cw0 - txOff);
 
-    // ── 행별 랩: 각 데이터 행의 폭을 재고, 넘는 행만 감싼다 (토큰 배열 지원) ──
     const measureTok = (text, isNum) => {
       ctx.font = isNum ? DIN : FONT;
       return ctx.measureText(text).width;
     };
+
+    // ── 모든 행을 문자 단위 스타일 스트림으로 연결 (토큰 배열 지원) ──
     const rawLines = lines == null ? [] : Array.isArray(lines) ? lines : [lines];
-    const renderLines = [];
+    const chars = [];
     for (const raw of rawLines) {
       const frags = [];
       if (Array.isArray(raw)) {
@@ -4336,45 +4337,102 @@ export class GameBar {
       } else {
         frags.push({ text: String(raw ?? ""), color: "#ffffff", isNum: false });
       }
-      const lineW = frags.reduce((s, f) => s + measureTok(f.text, f.isNum), 0);
-      if (lineW <= maxTextW) {
-        renderLines.push(raw); // 기존 렌더 경로와 동일
+      for (const f of frags) {
+        for (const ch of f.text)
+          chars.push({ ch, color: f.color, isNum: f.isNum });
+      }
+    }
+
+    // ── 그리디 랩: 공백 경계 우선, 문장부호 행머리 고립 방지 ──
+    const OPEN_PUNCT = new Set([",", ".", "!", "?", "…", ":", ";", "%", ")", "]", "」", "』", "”", "’", "、", "。", "'", "\""]);
+    const charW = (c) => measureTok(c.ch, c.isNum);
+    const runW = (arr) => {
+      // 스타일 구간별 measureText 합산 (커닝 오차 방지용 최종 확인에서 재확인)
+      let s = 0;
+      for (const c of arr) s += charW(c);
+      return s;
+    };
+    const wrapped = [];
+    let cur = [];
+    let curW = 0;
+    let lastSpaceEnd = -1; // cur 내 마지막 공백 직후 인덱스
+    let i = 0;
+    while (i < chars.length) {
+      const c = chars[i];
+      if (cur.length === 0 && c.ch === " ") {
+        i++;
+        continue; // 행머리 공백 생략
+      }
+      const cw = charW(c);
+      if (curW + cw <= maxTextW) {
+        cur.push(c);
+        curW += cw;
+        if (c.ch === " ") lastSpaceEnd = cur.length;
+        i++;
         continue;
       }
-      // 그리디 랩 (토큰 내부 분할 허용, 색상/폰트 유지)
-      let curLine = [];
-      let curW = 0;
-      for (const frag of frags) {
-        let rest = frag.text;
-        while (rest) {
-          let take = 0;
-          for (let i = 1; i <= rest.length; i++) {
-            if (curW + measureTok(rest.slice(0, i), frag.isNum) > maxTextW)
-              break;
-            take = i;
-          }
-          if (take === 0) {
-            if (curLine.length) {
-              renderLines.push(curLine);
-              curLine = [];
-              curW = 0;
-              continue;
-            }
-            take = 1;
-          }
-          const piece = rest.slice(0, take);
-          curLine.push({ text: piece, color: frag.color, isNum: frag.isNum });
-          curW += measureTok(piece, frag.isNum);
-          rest = rest.slice(take);
-          if (rest) {
-            renderLines.push(curLine);
-            curLine = [];
-            curW = 0;
-          }
+      if (cur.length === 0) {
+        cur.push(c); // 상자보다 넓은 단일 문자 (퇴보 방지용)
+        i++;
+        continue;
+      }
+      if (lastSpaceEnd > 0) {
+        const restPart = cur.splice(lastSpaceEnd);
+        wrapped.push(cur);
+        cur = restPart;
+        curW = runW(cur);
+        lastSpaceEnd = -1;
+        continue;
+      }
+      if (OPEN_PUNCT.has(c.ch) && cur.length > 1) {
+        const last = cur.pop();
+        wrapped.push(cur);
+        cur = [last];
+        curW = charW(last);
+        lastSpaceEnd = -1;
+        continue;
+      }
+      wrapped.push(cur);
+      cur = [];
+      curW = 0;
+      lastSpaceEnd = -1;
+    }
+    if (cur.length) wrapped.push(cur);
+
+    // ── 커닝 오차 최종 확인: 실제 fillText 단위 measureText 기준 초과 시 마지막 문자 이월 ──
+    const lineWidth = (arr) => {
+      let s = 0;
+      let run = "";
+      let runIsNum = arr.length ? arr[0].isNum : false;
+      for (const c of arr) {
+        if (c.isNum === runIsNum) {
+          run += c.ch;
+        } else {
+          s += measureTok(run, runIsNum);
+          run = c.ch;
+          runIsNum = c.isNum;
         }
       }
-      if (curLine.length) renderLines.push(curLine);
+      if (run) s += measureTok(run, runIsNum);
+      return s;
+    };
+    for (let li = 0; li < wrapped.length; li++) {
+      while (wrapped[li].length > 1 && lineWidth(wrapped[li]) > maxTextW) {
+        const last = wrapped[li].pop();
+        (wrapped[li + 1] = wrapped[li + 1] || []).unshift(last);
+      }
     }
+
+    // ── 스타일 구간별 토큰 배열로 묶기 ──
+    const renderLines = wrapped.map((arr) => {
+      const tokens = [];
+      for (const c of arr) {
+        const t = tokens[tokens.length - 1];
+        if (t && t.color === c.color && t.isNum === c.isNum) t.text += c.ch;
+        else tokens.push({ text: c.ch, color: c.color, isNum: c.isNum });
+      }
+      return tokens;
+    });
 
     // ── 줄 수가 상자 높이를 넘으면 상자를 위로 키운다 (하단 앵커 고정) ──
     const totalH = renderLines.length * lineH;
@@ -4409,26 +4467,12 @@ export class GameBar {
     for (let li = 0; li < renderLines.length; li++) {
       const line = renderLines[li];
       const ly = startY + li * lineH;
-      if (Array.isArray(line)) {
-        let curX = tx;
-        for (const token of line) {
-          if (typeof token === "string") {
-            ctx.font = FONT;
-            ctx.fillStyle = "#ffffff";
-            ctx.fillText(token, curX, ly);
-            curX += ctx.measureText(token).width;
-          } else if (token && typeof token === "object") {
-            ctx.font = token.isNum ? DIN : FONT;
-            ctx.fillStyle = token.color || "#ffffff";
-            const text = String(token.text ?? "");
-            ctx.fillText(text, curX, ly);
-            curX += ctx.measureText(text).width;
-          }
-        }
-      } else {
-        ctx.font = FONT;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(String(line ?? ""), tx, ly);
+      let curX = tx;
+      for (const token of line) {
+        ctx.font = token.isNum ? DIN : FONT;
+        ctx.fillStyle = token.color || "#ffffff";
+        ctx.fillText(token.text, curX, ly);
+        curX += ctx.measureText(token.text).width;
       }
     }
   }
