@@ -193,8 +193,8 @@ export async function mountOpening() {
       if (phase === "ready" || phase === "waiting") {
         phase = "waiting";
         label.textContent = memoryOnly
-          ? "加载完成（仅本次缓存），点击开始播放"
-          : "加载完成，点击开始播放";
+          ? "불러오기 완료(이번만 캐시), 클릭하여 재생"
+          : "불러오기 완료, 클릭하여 재생";
         start.hidden = false;
       }
     }
