@@ -70,7 +70,7 @@ function activeRuntime(id, kind, stop) {
 function blockExistingInstance(channel) {
   channel?.postMessage({ type: "probe" });
   showInstanceMessage(
-    "臥龍傳已在另一個分頁中執行。\n\n請切換至原有遊戲分頁；關閉它後再重新載入本頁。",
+    "와룡전이 다른 탭에서 이미 실행 중입니다.\n\n기존 게임 탭으로 전환하세요. 그 탭을 닫은 후 이 페이지를 다시 불러와 주세요.",
   );
 }
 
