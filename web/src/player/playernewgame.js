@@ -39,7 +39,7 @@ export function mountPlayerNewGame({ root, reader, selection, compilerRevision, 
   }
   function failed(ticket) {
     if (closed || ticket !== epoch) return;
-    phase = 'error'; heading.textContent = '新局暫不可用';
+    phase = 'error'; heading.textContent = '새 게임을 시작할 수 없음';
     message.textContent = '資料取得或版本檢查未完成，沒有開始對局。可重試；版本已變更時請返回重新選擇遊戲。';
     rows.replaceChildren(); button('重試', () => { void refresh(); });
   }
