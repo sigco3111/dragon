@@ -31,6 +31,26 @@ import {
   originalObjectAddress,
 } from "../game/battle/originalstate.js";
 
+// battle_talk.json 원본 카탈로그의 레코드를 한국어 대사로 바꾼 복사본을 만든다.
+// 원본 객체는 수정하지 않고(revision/sourceSha256 그대로), 매칭되지 않는 항목은 원본을 유지한다.
+function localizeTalkCatalog(catalog, ko) {
+  if (!catalog || !ko || catalog.revision !== 1) return catalog;
+  const records = { ...catalog.records };
+  for (const [index, lines] of Object.entries(ko)) {
+    const record = records[index];
+    if (
+      record &&
+      Array.isArray(lines) &&
+      lines.length > 0 &&
+      lines.every((line) => typeof line === "string")
+    ) {
+      records[index] = { ...record, lines: [...lines] };
+    }
+  }
+  return { ...catalog, records };
+}
+
+
 const TACTICAL_SIDEBAR_WIDTH = 144;
 const BATTLE_ATLAS_COLUMNS = 16;
 const BATTLE_SPRITE_WIDTH = 32;
@@ -191,16 +211,21 @@ export class BattleView {
     this.syncBattlePanel();
     this.app.score?.beginBattle(battle);
     try {
-      const [mapImg, unitImg, talkCatalog, displayBytes] = await Promise.all([
+      // 한국어 전투 대사 오버레이: battle_talk_ko.json은 원본 카탈로그와 별개 파일로,
+      // 없거나 누락된 레코드는 원본 중국어 대사를 그대로 사용한다.
+      const [mapImg, unitImg, talkCatalog, talkKo, displayBytes] = await Promise.all([
         loadImage(`grf/battle_terrain_${battle.layout}.png`),
         loadImage("grf/battle_units.png"),
         loadJSON("battle_talk.json"),
+        loadJSON("battle_talk_ko.json").catch(() => null),
         loadBytes("battle_display.bin"),
       ]);
       if (this.app.checkFormalCurrent?.() === false || generation !== this._openGeneration) return;
       this.mapImg = mapImg;
       this.unitImg = unitImg;
-      battle.session.messages.catalog = talkCatalog;
+      battle.session.messages.catalog = talkKo
+        ? localizeTalkCatalog(talkCatalog, talkKo)
+        : talkCatalog;
       const terrainSize = 192 * 0x140;
       const schOffset = 3 * terrainSize;
       if (displayBytes.length !== schOffset + 360 * 0x140)
@@ -1589,4 +1614,4 @@ function makeBattleIO(view) {
     unitByte: (offset) =>
       session.pool.read8(groupAddress(activeBase, 0), offset),
   };
-}
+  }
