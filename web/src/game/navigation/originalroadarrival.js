@@ -1,6 +1,7 @@
 // KI 28F4, 4300, 4325..4501, 4548 and city prefix 3F06..3F50.
 // Exact wrapped aliases/lazy instruction boundaries: march notes §3.13.
 import { nativeDiplomacyAt, writeNativeDiplomacyAt } from "../nativediplomacy.js";
+import { hasNativeFactionSlots, nativeFactionAt } from "../nativefactions.js";
 const u16 = (value) => value & 0xffff;
 function stop(label) {
   throw new RangeError(`Web engineering Uncovered ${label}`);
@@ -43,6 +44,14 @@ function cacheAt(sc, context, address, at) {
   const city = cityAtPointer(sc, u16(address - 0x18), at);
   return readOriginalCityCache(context, city.idx, at);
 }
+// 43D3 별칭 읽기는 DOS 고정 22슬롯 세력 테이블 영역(D52:0080..05FF)을
+// 가리킨다. sc.factions는 선언된 활성 세력 뷰라 16개 세력 시나리오의 17번
+// 같은 미선언 슬롯이 빠지지만, 원본 메모리에는 항상 존재한다. 네이티브 테이블
+// 우선, 없는(분리 픽스처) 경우에만 기존 선언 뷰로 fail-closed.
+function aliasedFactionAt(sc, slot, at) {
+  if (hasNativeFactionSlots(sc)) return nativeFactionAt(sc, slot, at);
+  return factionAt(sc, slot, at);
+}
 function aliasedByte(sc, context, address) {
   const normalized = u16(address);
   if (normalized >= 0x600 && normalized < 0x840) {
@@ -58,7 +67,7 @@ function aliasedByte(sc, context, address) {
   // 偶k → 势力[k/2]+0x18（F18 武将数，live nativeGeneralCount）；
   // 奇k → 势力[k/2]+0x38（无直接位移写者，静态初值；别名指针写不可静态排除）。
   if (normalized < 0x600) {
-    const faction = factionAt(sc, normalized >>> 6, "43D3 faction alias");
+    const faction = aliasedFactionAt(sc, normalized >>> 6, "43D3 faction alias");
     const offset = normalized & 0x3f;
     if (offset === 0x18)
       return byte(faction.nativeGeneralCount, "faction F18 at 43D3");
