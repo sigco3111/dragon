@@ -774,7 +774,7 @@ const app = {
       if (!isCurrent()) return { saved: "blocked", reason: "superseded" };
       if (!this.runtimeEnabled) return { saved: "blocked" };
       if (!canSnapshotState(this)) {
-        this.hud?.flashEvent?.("戰鬥處理中，現在無法存檔。");
+        this.hud?.flashEvent?.("전투 처리 중에는 지금 저장할 수 없습니다.");
         return { saved: "blocked" };
       }
       try {
