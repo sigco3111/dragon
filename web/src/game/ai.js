@@ -2178,8 +2178,8 @@ export function processStrategicWarEvent(app, event) {
     const advisorName =
       sc.player_advisor?.name?.trim?.() ||
       sc.generals?.[aggressor.advisor_idx]?.name?.trim?.() ||
-      "軍師";
-    const targetName = defender.monarch?.trim?.() || "敵方";
+      "군사";
+    const targetName = defender.monarch?.trim?.() || "적측";
     if (app.gamebar?.enqueueTalkMessage) {
       app.gamebar.enqueueTalkMessage({
         gen: monarch,
@@ -2199,7 +2199,7 @@ export function processStrategicWarEvent(app, event) {
     app.gamebar?.enqueueTalkMessage?.({
       gen: null,
       talkIndex: 63,
-      targetName: aggressor.monarch?.trim?.() || "敵方",
+      targetName: aggressor.monarch?.trim?.() || "적측",
       kind: "war-declaration-report",
     });
     app.gamebar?.enqueueTalkMessage?.({
@@ -2228,8 +2228,8 @@ export function completePlayerWarDeclaration(app, targetFaction) {
   const advisorName =
     sc.player_advisor?.name?.trim?.() ||
     sc.generals?.[aggressor.advisor_idx]?.name?.trim?.() ||
-    "軍師";
-  const targetName = defender.monarch?.trim?.() || "敵方";
+    "군사";
+  const targetName = defender.monarch?.trim?.() || "적측";
   const commit = () => {
     if (isAtWar(sc, aggressor.idx, defender.idx)) return;
     // 0x3526 的玩家发起分支不写 AI 专用 faction[+0x19] 战略目标。
@@ -3698,7 +3698,7 @@ function dispatchTruceNegotiationEvent(app, event) {
   if (!targetFaction || !envoy || !envoyGeneral) return false;
   app.gamebar?.showTruceNegotiationResult?.({
     targetFaction,
-    envoyName: envoyGeneral.name?.trim?.() || envoy.name || "外交官",
+    envoyName: envoyGeneral.name?.trim?.() || envoy.name || "외교관",
   });
   return true;
 }
@@ -3721,7 +3721,7 @@ function dispatchAssistanceNegotiationEvent(app, event) {
   app.gamebar?.showAssistanceNegotiationResult?.({
     allyFaction,
     targetFaction,
-    envoyName: envoyGeneral.name?.trim?.() || envoy.name || "外交官",
+    envoyName: envoyGeneral.name?.trim?.() || envoy.name || "외교관",
   });
   return true;
 }
@@ -4296,7 +4296,7 @@ function dispatchDeficitTrustEvent(app, event) {
   if (app.gamebar?.enqueueStrategicMessage) {
     app.gamebar.enqueueStrategicMessage({
       gen: null,
-      text: "主公前來了，看來正在盛怒之中啊！！（信賴度-50）",
+      text: "주공께서 오셨는데 몹시 노하신 모양입니다!! (신뢰도-50)",
       kind: "deficit-trust-penalty",
       talkIndex,
       onClose: commit,

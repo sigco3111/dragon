@@ -179,8 +179,8 @@ function cityCap(city) {
 /** 通用前置: 是玩家城 + 势力金够 */
 function precheck(sc, city, cost) {
   const f = playerFaction(sc);
-  if (!f || city.faction !== f.idx) return { err: "非我方城池" };
-  if ((f.gold ?? 0) < cost) return { err: "资金不足" };
+  if (!f || city.faction !== f.idx) return { err: "아군 성이 아닙니다" };
+  if ((f.gold ?? 0) < cost) return { err: "자금이 부족합니다" };
   applyFactionFundsDelta(f, -cost);
   return { f };
 }
@@ -191,7 +191,7 @@ export function develop(sc, city) {
   if (p.err) return p;
   const dev = (city.development ?? 50) + 30;
   city.development = Math.max(-200, Math.min(200, dev));
-  return { ok: `${city.name} 发展度→${city.development}` };
+  return { ok: `${city.name} 발전도→${city.development}` };
 }
 
 /** 征兵: 花金, 次月生效(预备兵入城, 不超上限)。
@@ -199,18 +199,18 @@ export function develop(sc, city) {
  * v1保留属未批准差异候选，待用户裁决。 */
 export function recruit(sc, city) {
   if (nativeMonthlyMechanics(sc))
-    return { err: "原版兵源由財政政策配额按月自动补充，无征兵命令" };
+    return { err: "원작에서는 병력이 재정 정책 배당으로 매월 자동 보충되어 징병 명령이 없습니다" };
   const p = precheck(sc, city, COST_RECRUIT);
   if (p.err) return p;
   sc.pendingRecruits = sc.pendingRecruits ?? [];
   sc.pendingRecruits.push({ city: city.idx, n: RECRUIT_N });
-  return { ok: `${city.name} 徵兵${RECRUIT_N}·次月到達` };
+  return { ok: `${city.name} 징병 ${RECRUIT_N}·다음 달 도착` };
 }
 
 /** 税率设定写入next_tax，0x53A6在下次月结末尾转正。 */
 export function setTax(sc, n) {
   sc.next_tax = Math.max(TAX_MIN, Math.min(TAX_MAX, n | 0));
-  return { ok: `次月稅率→${sc.next_tax}%` };
+  return { ok: `다음 달 세율→${sc.next_tax}%` };
 }
 
 /**
@@ -218,11 +218,11 @@ export function setTax(sc, n) {
  * 历史Web接口，抽城兵创建机制尚未获原始证据；不冒称0x4155创建军团。
  */
 export function dispatch(sc, fromCity, targetCity) {
-  if (!targetCity || targetCity === fromCity) return { err: "選擇目標城池" };
+  if (!targetCity || targetCity === fromCity) return { err: "목표 성을 선택하세요" };
   const f = playerFaction(sc);
-  if (!f) return { err: "無玩家勢力" };
+  if (!f) return { err: "플레이어 세력이 없습니다" };
   const avail = Math.floor(cityTroops(fromCity) / 2);
-  if (avail < 1) return { err: "城兵不足" };
+  if (avail < 1) return { err: "성 병력이 부족합니다" };
   // 一將一軍(原版規則): 軍團長=未帶軍的武力最高在閑武將
   const busy = new Set(sc.legions.map((L) => L.leader));
   const gen = sc.generals
@@ -238,7 +238,7 @@ export function dispatch(sc, fromCity, targetCity) {
       (a, b) => (b.ability.force > (a?.ability.force ?? -1) ? b : a),
       null,
     );
-  if (!gen) return { err: "無可用大將" };
+  if (!gen) return { err: "쓸 수 있는 대장이 없습니다" };
   if (fromCity.sim) fromCity.sim.troops -= avail;
   const legion = {
     leader: gen.name,
@@ -278,7 +278,7 @@ export function dispatch(sc, fromCity, targetCity) {
     scenarioNativeRoadContext(sc)?.movement ?? null,
   );
   gen.status = 1;
-  return { ok: `${f.monarch}軍自${fromCity.name}出征${targetCity.name}` };
+  return { ok: `${f.monarch}군: ${fromCity.name} → ${targetCity.name} 출정` };
 }
 
 /** 月末钩子: 征兵到达；天灾/暴动由type11/12事件轮处理。 */
@@ -292,7 +292,7 @@ export function monthEnd(app) {
       const c = sc.cities[r.city];
       if (!c) continue;
       if (c.sim) c.sim.troops = Math.min(cityCap(c), c.sim.troops + r.n);
-      app.hud?.flashEvent?.(`${c.name} 徵兵${r.n}到達`);
+      app.hud?.flashEvent?.(`${c.name} 징병 ${r.n} 도착`);
     }
     sc.pendingRecruits = [];
   }

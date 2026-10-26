@@ -459,19 +459,19 @@ export function tickEnvoys(sc) {
  */
 export function sendEnvoy(sc, targetIdx) {
   const f = playerFaction(sc);
-  if (!f || targetIdx === f.idx) return { err: "無效對象" };
+  if (!f || targetIdx === f.idx) return { err: "유효하지 않은 대상입니다" };
   const target = sc.factions.find((x) => x.idx === targetIdx);
-  if (!target || target.n_cities === 0) return { err: "該勢力已滅亡" };
+  if (!target || target.n_cities === 0) return { err: "그 세력은 이미 멸망했습니다" };
   const envoy = pickEnvoy(sc, f);
-  if (!envoy) return { err: "無政治≥13的使者可派" };
-  if ((f.gold ?? 0) < GIFT_COST) return { err: "资金不足" };
+  if (!envoy) return { err: "보낼 수 있는 정치 13 이상의 사자가 없습니다" };
+  if ((f.gold ?? 0) < GIFT_COST) return { err: "자금이 부족합니다" };
 
   applyFactionFundsDelta(f, -GIFT_COST);
   const pol = envoy.ability.politics;
   if (pol < 13)
     return {
       ok: false,
-      msg: `${envoy.name}拙於言辭，${target.monarch ?? ""}不以為然。（無效果）`,
+      msg: `${envoy.name}의 말솜씨가 부족해 ${target.monarch ?? ""}에게 통하지 않았습니다. (효과 없음)`,
     };
 
   const delta = Math.max(1, Math.floor(pol / 3));
@@ -485,7 +485,7 @@ export function sendEnvoy(sc, targetIdx) {
   sc.envoys[targetIdx] = { name: envoy.name.trim(), left: 6 };
   return {
     ok: true,
-    msg: `遣${envoy.name}出使${target.monarch ?? ""}：關係→${relationLabel(v)}`,
+    msg: `사신 ${envoy.name} → ${target.monarch ?? ""} 파견: 관계→${relationLabel(v)}`,
   };
 }
 
@@ -496,13 +496,13 @@ export function sendEnvoy(sc, targetIdx) {
  */
 export function moveCapital(sc, city) {
   const f = playerFaction(sc);
-  if (!f) return { err: "無玩家勢力" };
-  if (!city || city.faction !== f.idx) return { err: "非己方城池" };
-  if (city.idx === f.capital) return { err: "此城已經是主城" };
+  if (!f) return { err: "플레이어 세력이 없습니다" };
+  if (!city || city.faction !== f.idx) return { err: "자군 성이 아닙니다" };
+  if (city.idx === f.capital) return { err: "이 성은 이미 주성입니다" };
   const old = sc.cities[f.capital];
   f.capital = city.idx;
   return {
-    ok: `遷都：主城自${old?.name ?? "?"}移至${city.name}。`,
+    ok: `천도: 주성을 ${old?.name ?? "?"}에서 ${city.name}로 옮겼습니다.`,
   };
 }
 

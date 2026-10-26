@@ -79,12 +79,12 @@ export function contrastText(hex) {
 /** 据点类型（原版城池记录 +0x16 低半字节，KI.EXE 0x7EDB 查表 0x7df5 实锤）：
  *  0大都市 1中都市 2小都市 3關卡 4戰場 5港都 */
 export const CITY_TYPES = [
-  "大都市",
-  "中都市",
-  "小都市",
-  "關卡",
-  "戰場",
-  "港都",
+  "대도시",
+  "중도시",
+  "소도시",
+  "관문",
+  "전장",
+  "항구",
 ];
 export const cityTypeLabel = (t) => CITY_TYPES[t] ?? "";
 
