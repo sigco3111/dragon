@@ -42,7 +42,7 @@ export function mountPublicCatalog(root, { selectionVisible = true } = {}) {
 }
 function showFailure(root) {
   const document = root.ownerDocument, node = document.createElement('section');
-  node.className = 'player-public-failure'; node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', '遊戲暫不可用');
+  node.className = 'player-public-failure'; node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', '게임을 불러올 수 없음');
   Object.assign(node.style, { position: 'fixed', inset: '25% 12%', zIndex: '10002', background: '#f0d090', color: '#201800', border: '4px solid #806020', padding: '16px' });
   const text = document.createElement('p');
   text.textContent = '目前無法取得所選遊戲的上架版本或必要資料。沒有開始對局，也沒有刪除存檔。';
