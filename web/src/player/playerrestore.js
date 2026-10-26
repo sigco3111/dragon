@@ -15,11 +15,11 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
     throw new TypeError('restore root, reader, game store and explicit pack policy required');
   const selected = structuredClone(selection), document = root.ownerDocument;
   const make = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; };
-  const host = make('section'), heading = make('h2', '讀取存檔'), message = make('p'), rows = make('div');
-  host.className = 'player-restore'; host.setAttribute('role', 'dialog'); host.setAttribute('aria-label', '正式讀檔'); host.tabIndex = -1;
+  const host = make('section'), heading = make('h2', '저장 불러오기'), message = make('p'), rows = make('div');
+  host.className = 'player-restore'; host.setAttribute('role', 'dialog'); host.setAttribute('aria-label', '정식 불러오기'); host.tabIndex = -1;
   Object.assign(host.style, { position: 'fixed', inset: '18% 12% 8%', zIndex: '9999', background: '#f0d090', color: '#201800', border: '4px solid #806020', padding: '16px', display: 'flex', flexDirection: 'column' });
   Object.assign(rows.style, { overflow: 'auto', minHeight: '0', display: 'grid', gap: '6px' });
-  host.append(heading, message, rows, make('p', '右鍵返回')); root.append(host);
+  host.append(heading, message, rows, make('p', '우클릭: 뒤로')); root.append(host);
   let epoch = 0, closed = false, phase = 'loading', preview, choices = [], resolve, cleared = 0;
   const owners = new Set(), result = new Promise(done => { resolve = done; });
   function current(ticket) { if (closed || epoch !== ticket) throw new DOMException('Restore choice superseded', 'AbortError'); }
@@ -57,26 +57,26 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
   function failed(ticket) {
     if (closed || epoch !== ticket) return;
     phase = 'error'; heading.textContent = '저장 데이터를 불러올 수 없음';
-    message.textContent = `資料、版本或存檔檢查未完成，沒有載入存檔。${cleared ? `已清除${cleared}個確認過期的存檔。` : '沒有刪除存檔。'}可重試；版本已變更時請返回重新選擇遊戲。`;
-    rows.replaceChildren(); button('重試', () => { void refresh(); });
+    message.textContent = `데이터·버전 또는 저장 확인이 끝나지 않아 저장을 불러오지 못했습니다.${cleared ? `확인된 만료 저장 ${cleared}개를 정리했습니다.` : '기존 저장은 삭제하지 않았습니다.'}다시 시도할 수 있습니다. 버전이 바뀌었다면 돌아가서 게임을 다시 선택하세요.`;
+    rows.replaceChildren(); button('다시 시도', () => { void refresh(); });
   }
   function listing() {
-    phase = 'list'; heading.textContent = '讀取存檔'; message.textContent = `${preview.selection.name} ${preview.selection.ordinal}${cleared ? `：遊戲版本已更新，舊版存檔不能載入，已自動清除${cleared}個。` : ''}`; rows.replaceChildren();
-    if (!choices.length) rows.append(make('p', '目前沒有本機存檔。'));
+    phase = 'list'; heading.textContent = '저장 불러오기'; message.textContent = `${preview.selection.name} ${preview.selection.ordinal}${cleared ? `: 게임 버전이 업데이트되어 구버전 저장은 불러올 수 없어 ${cleared}개를 자동으로 정리했습니다.` : ''}`; rows.replaceChildren();
+    if (!choices.length) rows.append(make('p', '이 기기에 저장된 데이터가 없습니다.'));
     for (const choice of choices) {
-      if (choice.token) button(`槽${choice.slot + 1}　${choice.label}`, () => { void choose(choice); }, choice.slot);
+      if (choice.token) button(`${choice.slot + 1}번 슬롯　${choice.label}`, () => { void choose(choice); }, choice.slot);
       else { const line = make('p', `슬롯${choice.slot + 1}　사용 불가`); line.dataset.unavailableSlot = String(choice.slot); rows.append(line); }
     }
-    button('重新檢查', () => { void refresh(); });
+    button('다시 확인', () => { void refresh(); });
     if (choices.some(choice => !choice.token)) button('사용 불가 저장 설명', () => {
       phase = 'unavailable'; heading.textContent = '사용 불가 저장'; rows.replaceChildren();
-      message.textContent = '這些存檔的版本資料不足、損壞或未通過檢查，不能判定為已作廢的舊版，將保留且不載入。';
-      for (const choice of choices.filter(item => !item.token)) rows.append(make('p', `槽${choice.slot + 1}　保留原存檔`));
+      message.textContent = '이 저장들은 버전 정보가 부족하거나 손상 또는 검증 실패로 폐기된 구버전인지 판정할 수 없어, 그대로 보존하고 불러오지 않습니다.';
+      for (const choice of choices.filter(item => !item.token)) rows.append(make('p', `${choice.slot + 1}번 슬롯　기존 저장 보존`));
     });
   }
   async function refresh() {
     if (closed) return false;
-    const ticket = ++epoch; phase = 'loading'; heading.textContent = '讀取存檔'; message.textContent = '正在核對目前上架版本與本機存檔…'; rows.replaceChildren();
+    const ticket = ++epoch; phase = 'loading'; heading.textContent = '저장 불러오기'; message.textContent = '현재 공개 버전과 로컬 저장을 확인하는 중…'; rows.replaceChildren();
     try {
       releaseAll(); choices = [];
       preview = await loadPlayerChapters({ reader, selection: selected, assertCurrent: () => current(ticket) }); current(ticket);
@@ -123,7 +123,7 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
   }
   async function choose(choice) {
     if (closed || phase !== 'list' || !choice.token || !choices.includes(choice)) return;
-    const ticket = ++epoch; phase = 'restoring'; heading.textContent = '載入存檔'; message.textContent = '正在重新准入並捕獲所選存檔…'; rows.replaceChildren();
+    const ticket = ++epoch; phase = 'restoring'; heading.textContent = '저장을 불러오는 중'; message.textContent = '선택한 저장을 다시 불러와 적용하는 중…'; rows.replaceChildren();
     let owner;
     try {
       owner = await resources(choice.chapterId, ticket); current(ticket);

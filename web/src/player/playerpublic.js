@@ -45,9 +45,9 @@ function showFailure(root) {
   node.className = 'player-public-failure'; node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', '게임을 불러올 수 없음');
   Object.assign(node.style, { position: 'fixed', inset: '25% 12%', zIndex: '10002', background: '#f0d090', color: '#201800', border: '4px solid #806020', padding: '16px' });
   const text = document.createElement('p');
-  text.textContent = '目前無法取得所選遊戲的上架版本或必要資料。沒有開始對局，也沒有刪除存檔。';
+  text.textContent = '선택한 게임의 공개 버전이나 필요한 데이터를 가져올 수 없습니다. 게임을 시작하지 않았고 저장도 삭제하지 않았습니다.';
   const retry = document.createElement('button'), back = document.createElement('button');
-  retry.type = back.type = 'button'; retry.textContent = '重新載入'; back.textContent = '返回首頁';
+  retry.type = back.type = 'button'; retry.textContent = '새로고침'; back.textContent = '처음으로';
   retry.onclick = () => location.reload(); back.onclick = initialPage;
   node.append(text, retry, back); root.append(node);
   node.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); initialPage(); });

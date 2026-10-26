@@ -13,12 +13,12 @@ export function mountPlayerNewGame({ root, reader, selection, compilerRevision, 
   // switch releases. A changed current version requires a new directory choice.
   const selected = structuredClone(selection), document = root.ownerDocument;
   const make = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; };
-  const host = make('section'), heading = make('h2', '選擇章節'), message = make('p'), rows = make('div');
+  const host = make('section'), heading = make('h2', '챕터 선택'), message = make('p'), rows = make('div');
   host.className = 'player-new-game'; host.setAttribute('role', 'dialog');
-  host.setAttribute('aria-label', '正式新局'); host.tabIndex = -1;
+  host.setAttribute('aria-label', '새 게임 시작'); host.tabIndex = -1;
   Object.assign(host.style, { position: 'fixed', inset: '18% 12% 8%', zIndex: '9999', background: '#f0d090', color: '#201800', border: '4px solid #806020', padding: '16px', display: 'flex', flexDirection: 'column' });
   Object.assign(rows.style, { overflow: 'auto', minHeight: '0', display: 'grid', gap: '6px' });
-  host.append(heading, message, rows, make('p', '右鍵返回')); root.append(host);
+  host.append(heading, message, rows, make('p', '우클릭: 뒤로')); root.append(host);
   let epoch = 0, closed = false, phase = 'chapters', preview = null, owned = null, resolve;
   const result = new Promise(done => { resolve = done; });
   const current = ticket => {
@@ -40,11 +40,11 @@ export function mountPlayerNewGame({ root, reader, selection, compilerRevision, 
   function failed(ticket) {
     if (closed || ticket !== epoch) return;
     phase = 'error'; heading.textContent = '새 게임을 시작할 수 없음';
-    message.textContent = '資料取得或版本檢查未完成，沒有開始對局。可重試；版本已變更時請返回重新選擇遊戲。';
-    rows.replaceChildren(); button('重試', () => { void refresh(); });
+    message.textContent = '데이터를 가져오거나 버전 확인이 끝나지 않아 게임을 시작하지 못했습니다. 다시 시도할 수 있습니다. 버전이 바뀌었다면 돌아가서 게임을 다시 선택하세요.';
+    rows.replaceChildren(); button('다시 시도', () => { void refresh(); });
   }
   function chapters() {
-    phase = 'chapters'; heading.textContent = '選擇章節'; message.textContent = `${preview.selection.name} ${preview.selection.ordinal}`;
+    phase = 'chapters'; heading.textContent = '챕터 선택'; message.textContent = `${preview.selection.name} ${preview.selection.ordinal}`;
     rows.replaceChildren();
     for (const row of preview.chapters)
       button(`${row.name}　${row.start.year}/${row.start.month}/${row.start.day}`, () => { void choose(row.chapterId); }, 'chapterId', row.chapterId);
@@ -52,7 +52,7 @@ export function mountPlayerNewGame({ root, reader, selection, compilerRevision, 
   async function refresh() {
     if (closed) return false;
     const ticket = ++epoch; phase = 'loading-chapters';
-    heading.textContent = '選擇章節'; message.textContent = '正在核對目前上架版本…'; rows.replaceChildren();
+    heading.textContent = '챕터 선택'; message.textContent = '현재 공개 버전을 확인하는 중…'; rows.replaceChildren();
     try {
       release(owned);
       const value = await loadPlayerChapters({ reader, selection: selected, assertCurrent: () => current(ticket) });
@@ -62,7 +62,7 @@ export function mountPlayerNewGame({ root, reader, selection, compilerRevision, 
   async function choose(chapterId) {
     if (closed || phase !== 'chapters' || !preview.chapters.some(row => row.chapterId === chapterId)) return;
     const ticket = ++epoch, owner = { session: null, pack: null }; owned = owner;
-    phase = 'loading-pack'; heading.textContent = '載入章節'; message.textContent = '正在取得固定版本資源…'; rows.replaceChildren();
+    phase = 'loading-pack'; heading.textContent = '챕터 불러오는 중'; message.textContent = '고정 버전 리소스를 가져오는 중…'; rows.replaceChildren();
     try {
       owner.session = await admitPlayerChapter({ reader, selection: preview.selection, chapterId, assertCurrent: () => current(ticket) });
       current(ticket);
@@ -73,7 +73,7 @@ export function mountPlayerNewGame({ root, reader, selection, compilerRevision, 
       const visible = factions.filter(faction => typeof faction?.monarch === 'string' && faction.monarch.trim());
       if (!visible.length || visible.some(faction => !Number.isSafeInteger(faction.idx) || faction.idx < 0) || new Set(visible.map(faction => faction.idx)).size !== visible.length)
         throw new TypeError('explicit unique faction slots required');
-      phase = 'factions'; heading.textContent = '選擇勢力'; message.textContent = owner.pack.chapter.name;
+      phase = 'factions'; heading.textContent = '세력 선택'; message.textContent = owner.pack.chapter.name;
       rows.replaceChildren();
       for (const faction of visible) button(faction.monarch, () => {
         if (closed || phase !== 'factions' || ticket !== epoch) return;

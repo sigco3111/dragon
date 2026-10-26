@@ -8,7 +8,7 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   const make = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; };
   const host = make('section'), notice = make('button', '공지를 불러올 수 없음'), select = make('select');
   host.className = 'player-catalog'; notice.type = 'button';
-  notice.className = 'player-catalog-notice'; select.setAttribute('aria-label', '選擇遊戲');
+  notice.className = 'player-catalog-notice'; select.setAttribute('aria-label', '게임 선택');
   select.hidden = !selectionVisible;
   Object.assign(host.style, { display: 'grid', gap: '12px', maxWidth: '100%' });
   Object.assign(notice.style, { height: '28px', padding: '0', border: '0', background: 'transparent', color: 'inherit', font: 'inherit', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
@@ -25,8 +25,8 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
     select.value = entries.has(wanted) ? wanted : BUILTIN.gameId;
   }
   function paint() {
-    let message = '暫無發布資訊';
-    if (pending) message = '正在取得發布資訊…';
+    let message = '공개 정보가 없습니다';
+    if (pending) message = '공개 정보를 가져오는 중…';
     else if (announcementError) message = '공지를 불러올 수 없음';
     else if (announcements.length) message = `${announcements[0].name} ${announcements[0].ordinal}　${announcements[0].creatorAccount}`;
     notice.textContent = message;
@@ -38,7 +38,7 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
       return;
     }
     const table = make('table'), heading = make('tr');
-    for (const label of ['遊戲', '版本', '創建者', '發布日期', '首次上線日期']) heading.append(make('th', label));
+    for (const label of ['게임', '버전', '제작자', '공개일', '최초 공개일']) heading.append(make('th', label));
     table.append(heading);
     // Preserve the reader's server-ordered public history, not just five rows.
     for (const row of announcements) {
@@ -77,12 +77,12 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   }
   function showAnnouncements() {
     if (closed || modal) return;
-    const node = make('section'), content = make('div'), again = make('button', '重試');
-    node.setAttribute('role', 'dialog'); node.setAttribute('aria-modal', 'true'); node.setAttribute('aria-label', '發布資訊');
+    const node = make('section'), content = make('div'), again = make('button', '다시 시도');
+    node.setAttribute('role', 'dialog'); node.setAttribute('aria-modal', 'true'); node.setAttribute('aria-label', '공개 정보');
     node.tabIndex = -1; again.type = 'button';
     Object.assign(node.style, { position: 'fixed', inset: '8%', zIndex: '10001', background: '#f0d090', color: '#201800', padding: '16px', border: '4px solid #806020', display: 'flex', flexDirection: 'column', gap: '8px' });
     Object.assign(content.style, { overflow: 'auto', flex: '1', minHeight: '0' });
-    node.append(make('h2', '發布資訊'), content, again, make('p', '右鍵返回'));
+    node.append(make('h2', '공개 정보'), content, again, make('p', '우클릭: 뒤로'));
     node.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); dismiss(); });
     for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'wheel']) node.addEventListener(type, event => event.stopPropagation());
     node.addEventListener('keydown', event => { event.stopPropagation(); if (event.key === 'Tab') { event.preventDefault(); again.focus(); } });

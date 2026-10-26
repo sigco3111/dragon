@@ -37,7 +37,7 @@ export function createPlayerSessionHost({ session, pack, root, navigate }) {
         const newer = BigInt(current.ordinal.slice(2)) > BigInt(ordinal.slice(2));
         if (newer && current.releaseId !== releaseId) {
           updated = true; warning.hidden = false;
-          warning.textContent = '遊戲版本已更新，舊版本已作廢，不能繼續或保存。';
+          warning.textContent = '게임 버전이 업데이트되어 구버전은 폐기되었습니다. 이어하거나 저장할 수 없습니다.';
           // Retire ownership before returning to App's save/status guard. This
           // never installs the new release into the old Scenario.
           try { dispose(); } catch { /* onExit retries owned disposal. */ }
@@ -76,10 +76,10 @@ export function createPlayerSessionHost({ session, pack, root, navigate }) {
     exit = new Promise(resolve => { resolveExit = resolve; });
     const dialog = document.createElement('section'), message = document.createElement('p');
     const confirm = document.createElement('button'), failure = document.createElement('p');
-    dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', '遊戲結束');
-    message.textContent = deleted ? '遊戲已刪除。確認後返回初始載入頁面，本機存檔保留。' : '遊戲無法繼續。確認後返回初始載入頁面，本機存檔保留。';
-    if (updated && !deleted) message.textContent = '遊戲版本已更新，舊版本已作廢，不能繼續或保存。確認後返回初始載入頁面。';
-    confirm.type = 'button'; confirm.textContent = '確認'; failure.setAttribute('role', 'status');
+    dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', '게임 종료');
+    message.textContent = deleted ? '게임이 삭제되었습니다. 확인하면 처음 로딩 화면으로 돌아가며, 이 기기의 저장은 유지됩니다.' : '게임을 계속할 수 없습니다. 확인하면 처음 로딩 화면으로 돌아가며, 이 기기의 저장은 유지됩니다.';
+    if (updated && !deleted) message.textContent = '게임 버전이 업데이트되어 구버전은 폐기되었습니다. 이어하거나 저장할 수 없습니다. 확인하면 처음 로딩 화면으로 돌아갑니다.';
+    confirm.type = 'button'; confirm.textContent = '확인'; failure.setAttribute('role', 'status');
     Object.assign(dialog.style, { position: 'fixed', inset: '25% 15%', zIndex: '10003', background: '#f0d090', color: '#201800', border: '4px solid #806020', padding: '24px' });
     dialog.append(message, confirm, failure);
     let navigating = false;
@@ -91,7 +91,7 @@ export function createPlayerSessionHost({ session, pack, root, navigate }) {
         await navigate(result);
         host.remove(); resolveExit(result);
       } catch {
-        failure.textContent = '無法返回載入頁面，請重試。';
+        failure.textContent = '로딩 화면으로 돌아갈 수 없습니다. 다시 시도하세요.';
         navigating = false; confirm.disabled = false;
         if (!dialog.isConnected) host.append(dialog);
         confirm.focus();
