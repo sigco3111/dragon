@@ -2933,7 +2933,7 @@ export class GameBar {
         sc.trust = Math.min(255, (sc.trust ?? 255) + 20);
         this.app.hud.refreshTrust();
         this.app.hud.flashEvent(
-          `「${p.playerFaction.monarch}」이(가) 협조 요청에 동의했습니다! 신뢰도 +20`,
+          `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 협조 요청에 동의했습니다! 신뢰도 +20`,
         );
 
         const envoyObj = sc.envoys?.[p.allyFaction.idx];
@@ -3054,7 +3054,7 @@ export class GameBar {
       sc.trust = Math.min(255, (sc.trust ?? 255) + 20);
       this.app.completePlayerWarDeclaration?.(targetFaction);
       this.app.hud.refreshTrust();
-      this.app.hud.flashEvent(`「${me.monarch}」이(가) 개전에 동의했습니다! 신뢰도 +20`);
+      this.app.hud.flashEvent(`「${koreanDisplay(me.monarch)}」${koreanJosa(me.monarch, "I_GA")} 개전에 동의했습니다! 신뢰도 +20`);
       this.app.view.draw();
       this._setProposalTimer(3000, () => {
         this.closeProposalAudience();
@@ -3231,7 +3231,7 @@ export class GameBar {
         sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
         this.app.hud.refreshTrust();
         this.app.hud.flashEvent(
-          `「${p.playerFaction.monarch}」이(가) 「${p.allyName}」에게 협조를 요청하는 데 동의했습니다! 신뢰도 +10`,
+          `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 「${koreanDisplay(p.allyName)}」에게 협조를 요청하는 데 동의했습니다! 신뢰도 +10`,
         );
 
         const envoyObj = sc.envoys?.[p.allyFaction.idx];
@@ -3357,7 +3357,7 @@ export class GameBar {
         sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
         this.app.hud.refreshTrust();
         this.app.hud.flashEvent(
-          `「${p.playerFaction.monarch}」이(가) 정전 사자 파견에 동의했습니다! 신뢰도 +10`,
+          `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 정전 사자 파견에 동의했습니다! 신뢰도 +10`,
         );
 
         const envoyObj = sc.envoys?.[p.targetFaction.idx];
@@ -3471,7 +3471,7 @@ export class GameBar {
       this.app.completePlayerWarDeclaration?.(p.targetFaction);
       this.app.hud.refreshTrust();
       this.app.hud.flashEvent(
-        `「${p.playerFaction.monarch}」이(가) 「${p.targetName}」에 대한 개전을 허락했습니다! 신뢰도 +10`,
+        `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 「${koreanDisplay(p.targetName)}」에 대한 개전을 허락했습니다! 신뢰도 +10`,
       );
       this.app.view.draw();
       this._setProposalTimer(3000, () => {
@@ -3522,7 +3522,7 @@ export class GameBar {
               this.syncClock();
               this.app.hud.buildLegend?.();
               this.app.hud.flashEvent(
-                `「${targetName}」과(와)의 정전에 성공했습니다! 양측이 평화를 회복했습니다.`,
+                `「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 정전에 성공했습니다! 양측이 평화를 회복했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3552,7 +3552,7 @@ export class GameBar {
               this.app.hud.buildLegend?.();
               this.app.hud.refreshInfo?.();
               this.app.hud.flashEvent(
-                `「${targetName}」과(와)의 정전에 성공했습니다! ${goldRequired}금을 지급했습니다.`,
+                `「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 정전에 성공했습니다! ${goldRequired}금을 지급했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3566,7 +3566,7 @@ export class GameBar {
             autoClose: 3000,
             onClose: () => {
               this.syncClock();
-              this.app.hud.flashEvent(`「${targetName}」과(와)의 정전 협상이 결렬되었습니다!`);
+              this.app.hud.flashEvent(`「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 정전 협상이 결렬되었습니다!`);
               this.app.view.draw();
             },
           });
@@ -3786,7 +3786,7 @@ export class GameBar {
               this.syncClock();
               this.app.hud.buildLegend?.();
               this.app.hud.flashEvent(
-                `「${allyName}」이(가) 「${targetName}」 협동 공격에 동의했습니다!`,
+                `「${koreanDisplay(allyName)}」${koreanJosa(allyName, "I_GA")} 「${koreanDisplay(targetName)}」 협동 공격에 동의했습니다!`,
               );
               this.app.view.draw();
             },
@@ -3817,7 +3817,7 @@ export class GameBar {
               this.app.hud.buildLegend?.();
               this.app.hud.refreshInfo?.();
               this.app.hud.flashEvent(
-                `「${allyName}」이(가) 「${targetName}」 협동 공격에 동의했습니다! ${goldRequired}금을 지급했습니다.`,
+                `「${koreanDisplay(allyName)}」${koreanJosa(allyName, "I_GA")} 「${koreanDisplay(targetName)}」 협동 공격에 동의했습니다! ${goldRequired}금을 지급했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3831,7 +3831,7 @@ export class GameBar {
             autoClose: 3000,
             onClose: () => {
               this.syncClock();
-              this.app.hud.flashEvent(`「${allyName}」과(와)의 협조 요청 협상이 결렬되었습니다!`);
+              this.app.hud.flashEvent(`「${koreanDisplay(allyName)}」${koreanJosa(allyName, "GWA_WA")}의 협조 요청 협상이 결렬되었습니다!`);
               this.app.view.draw();
             },
           });
