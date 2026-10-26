@@ -31,14 +31,14 @@ function cachedAsset(url, factory) {
 
 export function loadJSON(url) {
   return cachedAsset(url, () => fetch(url).then((response) => {
-    if (!response.ok) { throw new Error(`加载失败: ${url}`); }
+    if (!response.ok) { throw new Error(`불러오기 실패: ${url}`); }
     return response.json();
   }));
 }
 
 export function loadBytes(url) {
   return cachedAsset(url, () => fetch(url).then(async (response) => {
-    if (!response.ok) { throw new Error(`加载失败: ${url}`); }
+    if (!response.ok) { throw new Error(`불러오기 실패: ${url}`); }
     return new Uint8Array(await response.arrayBuffer());
   }));
 }
@@ -47,7 +47,7 @@ export function loadImage(url) {
   return cachedAsset(url, () => new Promise((res, rej) => {
     const img = new Image();
     img.onload = () => res(img);
-    img.onerror = () => rej(new Error(`加载失败: ${url}`));
+    img.onerror = () => rej(new Error(`불러오기 실패: ${url}`));
     img.src = imageUrl(url);
   }));
 }

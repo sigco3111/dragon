@@ -92,7 +92,7 @@ export async function startSingleInstance({
   });
 
   if (navigator.locks?.request) {
-    showInstanceMessage("正在確認遊戲分頁……");
+    showInstanceMessage("게임 탭을 확인하는 중……");
     let acquiredResolve;
     const acquired = new Promise((resolve) => {
       acquiredResolve = resolve;
@@ -145,11 +145,11 @@ export async function startSingleInstance({
   // 每次 heartbeat 都重新确认所有权，检测到冲突即立即冻结，避免继续写 IndexedDB。
   if (!globalThis.localStorage) {
     showInstanceMessage(
-      "此瀏覽器不支援單一遊戲分頁保護。\n請改用支援 Web Locks 的現代瀏覽器。",
+      "이 브라우저는 단일 게임 탭 보호를 지원하지 않습니다.\nWeb Locks를 지원하는 최신 브라우저를 사용하세요.",
     );
     return null;
   }
-  showInstanceMessage("正在確認遊戲分頁……");
+  showInstanceMessage("게임 탭을 확인하는 중……");
   const claim = () => {
     const now = Date.now();
     let current = null;
@@ -189,7 +189,7 @@ export async function startSingleInstance({
     onLost?.();
     onSuspend?.();
     showInstanceMessage(
-      "遊戲分頁使用權已丟失，運行已停止。\n請重新載入頁面。",
+      "게임 탭 사용 권한을 잃어 실행을 중지했습니다.\n페이지를 새로고침하세요.",
       true,
     );
     channel?.close();
