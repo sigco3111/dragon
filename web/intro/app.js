@@ -60,15 +60,15 @@ export async function mountOpening() {
         progress.value = Math.min(99, Math.floor((loaded / total) * 100));
       else progress.removeAttribute("value");
       label.textContent = total
-        ? `正在加载音乐 ${progress.value}%`
-        : `正在加载音乐（${Math.round(loaded / 1024)} KB）`;
+        ? `음악 불러오는 중 ${progress.value}%`
+        : `음악 불러오는 중 (${Math.round(loaded / 1024)} KB)`;
     } else {
       progress.value = step === "saving" ? 99 : 100;
       memoryOnly = step === "memory";
-      if (step === "saving") label.textContent = "正在缓存音乐…";
+      if (step === "saving") label.textContent = "음악을 캐시하는 중…";
       else if (memoryOnly)
-        label.textContent = "音乐已就绪（浏览器未允许持久缓存）";
-      else label.textContent = "音乐已缓存，正在准备画面…";
+        label.textContent = "음악 준비 완료 (브라우저가 캐시 저장을 허용하지 않았습니다)";
+      else label.textContent = "음악 캐시 완료, 화면을 준비하는 중…";
     }
   }
   function prepareMusic() {
@@ -126,7 +126,7 @@ export async function mountOpening() {
     status.hidden = false;
     progress.hidden = true;
     start.hidden = true;
-    label.textContent = "开场素材加载失败，仍可选择游戏。";
+    label.textContent = "오프닝素材를 불러오지 못했습니다. 게임은 계속 선택할 수 있습니다.";
     replay.hidden = false;
     releaseMenu();
     console.error("[WolongIntro]", error);
@@ -149,7 +149,7 @@ export async function mountOpening() {
     sound.setAttribute("aria-pressed", String(!muted && !audio.ended));
     sound.setAttribute(
       "aria-label",
-      muted || audio.ended ? "开启背景音乐" : "关闭背景音乐",
+      muted || audio.ended ? "배경 음악 켜기" : "배경 음악 끄기",
     );
     $("sound-hint").hidden = !blocked || muted;
   }
@@ -301,8 +301,8 @@ export async function mountOpening() {
     }
     location.reload();
   });
-  replay.title = "重新开始";
-  replay.setAttribute("aria-label", "重新开始");
+  replay.title = "다시 시작";
+  replay.setAttribute("aria-label", "다시 시작");
   on(sound, "click", () => {
     if (!muted && !audio.ended) {
       muted = true;
