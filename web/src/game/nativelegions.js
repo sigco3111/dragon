@@ -114,6 +114,11 @@ export function publishLegacyLegionRecord(sc, legion, at, movement = null) {
   }
   record.occupancyOffset = record.x;
   record.occupancyRowParagraph = (record.y & 255) * 24;
+  // 5475 odd-half word read: the native snapshot carries this alias word on
+  // every slot (0 on all evidenced records). A UI-formed record without it
+  // fails the monthly fiscal sweep closed ("monthlyAliasWord24"), so
+  // formation must seed the same zero default.
+  if (record.monthlyAliasWord24 == null) record.monthlyAliasWord24 = 0;
   if (movement) {
     // 6FCA: validate the pointer halves, then INC the new square.
     movementPlaneAddress(0, record.x);
