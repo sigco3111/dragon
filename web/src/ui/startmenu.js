@@ -19,7 +19,7 @@ const COLORS = {
   13: "#88aa66",
   15: "#ffffff",
 };
-const FONT = '16px "Noto Serif TC","PMingLiU",serif';
+const FONT = '16px "Noto Serif KR","Noto Serif TC","PMingLiU",serif';
 import { portrait } from "../core/assets.js";
 const TABLE_BG = "#f0d090"; // 原版列表米黄底 (240,208,144)
 
@@ -122,7 +122,7 @@ export class StartMenu {
       y: "center",
       w: 448,
       h: 368,
-      title: "新游戏",
+      title: "새 게임",
       rowH: 28,
       rows: this._chapterRows(),
     });
@@ -137,7 +137,7 @@ export class StartMenu {
       y: "center",
       w: 448,
       h: 256,
-      title: "读取存档",
+      title: "저장 불러오기",
       rowH: 56,
       pad: 8,
       rows,
@@ -165,7 +165,7 @@ export class StartMenu {
       // 仅在新游戏列表标注合集章节；内部 scenario.name 仍保留原始标题。
       const name = s.name.replace(/(章[．.])　　/, "$1 ");
       return {
-        name: origIndices.includes(s._origIdx) ? name : `[重制]${name}`,
+        name: origIndices.includes(s._origIdx) ? name : `[리메이크]${name}`,
         date: s.start,
       };
     });
@@ -197,7 +197,7 @@ export class StartMenu {
       y: 16,
       w: 448,
       h: 368, // 云窗 448×368, 金框 88,8..552,392
-      header: ["勢力名", "軍師名", "武将", "據點", "首都"],
+      header: ["세력명", "군사명", "무장", "거점", "수도"],
       colX: [8, 112, 232, 288, 336],
       rowH: 16,
       rows: this._factionRows(scen),
@@ -231,8 +231,8 @@ export class StartMenu {
     const monImg = await this._kao(mon);
     const advImg = adv ? await this._kao(adv) : null;
     const btns = [
-      { label: "自定", act: "custom", x: px + 159, y: py + 126, w: 50, h: 18 },
-      { label: "確定", act: "ok", x: px + 159, y: py + 150, w: 50, h: 18 },
+      { label: "직접", act: "custom", x: px + 159, y: py + 126, w: 50, h: 18 },
+      { label: "확정", act: "ok", x: px + 159, y: py + 150, w: 50, h: 18 },
     ];
     const draw = (hoverAct) => {
       const ctx = this.ctx;
@@ -250,19 +250,19 @@ export class StartMenu {
       // 君主 (左上): 64×64 頭像 + 下方「君主」/君主名 (縮進 16px)
       if (monImg)
         ctx.drawImage(monImg, 0, 0, 128, 128, px + 16, py + 7, 64, 64);
-      this._text("君主", px + 16, py + 79, 15);
+      this._text("군주", px + 16, py + 79, 15);
       this._text(mon.name.trim(), px + 32, py + 95, 15);
 
       // 軍師 (右上): 「軍師」/軍師名 (縮進 16px) + 64×64 頭像 (無軍師則空)
-      this._text("軍師", px + 144, py + 7, 15);
+      this._text("군사", px + 144, py + 7, 15);
       this._text(adv ? adv.name.trim() : "－－－", px + 160, py + 23, 15);
       if (advImg)
         ctx.drawImage(advImg, 0, 0, 128, 128, px + 144, py + 47, 64, 64);
 
       // 情報表 (左下): 首都 / 武將數 / 據點數 + 白色豎線 + 數值
-      this._text("首\u3000都", px + 16, py + 119, 15);
-      this._text("武將數", px + 16, py + 135, 15);
-      this._text("據點數", px + 16, py + 151, 15);
+      this._text("수\u3000도", px + 16, py + 119, 15);
+      this._text("무장수", px + 16, py + 135, 15);
+      this._text("거점수", px + 16, py + 151, 15);
 
       // 白色分割豎線 (x=79, y=119..166, 高 48px)
       this._rect(px + 79, py + 119, px + 79, py + 166, 15);
@@ -271,7 +271,7 @@ export class StartMenu {
       this._text(cap ? cap.name.trim() : "－－－", px + 96, py + 119, 15);
 
       // 武將數 & 據點數 (右對齊於 px + 126)
-      const numFont = '300 16px "Oswald","Noto Serif TC","PMingLiU",serif';
+      const numFont = '300 16px "Oswald","Noto Serif KR","Noto Serif TC","PMingLiU",serif';
       ctx.font = numFont;
       const genStr = `${f.n_generals}`;
       const genTw = ctx.measureText(genStr).width;
@@ -412,8 +412,8 @@ export class StartMenu {
       return input;
     };
 
-    const nameInput = createInput("最多3字");
-    const haoInput = createInput("最多3字");
+    const nameInput = createInput("최대 3자");
+    const haoInput = createInput("최대 3자");
     const loading = document.createElement("div");
     loading.hidden = true;
     loading.setAttribute("role", "status");
@@ -422,9 +422,9 @@ export class StartMenu {
       textAlign: "center", boxSizing: "border-box",
     });
     const loadingText = document.createElement("div");
-    loadingText.textContent = "正在載入遊戲，請稍候…";
+    loadingText.textContent = "게임을 불러오는 중입니다…";
     const progress = document.createElement("progress");
-    progress.setAttribute("aria-label", "遊戲載入中");
+    progress.setAttribute("aria-label", "게임 불러오는 중");
     progress.style.width = "90%"; // Indeterminate: no invented percentage.
     loading.append(loadingText, progress);
     overlay.append(nameInput, haoInput, loading);
@@ -463,8 +463,8 @@ export class StartMenu {
       { act: "next", x: px + 88, y: py + 54, w: 38, h: 20 },
     ];
     const actionBtns = [
-      { label: "確定", act: "ok", x: px + 98, y: py + 138, w: 64, h: 22 },
-      { label: "取消", act: "cancel", x: px + 178, y: py + 138, w: 64, h: 22 },
+      { label: "확정", act: "ok", x: px + 98, y: py + 138, w: 64, h: 22 },
+      { label: "취소", act: "cancel", x: px + 178, y: py + 138, w: 64, h: 22 },
     ];
 
     const draw = async () => {
@@ -490,20 +490,20 @@ export class StartMenu {
       // 頭像翻頁: 前▲ / 後▼ 與白色分割線 (原版風格)
       const prevHov = hoverAct === "prev";
       const nextHov = hoverAct === "next";
-      this._text("前 ▲", px + 88, py + 24, prevHov ? 14 : 15);
+      this._text("이전 ▲", px + 88, py + 24, prevHov ? 14 : 15);
       // 分割白線
       this._rect(px + 86, py + 48, px + 128, py + 48, 15);
-      this._text("後 ▼", px + 88, py + 56, nextHov ? 14 : 15);
+      this._text("다음 ▼", px + 88, py + 56, nextHov ? 14 : 15);
 
       // 標籤
-      this._text("軍師名", px + 158, py + 24, 15);
-      this._text("別　號", px + 254, py + 24, 15);
+      this._text("군사명", px + 158, py + 24, 15);
+      this._text("별　호", px + 254, py + 24, 15);
 
       // 規則或錯誤提示 (置於黑框下方雲紋區域)
-      ctx.font = '13px "Noto Serif TC","PMingLiU",serif';
+      ctx.font = '13px "Noto Serif KR","Noto Serif TC","PMingLiU",serif';
       const msg = errorMsg
         ? `！${errorMsg}`
-        : "※ 限1至3個漢字（或6個英數），均為必填";
+        : "※ 1~3글자(영숫자 6자), 모두 필수 입력";
       ctx.fillStyle = errorMsg ? "#ff5533" : "#ecd088";
       const tw = ctx.measureText(msg).width;
       ctx.fillText(msg, px + ((w - tw) >> 1), py + 110);
@@ -542,13 +542,13 @@ export class StartMenu {
         const nameVal = nameInput.value.trim();
         const haoVal = haoInput.value.trim();
         if (!nameVal) {
-          errorMsg = "請輸入軍師名";
+          errorMsg = "군사명을 입력하세요";
           draw();
           nameInput.focus();
           return;
         }
         if (!haoVal) {
-          errorMsg = "請輸入別號";
+          errorMsg = "별호를 입력하세요";
           draw();
           haoInput.focus();
           return;
@@ -643,7 +643,7 @@ export class StartMenu {
     return slots.map((sv) => {
       const i = sv.slot;
       if (!sv || !sv.played) {
-        return { slot: i, name: "（未使用）", date: null, disabled: true };
+        return { slot: i, name: "(미사용)", date: null, disabled: true };
       }
       const supported = this._saveSupported(i);
       const menu = this;
@@ -652,7 +652,7 @@ export class StartMenu {
         slot: i,
         name: supported
           ? `${sv.label ?? ""}`
-          : `${sv.label ?? ""}（不相容，已保留）`,
+          : `${sv.label ?? ""}(호환 안 됨, 보존됨)`,
         date: d ? { year: d.year, month: d.month, day: d.day } : null,
         // prompt's hover/hit/click all read this; rows are not admission caches.
         get disabled() {
@@ -767,7 +767,7 @@ export class StartMenu {
             // 日期跟在名称同行: 白字无背景, 行内右对齐 (左名右日期 space-between)
             const ds = this._dateStr(row.date);
             this.ctx.font =
-              '300 16px "Oswald","Noto Serif TC","PMingLiU",serif';
+              '300 16px "Oswald","Noto Serif KR","Noto Serif TC","PMingLiU",serif';
             const tw = this.ctx.measureText(ds).width;
             const dateRight = hasScrollbar ? px + w - 24 : px + w - 18;
             this._numText(ds, dateRight - tw, ty, 15);
@@ -1043,7 +1043,7 @@ export class StartMenu {
   // 纯数字文本: 用 Oswald (仅限数字显示), 中文回落 Noto Serif TC
   _numText(str, x, y, color) {
     const ctx = this.ctx;
-    ctx.font = '300 16px "Oswald","Noto Serif TC","PMingLiU",serif';
+    ctx.font = '300 16px "Oswald","Noto Serif KR","Noto Serif TC","PMingLiU",serif';
     ctx.fillStyle = COLORS[color] ?? color;
     ctx.textBaseline = "top";
     ctx.fillText(str, x, y);
@@ -1052,7 +1052,7 @@ export class StartMenu {
   // 日期格式 0x62F: "196年 4月 1日" (月/日十位補空格)
   _dateStr(d) {
     const p = (n) => (n >= 10 ? `${n}` : ` ${n}`);
-    return `${d.year}年 ${p(d.month)}月 ${p(d.day)}日`;
+    return `${d.year}년 ${p(d.month)}월 ${p(d.day)}일`;
   }
 
   // ── comp7 @rel: 雲窗(0,0,191,79) 白線y23 按鈕×2 描邊×4 文字×2 ──
@@ -1064,8 +1064,8 @@ export class StartMenu {
     this._cloud(ox, oy, 192, 80);
     this._rect(ox, oy + 23, ox + 191, oy + 23, 15); // type5 白線
     for (const [dy, label] of [
-      [32, "是"],
-      [56, "否"],
+      [32, "예"],
+      [56, "아니오"],
     ]) {
       this._rect(ox + 32, oy + dy, ox + 159, oy + dy + 15, 5); // type3 綠底
       this._outline(ox + 30, oy + dy - 2, ox + 161, oy + dy + 17, 2); // type4 外框
@@ -1073,6 +1073,6 @@ export class StartMenu {
       this._fwText(label, ox + 88, oy + dy, 0); // type8 黑字
     }
     // 標題 "新游戏" 白字
-    this._fwText("新游戏", ox + 72, oy + 4, 15);
+    this._fwText("새 게임", ox + 72, oy + 4, 15);
   }
-}
+        }
