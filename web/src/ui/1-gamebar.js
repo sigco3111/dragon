@@ -1,0 +1,8699 @@
+// 游戏主界面 UI — 顶部工具栏 + 军师子菜单 + 小地图 + 资源面板 + 设置菜单
+//
+// 布局逆向依据:
+//   - tool_bar.png 640×32 原大置于顶部水平居中; 四图标 30×25 烙于栏内
+//     模板匹配实测: ico1@(336,3) ico2@(368,3) ico3@(400,3) ico4@(432,3), 32px 步进
+//   - 日期区深蓝框 x459..578, 年/月/日金字 x496/529/562, 数字白色补于各字之前
+//   - 扇=军师子菜单(進言/人事/財政/編成/軍團/據點/武將/勢力), 旗=资源面板,
+//     地图=小地图, 书=设置
+//   - 小地图: MMAP.MAP 解码 384×256 与城池网格一致 → 世界数据微缩渲染
+//     (minimap.png 160×107 由 map_full.png 1920×1280 NEAREST 缩出), 城点按势力着色,
+//     点击导航大地图, 遇袭城点闪烁+警示音
+//   - 时钟联动: 仅模态弹窗(進言/列表/存读档)打开时冻结计时, 菜单条/悬停不影响
+import { loadImage, portrait, portraitURL, hasPortraitOverride } from "../core/assets.js";
+import { mapPanelLayout, insidePanel } from "./mappanellayout.js";
+// M1 自动小地图：统一正逆变换（实际地图矩形，留边不导航），不再各处手写 208/6144 常量。
+const MINIMAP_WORLD = Object.freeze({ width: 384, height: 256, tileSize: 16 });
+import { saveChoices } from "../core/savecatalog.js";
+import * as cmd from "../game/commands.js";
+import * as adv from "../game/advisor.js";
+import {
+  quoteFor,
+  quoteForFormation,
+  quoteForIndex,
+  formatGenericTalkEvent,
+  formatTalkTokens,
+  personalityTalkIndex,
+} from "../game/talk.js";
+import { cityTypeLabel } from "../game/world.js";
+import { clickSfx, warnSfx, unlockSfx } from "../core/speaker.js";
+import { MUSIC_TYPE_LABELS } from "../core/music.js";
+import { relation } from "../game/diplomacy.js";
+import {
+  hasNativeDiplomacyMatrix,
+  nativeDiplomacyAt,
+} from "../game/nativediplomacy.js";
+import {
+  originalAssistanceProposalVerdict66D9,
+  originalHostileProposalVerdict6475,
+  originalProposalRequiredReasons3C1E,
+  originalStrengthCompare6A28,
+  originalTruceProposalVerdict6577,
+} from "../game/navigation/originalwarproposal.js";
+import { performScenarioRelocationCommit } from "../game/navigation/scenariocapitalrelocation.js";
+import { performScenarioMonarchDeployCommit } from "../game/navigation/scenariomonarchdeploy.js";
+import { factionColorEx } from "../game/world.js";
+import { roadNodeAt, roadNodeRawAddress } from "../game/roadgraph.js";
+/** 出征/编成节点解析：剧本 world 路图优先（见 commands.js dispatchSourceRoadNode）；
+ * 试玩壳自建 world，从不加载默认门面实例，用门面恒得 null。 */
+function scenarioRoadNode(sc, x, y) {
+  const context = scenarioNativeRoadContext(sc);
+  return (context ? context.roads.roadNodeAt(x, y) : roadNodeAt(x, y));
+}
+function scenarioRoadRawAddress(sc, nodeId) {
+  const context = scenarioNativeRoadContext(sc);
+  return (context ? context.roads.roadNodeRawAddress(nodeId) : roadNodeRawAddress(nodeId));
+}
+import { isLegionDelegated, setLegionDelegated } from "../game/legionmode.js";
+import { canSnapshotState } from "../game/savegame.js";
+import {
+  bindLegionSlotCounter,
+  resetLegionActionPhase,
+} from "../game/legionphase.js";
+import { countLegionActivation } from "../game/legioncounts.js";
+import { publishLegacyLegionRecord } from "../game/nativelegions.js";
+import { scenarioNativeRoadContext } from "../game/scenarioassembly.js";
+import {
+  DEFAULT_LEGION_UNIT_TYPES,
+  ensureLegionSlot,
+  LEGION_RESERVE_FIELD_BY_TYPE,
+  LEGION_UNIT_TYPE,
+} from "../game/legionunits.js";
+import {
+  applyFactionFundsDelta,
+  factionLegionMoraleCap,
+  getProjectedFinance,
+} from "../game/economy.js";
+import { STRATEGIC_SPEED_LABELS } from "../game/clock.js";
+import {
+  TACTICAL_SPEED_FACTORS,
+  TACTICAL_SPEED_LABELS,
+} from "../game/tacticalclock.js";
+import { POPUP_FONT_PX } from "./battlepanels.js";
+import {
+  MINI_MARKER_STYLES,
+  drawMinimapMarker,
+  minimapBattleMarkers,
+} from "../render/minimapmarkers.js";
+
+const LIST_HEADER_HEIGHT = 24;
+// 编成窗口内部按钮顺序为骑→步→弓；写入二进制兵种码时必须映射为
+// 1=骑、3=步、2=弓，不能直接用内部索引+1。
+const FORMATION_TYPE_TO_LEGION_TYPE = Object.freeze([
+  LEGION_UNIT_TYPE.CAVALRY,
+  LEGION_UNIT_TYPE.INFANTRY,
+  LEGION_UNIT_TYPE.ARCHER,
+]);
+import {
+  enqueueDelayedStrategicEvent,
+  hasPendingStrategicEvent,
+  resolveIncomingDiplomacyChoice,
+  resolveStrategicNegotiation,
+  settleFactionNegotiation,
+  settleArrivedLegionCommand,
+} from "../game/ai.js";
+
+const FONT = `${POPUP_FONT_PX}px "Noto Serif KR","Noto Serif TC","PMingLiU",serif`;
+const DIN = `300 ${POPUP_FONT_PX}px "Oswald","Noto Serif KR","Noto Serif TC","PMingLiU",serif`;
+const NAVY = "#002266";
+const GOLD = "#cc8822";
+const CREAM = "#ffdd99";
+const BEIGE = "#f0d090";
+
+function listCellValue(cell) {
+  const value = typeof cell === "object" && cell !== null ? cell.t : cell;
+  const text = String(value ?? "").trim();
+  if (/^[+-]?\d+(?:\.\d+)?$/.test(text)) return Number(text);
+  return text;
+}
+
+function isPlaceholderListRow(row) {
+  return (row?.cells ?? []).every((cell) =>
+    /^[\s－—-]*$/.test(String(listCellValue(cell))),
+  );
+}
+
+// KI.EXE 0x7344..0x736C：军团+4按十人计，<0x12C（显示<3000）红字；
+// 军团+6士气<0x64（100）红字。0x90→0x9A把前景色切到GAMEPAL索引A。
+const LEGION_WARNING_COLOR = "#dd0000";
+function legionStrengthCells(legion) {
+  const troopUnits = legion.troops ?? 0;
+  const troops = `${troopUnits * 10}`;
+  const moraleValue = legion.morale ?? 200;
+  const morale = `${moraleValue}`;
+  return [
+    troopUnits < 0x012c ? { t: troops, color: LEGION_WARNING_COLOR } : troops,
+    moraleValue < 0x64 ? { t: morale, color: LEGION_WARNING_COLOR } : morale,
+  ];
+}
+
+const SUBMENU = [
+  "건언",
+  "인사",
+  "재정",
+  "편성",
+  "군단",
+  "거점",
+  "무장",
+  "세력",
+];
+
+import { createGameBarImageResources } from "./gamebarimages.js";
+
+export class GameBar {
+  constructor(app, resourcePorts = null) {
+    this.app = app;
+    this.bx = 0; // 工具栏左缘 (窗口宽变化时重算)
+    this.miniOpen = false;
+    this.resOpen = false;
+    this.selFaction = null; // 小地图当前选择查看的势力
+    this.submenuOpen = false;
+    this.selectedSubmenu = null; // 军师子菜单当前被选项索引 (0..7, 激活时停止计时)
+    this.settingsOpen = false;
+    this.hoverAct = null;
+    this.portraitImg = null;
+    this.portraitKey = null;
+    this.listDialog = null; // 当前 canvas 列表弹窗
+    this.generalCard = null; // 武将特长/对白信息弹窗
+    this._strategicMessageQueue = []; // AI 宣战等底部消息 FIFO
+    this._strategicMessageActive = false;
+    this._scenarioUiGeneration = 0;
+    this.formationDialog = null; // 部队编成弹窗
+    this.formationQuote = null; // 部队编成确认/提示发言弹窗 (武将/军师发言)
+    this.cityCard = null; // 左下角据点信息弹窗
+    this.baseMenu = null; // 军师子菜单「據點」二级下拉菜单 (首都確認 / 據點一覽)
+    this.personnelMenu = null; // 军师子菜单「人事」二级下拉菜单
+    this.adviceMenu = null; // 军师子菜单「進言」二级下拉菜单 (敵對提案 / 停戰提案 / 請求協助 / 遷都 / 請求君主出陣)
+    this.proposalAudience = null; // 敌对提案进言对话系统
+    this.financeDialog = null; // 军师「財政」弹窗
+    this.keypadDialog = null; // 数字输入弹窗 (税率/各兵种征兵数)
+    this.legionMenu = null; // 军师子菜单「軍團」二级下拉菜单 (位置確認 / 行軍指示)
+    this.marchingOrder = null; // 行军指示状态 { legion, step: 'pick_target'|'choose_order', targetCity, sourceCity }
+    this.viewingLegion = null; // 非玩家军团查看状态 (右侧显示军团信息)
+    this._legionListSourceCity = null; // 军团列表来源据点，右键/命令完成后返回该列表
+    this.orderChoiceMenu = null; // 目标据点指示命令菜单 (戰鬥指揮 / 委任 / 解體)
+    this.systemSaveDialog = null; // 系统选单「資料儲存」弹窗
+    this.systemLoadConfirmDialog = null; // 系统选单「存檔讀取」防丢失确认弹窗
+    this.exitConfirmDialog = null; // 刷新或关闭防丢失确认弹窗
+    this.settingsHover = -1;
+    this._clockHoldRequested = false;
+    this._legionPortraitImg = null;
+    this._legionPortraitKey = null;
+    this._barImageResources = null;
+    this._barImageGeneration = 0;
+    this._barImageLoading = false;
+    if (resourcePorts !== null) {
+      this._barImageResources = createGameBarImageResources(app, resourcePorts);
+      this._assets = this.loadImageResources();
+      void this._assets.catch(() => {}); // Explicit await still receives the failure.
+      return;
+    }
+    this._assets = Promise.all([
+      loadImage("grf/ui/tool_bar.png"),
+      loadImage("grf/ui/tool_ico1.png"),
+      loadImage("grf/ui/tool_ico2.png"),
+      loadImage("grf/ui/tool_ico3.png"),
+      loadImage("grf/ui/tool_ico4.png"),
+      loadImage("grf/ui/ico_money.png"),
+      loadImage("grf/ui/ico_cavalry.png"),
+      loadImage("grf/ui/ico_archer.png"),
+      loadImage("grf/ui/ico_infantry.png"),
+      loadImage("grf/ui/cloud.png"),
+      loadImage("grf/ui/frame_sq.png"),
+      loadImage("grf/ui/frame_col.png"),
+      loadImage("grf/ui/frame_cap.png"),
+      this._loadMinimapImage("base"),
+      loadImage("grf/ui/message_npc.png"),
+      loadImage("grf/ivent_0.png"),
+      loadImage("grf/ivent_1.png"),
+      loadImage("grf/ivent_2.png"),
+      this._loadMinimapImage("large"),
+    ]).then(
+      ([
+        bar,
+        i1,
+        i2,
+        i3,
+        i4,
+        money,
+        cav,
+        arc,
+        inf,
+        cloud,
+        sq,
+        col,
+        cap,
+        mbg,
+        messageNpc,
+        ivent0,
+        ivent1,
+        ivent2,
+        mbgLarge,
+      ]) => {
+        this.imgs = {
+          bar,
+          i1,
+          i2,
+          i3,
+          i4,
+          money,
+          cav,
+          arc,
+          inf,
+          mbg,
+          mbgLarge,
+          messageNpc,
+          ivent0,
+          ivent1,
+          ivent2,
+        };
+        this._gf = { cloud, sq, col, cap }; // 金框+云纹 (与弹窗同源资产)
+        this.app.view.draw();
+        // Both map sizes came from this world's immutable compiled manifest.
+        // No manual image or another revision is installed as fallback.
+      },
+    );
+  }
+
+  loadImageResources() {
+    const resources = this._barImageResources;
+    if (!resources) return this._assets;
+    if (this._barImageLoading) return this._assets;
+    const generation = ++this._barImageGeneration;
+    this._barImageLoading = true;
+    this.imgs = undefined;
+    this._gf = undefined;
+    const current = () => {
+      resources.assertCurrent();
+      if (this._barImageResources !== resources || this._barImageGeneration !== generation) {
+        throw new Error("GAMEBAR_IMAGE_STALE");
+      }
+    };
+    const task = Promise.resolve().then(async () => {
+      current();
+      const [bar, i1, i2, i3, i4, money, cav, arc, inf, cloud, sq, col, cap,
+        mbg, messageNpc, ivent0, ivent1, ivent2, mbgLarge] = await resources.loadImages();
+      current();
+      this.imgs = { bar, i1, i2, i3, i4, money, cav, arc, inf, mbg, mbgLarge,
+        messageNpc, ivent0, ivent1, ivent2 };
+      this._gf = { cloud, sq, col, cap };
+      current();
+      this.app.view.draw();
+      current();
+    }).catch(error => {
+      if (this._barImageResources === resources && this._barImageGeneration === generation) {
+        this.disposeImageResources();
+      }
+      throw error;
+    }).finally(() => {
+      if (this._barImageGeneration === generation) this._barImageLoading = false;
+    });
+    this._assets = task;
+    void task.catch(() => {});
+    return task;
+  }
+
+  disposeImageResources() {
+    if (!this._barImageResources) return;
+    this._barImageGeneration++;
+    this._barImageLoading = false;
+    this.imgs = undefined;
+    this._gf = undefined;
+    this._barImageResources.close();
+  }
+
+  _loadMinimapImage(size) {
+    const world = this.app.world;
+    const url = world?.definition.assets.minimap?.[size];
+    if (!url) return Promise.reject(new Error(`missing compiled minimap ${size}`));
+    return loadImage(url).then((image) => {
+      if (this.app.world !== world) throw new Error("stale minimap world");
+      return image;
+    });
+  }
+
+  // ── 金框 + 云纹窗 (与 startmenu prompt 同款, 供右侧面板用) ──
+  _frame(ctx, ox, oy, wTiles, hTiles) {
+    this._barImageResources?.assertCurrent();
+    const { sq, col, cap } = this._gf;
+    const x = ox,
+      y = oy,
+      w = wTiles * 16,
+      h = hTiles * 16;
+    for (const by of [y, y + h - 8])
+      for (let px = 8; px < w - 8; px += 8) ctx.drawImage(sq, x + px, by);
+    for (const cx of [x, x + w - 8]) {
+      ctx.drawImage(cap, cx, y);
+      for (let by = y + 8; by < y + h - 8; by += 8) ctx.drawImage(col, cx, by);
+      ctx.drawImage(cap, cx, y + h - 8);
+    }
+  }
+
+  _cloud(ctx, x, y, w, h) {
+    this._barImageResources?.assertCurrent();
+    ctx.fillStyle = ctx.createPattern(this._gf.cloud, "repeat");
+    ctx.fillRect(x, y, w, h);
+  }
+
+  // ── 通用窗口构造：金框 + 可选背景（1黑 / 2米黄 / 3云纹）──
+  _drawWindow(ctx, ox, oy, wTiles, hTiles, bgStyle = "cloud") {
+    this._frame(ctx, ox, oy, wTiles, hTiles);
+    const cx = ox + 8,
+      cy = oy + 8,
+      cw = (wTiles - 1) * 16,
+      ch = (hTiles - 1) * 16;
+    if (bgStyle === "black") {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(cx, cy, cw, ch);
+    } else if (bgStyle === "beige") {
+      ctx.fillStyle = BEIGE;
+      ctx.fillRect(cx, cy, cw, ch);
+    } else {
+      this._cloud(ctx, cx, cy, cw, ch);
+    }
+    return { x: cx, y: cy, w: cw, h: ch };
+  }
+
+  // ── canvas 列表弹窗 (米黄底 + 黑表头 + 黑字，右键关闭) ──
+  openListDialog(opt) {
+    this.settingsOpen = false;
+    this.cityCard = null;
+    if (!this.listDialog) {
+      this.app.hud.dialogCount = (this.app.hud.dialogCount ?? 0) + 1;
+    }
+    this.listDialog = {
+      title: opt.title ?? "",
+      titleBar: opt.titleBar ?? false,
+      header: opt.header ?? [],
+      cols: opt.cols ?? [],
+      rows: opt.rows ?? [],
+      rowH: opt.rowH ?? 16,
+      scrollbar: opt.scrollbar ?? "right",
+      w: opt.w ?? 432,
+      h: opt.h ?? 320,
+      x: opt.x ?? "center",
+      y: opt.y ?? "center",
+      scroll: 0,
+      hover: -1,
+      headerHover: -1,
+      selectedRow: -1,
+      sortColumn: -1,
+      sortDirection: 0,
+      sortable: opt.sortable ?? Boolean(opt.header?.length),
+      _rowOrder: new Map((opt.rows ?? []).map((row, index) => [row, index])),
+      footer: opt.footer ?? null,
+      onPick: opt.onPick ?? null,
+      onPickCell: opt.onPickCell ?? null,
+      onCancel: opt.onCancel ?? null,
+    };
+    this.layout();
+    this._recalcListDialog();
+    this.app.view.draw();
+  }
+
+  _sortListDialog(column) {
+    const d = this.listDialog;
+    if (!d?.sortable || column < 0 || column >= d.header.length) return false;
+    const selected = d.rows[d.selectedRow] ?? null;
+    const hovered = d.rows[d.hover] ?? null;
+    d.sortDirection = d.sortColumn === column ? -d.sortDirection : 1;
+    d.sortColumn = column;
+    const direction = d.sortDirection;
+    d.rows.sort((left, right) => {
+      const leftPlaceholder = isPlaceholderListRow(left);
+      const rightPlaceholder = isPlaceholderListRow(right);
+      if (leftPlaceholder !== rightPlaceholder) return leftPlaceholder ? 1 : -1;
+      if (leftPlaceholder) {
+        return (d._rowOrder.get(left) ?? 0) - (d._rowOrder.get(right) ?? 0);
+      }
+      const a = listCellValue(left?.cells?.[column]);
+      const b = listCellValue(right?.cells?.[column]);
+      let compared;
+      if (typeof a === "number" && typeof b === "number") compared = a - b;
+      else {
+        compared = String(a).localeCompare(String(b), "zh-Hant", {
+          numeric: true,
+          sensitivity: "base",
+        });
+      }
+      return (
+        compared * direction ||
+        (d._rowOrder.get(left) ?? 0) - (d._rowOrder.get(right) ?? 0)
+      );
+    });
+    d.selectedRow = selected ? d.rows.indexOf(selected) : -1;
+    d.hover = hovered ? d.rows.indexOf(hovered) : -1;
+    d.scroll = 0;
+    return true;
+  }
+
+  closeListDialog(force = false) {
+    if (!this.listDialog) return;
+    const cancelCb = force ? null : this.listDialog.onCancel;
+    this.closeGeneralCard();
+    this.closeFormationDialog();
+    this.formationQuote = null;
+    this.listDialog = null;
+    if (cancelCb) {
+      cancelCb();
+    }
+    this.viewingLegion = null;
+    this._legionListSourceCity = null;
+    this.selectedSubmenu = null; // 取消子菜单被选项，恢复未选中状态
+    this.app.hud.dialogCount = Math.max(0, (this.app.hud.dialogCount ?? 1) - 1);
+    this.syncClock(); // 开始计时
+    if (this.app?.view) this.app.view.selectedCity = null;
+    this.app.view.draw();
+  }
+
+  _recalcListDialog() {
+    const d = this.listDialog;
+    if (!d) return;
+    if (d.x === "center") d.px = this.bx + Math.round((640 - d.w) / 2);
+    else d.px = d.x;
+    if (d.y === "center") {
+      const minY = this.submenuOpen ? 84 : 40;
+      d.py = Math.max(minY, Math.round((innerHeight - d.h) / 2));
+    } else d.py = d.y;
+    d.titleH = d.titleBar ? 20 : 0;
+    d.headerH = d.header.length ? LIST_HEADER_HEIGHT : 0;
+    d.top = d.titleH + d.headerH;
+    d.cap = Math.max(1, Math.floor((d.h - d.top) / d.rowH));
+    if (d.footer) {
+      d.fw = 480; // 统一为武将弹窗宽度 480px (30 tiles)
+      d.fh = 64; // 对齐 16px 框格 (hTiles=5 → 内高 64，外高 80px)
+      d.fx = Math.round((innerWidth - d.fw) / 2); // 屏幕水平居中
+      d.fy = innerHeight - (d.fh + 16) - 24; // 屏幕底部留 24px 间距 (外框高 80px，底部 y = innerHeight - 24)
+    }
+    if (this.formationDialog) {
+      const formationW = (this.formationDialog.wTiles ?? 15) * 16;
+      this.formationDialog.ox = d.px + Math.round((d.w - formationW) / 2) + 8;
+      this.formationDialog.oy = d.py + 28;
+      if (this.formationQuote) {
+        this.formationQuote.ox = this.formationDialog.ox;
+        this.formationQuote.oy =
+          this.formationDialog.oy +
+          (this.formationDialog.hTiles ?? 12) * 16 +
+          12;
+      }
+    }
+  }
+
+  _hitListDialog(px, py) {
+    const d = this.listDialog;
+    if (!d) return false;
+    const inList =
+      px >= d.px - 8 &&
+      px < d.px + d.w + 8 &&
+      py >= d.py - 8 &&
+      py < d.py + d.h + 8;
+    if (inList) return true;
+    if (d.footer) {
+      return (
+        px >= d.fx - 8 &&
+        px < d.fx + d.fw + 8 &&
+        py >= d.fy - 8 &&
+        py < d.fy + d.fh + 8
+      );
+    }
+    return false;
+  }
+
+  _hitListDialogClose(_px, _py) {
+    // 游戏全量采用右键关闭，无左键关闭按钮
+    return false;
+  }
+
+  _drawListDialog(ctx) {
+    const d = this.listDialog;
+    if (!d) return;
+    const { px, py, w, h, titleH, top, rowH, cap, header, cols, rows, scroll } =
+      d;
+    const tw = Math.ceil((w + 16) / 16),
+      th = Math.ceil((h + 16) / 16);
+    if (this._gf) {
+      this._drawWindow(ctx, px - 8, py - 8, tw, th, "beige");
+    } else {
+      ctx.fillStyle = NAVY;
+      ctx.fillRect(px, py, w, h);
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px + 1, py + 1, w - 2, h - 2);
+    }
+    // 标题（原版权势一览风格：米黄底、黑字、居中）
+    if (d.titleBar) {
+      ctx.font = FONT;
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#000000";
+      const tw2 = ctx.measureText(d.title).width;
+      ctx.fillText(d.title, px + (w - tw2) / 2, py + titleH / 2);
+    }
+    // 表头黑带（无表头的双列名单不绘制）
+    const hasScrollbar = d.scrollbar === "left" || d.scrollbar === "right";
+    const isLeft = d.scrollbar === "left";
+    const hx = isLeft ? px + 18 : px;
+    const hw = hasScrollbar ? w - 18 : w;
+    if (header.length) {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(hx, py + titleH, hw, d.headerH);
+      ctx.font = FONT;
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      header.forEach((t, c) => {
+        const col = cols[c];
+        if (!col) return;
+        if (d.sortable && d.headerHover === c) {
+          ctx.fillStyle = "#4a7828";
+          ctx.fillRect(px + col.x, py + titleH, col.w, d.headerH);
+        }
+        let sortMark = "";
+        if (d.sortColumn === c) sortMark = d.sortDirection > 0 ? "▲" : "▼";
+        const label = sortMark ? `${t}${sortMark}` : t;
+        ctx.fillStyle = "#ffffff";
+        if (col.align === "right") {
+          const tw2 = ctx.measureText(label).width;
+          ctx.fillText(
+            label,
+            px + col.x + col.w - tw2,
+            py + titleH + d.headerH / 2,
+          );
+        } else if (col.align === "center") {
+          const tw2 = ctx.measureText(label).width;
+          ctx.fillText(
+            label,
+            px + col.x + (col.w - tw2) / 2,
+            py + titleH + d.headerH / 2,
+          );
+        } else {
+          ctx.fillText(label, px + col.x, py + titleH + d.headerH / 2);
+        }
+      });
+    }
+    // 行区米黄底顶满至底部
+    ctx.fillStyle = BEIGE;
+    ctx.fillRect(hx, py + top, hw, h - top);
+    // 滚动条 (left / right 模式)
+    if (hasScrollbar) {
+      const sbx = isLeft ? px + 1 : px + w - 17;
+      const sby = py + titleH;
+      const sbw = 16;
+      const btnH = 16;
+      const trackY = sby + btnH;
+      const trackH = h - titleH - btnH * 2;
+
+      // 顶端上箭头 ▲
+      ctx.fillStyle = "#8aa474";
+      ctx.fillRect(sbx, sby, sbw, btnH);
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sbx + 0.5, sby + 0.5, sbw - 1, btnH - 1);
+      ctx.fillStyle = "#000000";
+      ctx.font = "11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("▲", sbx + sbw / 2, sby + btnH / 2);
+
+      // 底端下箭头 ▼
+      const bby = py + h - btnH;
+      ctx.fillStyle = "#8aa474";
+      ctx.fillRect(sbx, bby, sbw, btnH);
+      ctx.strokeStyle = "#000000";
+      ctx.strokeRect(sbx + 0.5, bby + 0.5, sbw - 1, btnH - 1);
+      ctx.fillStyle = "#000000";
+      ctx.fillText("▼", sbx + sbw / 2, bby + btnH / 2);
+
+      // 轨道深色背景
+      ctx.fillStyle = "#2c3e24";
+      ctx.fillRect(sbx, trackY, sbw, trackH);
+      ctx.strokeStyle = "#1a2616";
+      ctx.strokeRect(sbx + 0.5, trackY + 0.5, sbw - 1, trackH - 1);
+
+      // 滑块 (不超过 cap 时填满整个轨道)
+      const canScroll = rows.length > cap;
+      const thumbH = canScroll
+        ? Math.max(16, Math.round(trackH * (cap / rows.length)))
+        : trackH;
+      const thumbY = canScroll
+        ? trackY +
+          Math.round((scroll / (rows.length - cap)) * (trackH - thumbH))
+        : trackY;
+
+      ctx.fillStyle = "#8aa474";
+      ctx.fillRect(sbx + 1, thumbY, sbw - 2, thumbH);
+      ctx.strokeStyle = "#000000";
+      ctx.strokeRect(sbx + 0.5, thumbY + 0.5, sbw - 1, thumbH - 1);
+      // 高光与阴影
+      ctx.fillStyle = "#c0dc9e";
+      ctx.fillRect(sbx + 1, thumbY + 1, sbw - 2, 1);
+      ctx.fillStyle = "#4a6238";
+      ctx.fillRect(sbx + 1, thumbY + thumbH - 2, sbw - 2, 1);
+
+      ctx.textAlign = "left"; // 恢复对齐
+    }
+    // 行数据
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+    const n = Math.min(rows.length - scroll, cap);
+    const oy = Math.floor((rowH - 14) / 2);
+    for (let i = 0; i < n; i++) {
+      const row = rows[scroll + i];
+      const ry = py + top + i * rowH;
+      const isSelected = scroll + i === d.selectedRow;
+      const isHover = scroll + i === d.hover;
+      if (isSelected) {
+        ctx.fillStyle = "#4a7828";
+        ctx.fillRect(hx, ry, hw, rowH);
+      } else if (isHover) {
+        ctx.fillStyle = "rgba(0,0,0,0.12)";
+        ctx.fillRect(hx, ry, hw, rowH);
+      }
+      row.cells.forEach((cell, c) => {
+        const col = cols[c];
+        if (!col) return;
+        const text = typeof cell === "object" && cell !== null ? cell.t : cell;
+        let color = "#000000";
+        if (isSelected) {
+          color = "#e8ff60";
+        } else if (typeof cell === "object" && cell !== null && cell.color) {
+          color = cell.color;
+        }
+        ctx.fillStyle = color;
+        const isNum = /^\d+$/.test(text);
+        ctx.font = isNum ? DIN : FONT;
+        const tw2 = ctx.measureText(text).width;
+        let tx;
+        if (col.align === "right") tx = px + col.x + col.w - tw2;
+        else if (col.align === "center") tx = px + col.x + (col.w - tw2) / 2;
+        else tx = px + col.x;
+        ctx.fillText(text, tx, ry + oy);
+      });
+    }
+    // 底部提示框（黑底 + 金框 + 头像，文字白色）
+    if (d.footer && this.imgs?.messageNpc) {
+      const { fx, fy, fw, fh } = d;
+      const ftw = Math.ceil((fw + 16) / 16),
+        fth = Math.ceil((fh + 16) / 16);
+      const { x, y, h } = this._drawWindow(ctx, fx, fy, ftw, fth, "black");
+      const ph = 64;
+      ctx.drawImage(this.imgs.messageNpc, x, y, ph, ph);
+      ctx.font = FONT;
+      ctx.textBaseline = "top";
+      ctx.fillStyle = "#ffffff"; // ★所有提示弹窗的文字为白色
+      const tx = x + ph + 14;
+      const maxTextW = Math.max(40, (ftw - 1) * 16 - ph - 28);
+
+      // 自动折行 (Auto-wrap)
+      const rawText = String(d.footer.text ?? "");
+      const lines = [];
+      for (const paragraph of rawText.split("\n")) {
+        if (!paragraph) {
+          lines.push("");
+          continue;
+        }
+        let cur = "";
+        for (const ch of paragraph) {
+          const test = cur + ch;
+          if (ctx.measureText(test).width > maxTextW && cur.length > 0) {
+            lines.push(cur);
+            cur = ch;
+          } else {
+            cur = test;
+          }
+        }
+        if (cur) lines.push(cur);
+      }
+
+      const lineH = 20;
+      const totalH = lines.length * lineH;
+      const startY = y + Math.max(4, Math.floor((h - totalH) / 2));
+      lines.forEach((line, li) => {
+        ctx.fillText(line, tx, startY + li * lineH);
+      });
+    }
+  }
+
+  // ── 左下角据点信息弹窗（黑底 + 金框 + 城市图） ──
+  showCityCard(city) {
+    if (this.app?.view) this.app.view.selectedCity = city;
+    this.cityCard = {
+      city,
+      w: 352,
+      h: 160,
+      img: null,
+    };
+    this._recalcCityCard();
+    const view = String(city.view ?? 0).padStart(2, "0");
+    loadImage(`grf/kyo_${view}.png`).then((img) => {
+      if (this.cityCard && this.cityCard.city === city) {
+        this.cityCard.img = img;
+        this.app.view.draw();
+      }
+    });
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  closeCityCard() {
+    if (!this.cityCard) return;
+    if (this.app?.view?.selectedCity === this.cityCard.city) {
+      this.app.view.selectedCity = null;
+    }
+    this.cityCard = null;
+    this.app.view.draw();
+  }
+
+  /** 驻军据点点击后的选择菜单：与行军目标指示菜单同为24px行高。 */
+  showGarrisonChoice(city, legion) {
+    // 关闭可能冲突的弹窗
+    this.closeCityCard();
+    this.closeLegionCard();
+    this.closeListDialog?.();
+    if (this.app?.view) this.app.view.selectedCity = city;
+
+    this.choiceDialog = {
+      city,
+      legion,
+      w: 96,
+      h: 48,
+      wTiles: 7,
+      hTiles: 4,
+      items: ["거점", "군단"],
+      hover: -1,
+    };
+    this._recalcChoice();
+    this.app.hud.dialogCount = (this.app.hud.dialogCount ?? 0) + 1;
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  closeChoiceDialog() {
+    if (!this.choiceDialog) return;
+    if (this.app?.view?.selectedCity === this.choiceDialog.city) {
+      this.app.view.selectedCity = null;
+    }
+    this.choiceDialog = null;
+    this.selectedSubmenu = null; // 取消子菜单被选项
+    this.app.hud.dialogCount = Math.max(0, (this.app.hud.dialogCount ?? 1) - 1);
+    this.syncClock(); // 开始计时
+    this.app.view.draw();
+  }
+
+  _recalcChoice() {
+    const d = this.choiceDialog;
+    if (!d) return;
+    const view = this.app.view;
+    const [wxp, wyp] = view.cityPixel(d.city);
+    const sx = view.sx(wxp);
+    const sy = view.sy(wyp);
+    // 面板位于城市中心偏右下（112×64外框，96×48内区）。
+    const w = d.wTiles * 16;
+    const h = d.hTiles * 16;
+    d.ox = Math.max(8, Math.min(innerWidth - w - 8, sx - 16));
+    d.oy = Math.max(8, Math.min(innerHeight - h - 8, sy + 8));
+    d.px = d.ox + 8;
+    d.py = d.oy + 8;
+  }
+
+  _hitChoice(px, py) {
+    const d = this.choiceDialog;
+    if (!d) return -1;
+    this._recalcChoice();
+    const { px: x, py: y, w, h, items } = d;
+    if (px >= x && px < x + w && py >= y && py < y + h) {
+      const rowH = h / items.length;
+      const i = Math.floor((py - y) / rowH);
+      return i >= 0 && i < items.length ? i : -1;
+    }
+    return -1;
+  }
+
+  _clickChoice(px, py, btn) {
+    if (btn !== 0) return true;
+    const i = this._hitChoice(px, py);
+    if (i < 0) {
+      // 点击在选择弹窗外：消费事件，不做任何操作（只有右键才能取消关闭）
+      return true;
+    }
+    clickSfx();
+    const { city, legion } = this.choiceDialog;
+    // 切换时不调用 closeChoiceDialog()，避免其中间同步导致计时瞬间恢复
+    this.app.hud.dialogCount = Math.max(0, (this.app.hud.dialogCount ?? 1) - 1);
+    this.choiceDialog = null;
+    if (i === 0) {
+      this.showCityCard(city);
+    } else {
+      this.showLegionCard(city || legion);
+    }
+    return true;
+  }
+
+  _drawChoice(ctx) {
+    const d = this.choiceDialog;
+    if (!d) return;
+    this._recalcChoice();
+    const { ox, oy, wTiles, hTiles, items, hover } = d;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+    const w = win ? win.w : (wTiles - 1) * 16;
+    const h = win ? win.h : (hTiles - 1) * 16;
+    const rowH = h / items.length;
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+
+    items.forEach((item, i) => {
+      const iy = y + i * rowH;
+      const isHover = hover === i;
+      if (isHover) {
+        ctx.fillStyle = "#ffe000";
+        ctx.fillRect(x + 1, iy + 1, w - 2, rowH - 2);
+        ctx.fillStyle = "#0000bb";
+      } else {
+        ctx.fillStyle = "#ffffff";
+      }
+      const label = `${item[0]}　${item[1]}`;
+      const tw = ctx.measureText(label).width;
+      ctx.fillText(label, x + (w - tw) / 2, iy + (rowH - 16) / 2 + 1);
+    });
+  }
+
+  /** 军团信息弹窗（ beige 列表，scrollbar: right，10行原版规格）
+   *  大地图点击据点/军团入口：
+   *  - 我方据点：点击军团进入行军目标指示，命令完成后返回本列表。
+   *  - 非我方据点：点击军团在右侧显示查看面板，列表保持选中，右键返回列表。
+   */
+  showLegionCard(target) {
+    this.closeCityCard();
+    this.closeChoiceDialog();
+    this.viewingLegion = null;
+    this._legionListSourceCity = null;
+    const sc = this.app.scenario;
+    if (!sc) return;
+
+    let targetCity = null;
+    let legions = [];
+
+    // 如果传入的是据点
+    if (target && target.type != null && target.prod != null) {
+      targetCity = target;
+      legions = sc.legions.filter(
+        (L) =>
+          !L.dead &&
+          L._active !== false &&
+          L.faction != null &&
+          L.x === target.x &&
+          L.y === target.y,
+      );
+    } else if (target && target.leader != null) {
+      // 传入的是军团
+      const L = target;
+      targetCity = sc.cities.find((c) => c.x === L.x && c.y === L.y) || null;
+      legions = sc.legions.filter(
+        (l) =>
+          !l.dead &&
+          l._active !== false &&
+          l.faction != null &&
+          l.x === L.x &&
+          l.y === L.y,
+      );
+      if (!legions.includes(L)) legions.unshift(L);
+    }
+
+    if (targetCity && this.app?.view) {
+      this.app.view.selectedCity = targetCity;
+    }
+    this._legionListSourceCity = targetCity;
+
+    const me = cmd.playerFaction(sc);
+    const isPlayerCity = targetCity && me && targetCity.faction === me.idx;
+
+    const rows = legions.map((L) => {
+      const curCity = sc.cities.find((c) => c.x === L.x && c.y === L.y) || null;
+      const curName = curCity?.name?.trim() ?? `(${L.x},${L.y})`;
+      const targetName = L.target
+        ? (L.target.name ?? "－－－－").trim()
+        : "－－－－";
+      const mode = isLegionDelegated(L) ? "위임" : "직접 지휘";
+      const [troops, morale] = legionStrengthCells(L);
+      return {
+        cells: [L.leader || "？", troops, morale, curName, targetName, mode],
+        _legion: L,
+      };
+    });
+
+    // 补足 10 行虚线占位 (原版军团情报规格)
+    while (rows.length < 10) {
+      rows.push({
+        cells: [
+          "－－－－",
+          "－－－－",
+          "－－－",
+          "－－－－",
+          "－－－－",
+          "－－－－",
+        ],
+      });
+    }
+
+    this.openListDialog({
+      title: "",
+      titleBar: false,
+      header: [
+        "무장명",
+        "총병력",
+        "사기",
+        "현재 위치",
+        "목표 거점",
+        "지휘 방식",
+      ],
+      cols: [
+        { x: 8, w: 72, align: "left" },
+        { x: 82, w: 56, align: "right" },
+        { x: 140, w: 48, align: "right" },
+        { x: 192, w: 76, align: "left" },
+        { x: 272, w: 76, align: "left" },
+        { x: 352, w: 84, align: "left" },
+      ],
+      rows,
+      rowH: 18,
+      scrollbar: "right",
+      w: 480,
+      h: 220,
+      footer: {
+        text: isPlayerCity
+          ? "행군을 지시할 군단을 선택하십시오."
+          : "확인할 군단을 선택하십시오.",
+      },
+      onPick: (ri) => {
+        const row = rows[ri];
+        const L = row?._legion;
+        if (!L) return;
+        if (L.faction === me?.idx) {
+          if (!this.legionAcceptsMarchOrder(L, true)) return;
+          // 我方军团：进入行军目标指示
+          this.marchingOrder = {
+            legion: L,
+            step: "pick_target",
+            targetCity: null,
+            sourceCity: targetCity,
+          };
+          this._legionListSourceCity = targetCity;
+          this.closeListDialog(true);
+          this.syncClock();
+          this.app.view.draw();
+        } else {
+          // 非我方军团：右侧查看面板 + 列表选中 + 底部提示
+          this.viewingLegion = L;
+          if (this.listDialog) this.listDialog.selectedRow = ri;
+          this.syncClock();
+          this.app.view.draw();
+        }
+      },
+      onCancel: () => {
+        this.viewingLegion = null;
+        this._legionListSourceCity = null;
+        if (this.app?.view) this.app.view.selectedCity = null;
+        this.syncClock();
+        this.app.view.draw();
+      },
+    });
+    this.syncClock();
+  }
+
+  closeLegionCard() {
+    this.viewingLegion = null;
+    this._legionListSourceCity = null;
+    this.closeListDialog();
+  }
+
+  /** 军师子菜单「軍團」: 展开二级菜单 (位置確認 / 行軍指示) */
+  showLegionMenu() {
+    this.closeCityCard();
+    this.closeListDialog();
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.closeProposalAudience();
+    this.closeMarchingOrder();
+    this.selectedSubmenu = 4;
+    this.syncClock();
+
+    const cellW = 78;
+    const btnX = this.bx + 8 + 4 * cellW;
+    const wTiles = 7;
+    const hTiles = 4;
+    const ox = Math.round(btnX + (cellW - wTiles * 16) / 2);
+    const oy = 72;
+
+    this.legionMenu = {
+      ox,
+      oy,
+      wTiles,
+      hTiles,
+      items: ["위치 확인", "행군 지시"],
+      hover: -1,
+    };
+    this.app.view.draw();
+  }
+
+  closeLegionMenu() {
+    if (!this.legionMenu) return;
+    this.legionMenu = null;
+    this.app.view.draw();
+  }
+
+  _hitLegionMenu(px, py) {
+    if (!this.legionMenu) return -1;
+    const { ox, oy, wTiles, hTiles, items } = this.legionMenu;
+    const x = ox + 8;
+    const y = oy + 8;
+    const w = (wTiles - 1) * 16;
+    const h = (hTiles - 1) * 16;
+    if (px >= x && px < x + w && py >= y && py < y + h) {
+      const rowH = h / items.length;
+      const i = Math.floor((py - y) / rowH);
+      return i >= 0 && i < items.length ? i : -1;
+    }
+    return -1;
+  }
+
+  _drawLegionMenu(ctx) {
+    if (!this.legionMenu) return;
+    const { ox, oy, wTiles, hTiles, items, hover } = this.legionMenu;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+    const w = win ? win.w : (wTiles - 1) * 16;
+    const h = win ? win.h : (hTiles - 1) * 16;
+    const rowH = h / items.length;
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+
+    items.forEach((item, i) => {
+      const iy = y + i * rowH;
+      const isHover = hover === i;
+      if (isHover) {
+        ctx.fillStyle = "#ffe000";
+        ctx.fillRect(x + 1, iy + 1, w - 2, rowH - 2);
+        ctx.fillStyle = "#0000bb";
+      } else {
+        ctx.fillStyle = "#ffffff";
+      }
+      const tw = ctx.measureText(item).width;
+      ctx.fillText(item, x + (w - tw) / 2, iy + (rowH - 16) / 2 + 1);
+    });
+  }
+
+  /** 「位置確認」: 列出我方军团，点击居中到军团位置 (KI.EXE 0x62A4 & 0x716D) */
+  showLegionLocate() {
+    this.closeCityCard();
+    this.closeListDialog();
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.closeProposalAudience();
+    this.closeMarchingOrder();
+    this.selectedSubmenu = 4; // 軍團
+    this.syncClock();
+
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!sc || !me) return;
+
+    const myLegions = (sc.legions ?? []).filter(
+      (L) => !L.dead && L._active !== false && L.faction === me.idx,
+    );
+
+    const rows = myLegions.map((L) => {
+      const curCity = sc.cities.find((c) => c.x === L.x && c.y === L.y) || null;
+      const curName = curCity?.name?.trim() ?? `(${L.x},${L.y})`;
+      const targetName = L.target
+        ? (L.target.name ?? "－－－－").trim()
+        : "－－－－";
+      const mode = isLegionDelegated(L) ? "위임" : "직접 지휘";
+      const [troops, morale] = legionStrengthCells(L);
+      return {
+        cells: [L.leader || "？", troops, morale, curName, targetName, mode],
+        _legion: L,
+        _curCity: curCity,
+      };
+    });
+
+    while (rows.length < 10) {
+      rows.push({
+        cells: [
+          "－－－－",
+          "－－－－",
+          "－－－",
+          "－－－－",
+          "－－－－",
+          "－－－－",
+        ],
+      });
+    }
+
+    this.openListDialog({
+      title: "",
+      titleBar: false,
+      header: [
+        "무장명",
+        "총병력",
+        "사기",
+        "현재 위치",
+        "목표 거점",
+        "지휘 방식",
+      ],
+      cols: [
+        { x: 8, w: 72, align: "left" },
+        { x: 82, w: 56, align: "right" },
+        { x: 140, w: 48, align: "right" },
+        { x: 192, w: 76, align: "left" },
+        { x: 272, w: 76, align: "left" },
+        { x: 352, w: 84, align: "left" },
+      ],
+      rows,
+      rowH: 18,
+      scrollbar: "right",
+      w: 480,
+      h: 220,
+      footer: {
+        text: "군단의 현재 위치로 이동합니다.",
+      },
+      onPick: (ri) => {
+        const row = rows[ri];
+        const L = row?._legion;
+        if (!L) return;
+        this.closeListDialog(true);
+
+        const view = this.app.view;
+        const curCity = row._curCity;
+        let wxp, wyp;
+        if (curCity) {
+          [wxp, wyp] = view.cityPixel(curCity);
+          view.selectedCity = null;
+        } else {
+          const t = this.app.clock?.dayProgress?.() ?? 1;
+          const pos = view.getLegionRenderPos(L, t);
+          wxp = pos.wxp;
+          wyp = pos.wyp;
+          view.selectedCity = null;
+        }
+
+        view.cam.x = innerWidth / 2 - wxp;
+        view.cam.y = innerHeight / 2 - wyp;
+        view.clampCam();
+
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      },
+      onCancel: () => {
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      },
+    });
+  }
+
+  /** 「行軍指示」: 列出我方军团并进入目标据点指示模式 (KI.EXE 0x62D2 & 0x7F90) */
+  showLegionMarchOrders() {
+    this.closeCityCard();
+    this.closeListDialog();
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.closeProposalAudience();
+    this.closeMarchingOrder();
+    this.selectedSubmenu = 4; // 軍團
+    this.syncClock();
+
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!sc || !me) return;
+
+    const myLegions = (sc.legions ?? []).filter(
+      (L) => !L.dead && L._active !== false && L.faction === me.idx,
+    );
+
+    const rows = myLegions.map((L) => {
+      const curCity = sc.cities.find((c) => c.x === L.x && c.y === L.y) || null;
+      const curName = curCity?.name?.trim() ?? `(${L.x},${L.y})`;
+      const targetName = L.target
+        ? (L.target.name ?? "－－－－").trim()
+        : "－－－－";
+      const mode = isLegionDelegated(L) ? "위임" : "직접 지휘";
+      const [troops, morale] = legionStrengthCells(L);
+      return {
+        cells: [L.leader || "？", troops, morale, curName, targetName, mode],
+        _legion: L,
+      };
+    });
+
+    while (rows.length < 10) {
+      rows.push({
+        cells: [
+          "－－－－",
+          "－－－－",
+          "－－－",
+          "－－－－",
+          "－－－－",
+          "－－－－",
+        ],
+      });
+    }
+
+    this.openListDialog({
+      title: "",
+      titleBar: false,
+      header: [
+        "무장명",
+        "총병력",
+        "사기",
+        "현재 위치",
+        "목표 거점",
+        "지휘 방식",
+      ],
+      cols: [
+        { x: 8, w: 72, align: "left" },
+        { x: 82, w: 56, align: "right" },
+        { x: 140, w: 48, align: "right" },
+        { x: 192, w: 76, align: "left" },
+        { x: 272, w: 76, align: "left" },
+        { x: 352, w: 84, align: "left" },
+      ],
+      rows,
+      rowH: 18,
+      scrollbar: "right",
+      w: 480,
+      h: 220,
+      footer: {
+        text: "행군을 지시할 군단을 선택하십시오.",
+      },
+      onPick: (ri) => {
+        const row = rows[ri];
+        const L = row?._legion;
+        if (!L || !this.legionAcceptsMarchOrder(L, true)) return;
+
+        // 进入目标据点指示模式 (大地图可平移拖拽，右侧显示军团详细面板，底部提示 Talk 3)
+        this.selectedSubmenu = 4;
+        this.marchingOrder = {
+          legion: L,
+          step: "pick_target",
+          targetCity: null,
+        };
+        this.closeListDialog(true);
+        this.syncClock();
+        this.app.view.draw();
+      },
+      onCancel: () => {
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      },
+    });
+  }
+
+  closeMarchingOrder() {
+    this.closeOrderChoiceMenu();
+    this.marchingOrder = null;
+    this.app.view.draw();
+  }
+
+  /** 羽扇关闭与右键回退共用：清理军师菜单的全部子孙/选择，不重开列表。 */
+  resetAdvisorDescendants() {
+    this.closeProposalAudience?.();
+    this.closeAdviceMenu?.();
+    this.closeLegionMenu?.();
+    this.closeOrderChoiceMenu?.();
+    this.closeMarchingOrder?.();
+    this.closeBaseMenu?.();
+    this.closePersonnelMenu?.();
+    this.closeKeypadDialog?.();
+    this.closeFinanceDialog?.();
+    this.closeFormationDialog?.();
+    this.formationQuote = null;
+    this.closeGeneralCard?.();
+    this.closeListDialog?.(true);
+    this.closeChoiceDialog?.();
+    this.closeCityCard?.();
+    this.viewingLegion = null;
+    this._legionListSourceCity = null;
+    this.selectedSubmenu = null;
+    if (this.app?.view) this.app.view.selectedCity = null;
+    const doc = globalThis.document;
+    for (const el of doc?.querySelectorAll?.(".panel") ?? []) {
+      if (el.id && el.style.display !== "none") el.remove();
+    }
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  legionAcceptsMarchOrder(legion, notify = false) {
+    const blocked = Boolean(legion?._retreat || legion?._engagement);
+    if (blocked && notify) {
+      const state = legion._retreat ? "퇴각 중" : "교전 중";
+      this.app.hud?.flashEvent?.(
+        `「${legion.leader ?? "해당 군단"}」은(는) ${state}이므로 행군 명령을 바꿀 수 없습니다.`,
+      );
+      warnSfx();
+    }
+    return !blocked;
+  }
+
+  assignMarchOrder(legion, targetCity, delegated) {
+    if (!this.legionAcceptsMarchOrder(legion, true)) return false;
+    legion.target = targetCity;
+    legion.targetCity = targetCity.idx;
+    legion.targetNode = scenarioRoadNode(this.app.scenario, targetCity.x, targetCity.y)?.id ?? null;
+    // 7FDB writes +0B=1 without changing +1E/+03. 7FB4 immediately calls
+    // 4325 (not through the slot gate), then 7FB7 sets bit1. 4548 resolves
+    // the new target coordinates/node even when the legion has not arrived.
+    legion.targetX = targetCity.x;
+    legion.targetY = targetCity.y;
+    legion.commandState = 0;
+    delete legion._aiOrdered;
+    setLegionDelegated(legion, delegated);
+    legion.moveDelay = 1;
+    settleArrivedLegionCommand(this.app.scenario, legion);
+    legion.status |= 0x02;
+    return true;
+  }
+
+  /** 弹出目标据点战斗指示选择菜单 (KI.EXE 0x7FDB - 0x804E, Talk 76) */
+  showOrderChoiceMenu(city) {
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    const isCapital = me && city && city.idx === me.capital;
+    const items = isCapital
+      ? ["직접 지휘", "위　　임", "해　　산"]
+      : ["직접 지휘", "위　　임"];
+    const wTiles = 7;
+    const hTiles = items.length + 2;
+
+    const view = this.app.view;
+    const [wxp, wyp] = view.cityPixel(city);
+    const sx = view.sx(wxp);
+    const sy = view.sy(wyp);
+    const w = wTiles * 16;
+    const h = hTiles * 16;
+    const ox = Math.max(8, Math.min(innerWidth - w - 8, sx + 16));
+    const oy = Math.max(40, Math.min(innerHeight - h - 8, sy - 8));
+
+    this.orderChoiceMenu = {
+      city,
+      items,
+      ox,
+      oy,
+      wTiles,
+      hTiles,
+      hover: -1,
+    };
+    this.app.view.draw();
+  }
+
+  closeOrderChoiceMenu() {
+    if (!this.orderChoiceMenu) return;
+    this.orderChoiceMenu = null;
+    this.app.view.draw();
+  }
+
+  _hitOrderChoiceMenu(px, py) {
+    const m = this.orderChoiceMenu;
+    if (!m) return -1;
+    const { ox, oy, wTiles, hTiles, items } = m;
+    const x = ox + 8;
+    const y = oy + 8;
+    const w = (wTiles - 1) * 16;
+    const h = (hTiles - 1) * 16;
+    if (px >= x && px < x + w && py >= y && py < y + h) {
+      const rowH = h / items.length;
+      const i = Math.floor((py - y) / rowH);
+      return i >= 0 && i < items.length ? i : -1;
+    }
+    return -1;
+  }
+
+  _drawOrderChoiceMenu(ctx) {
+    const m = this.orderChoiceMenu;
+    if (!m) return;
+    const { ox, oy, wTiles, hTiles, items, hover } = m;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+    const w = win ? win.w : (wTiles - 1) * 16;
+    const h = win ? win.h : (hTiles - 1) * 16;
+    const rowH = h / items.length;
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+
+    items.forEach((item, i) => {
+      const iy = y + i * rowH;
+      const isHover = hover === i;
+      if (isHover) {
+        ctx.fillStyle = "#ffe000";
+        ctx.fillRect(x + 1, iy + 1, w - 2, rowH - 2);
+        ctx.fillStyle = "#0000bb";
+      } else {
+        ctx.fillStyle = "#ffffff";
+      }
+      const tw = ctx.measureText(item).width;
+      ctx.fillText(item, x + (w - tw) / 2, iy + (rowH - 16) / 2 + 1);
+    });
+  }
+
+  /** 获取军团 6 队编制信息 */
+  _getLegionUnits(legion) {
+    if (Array.isArray(legion.units) && legion.units.length === 6) {
+      return legion.units;
+    }
+    const tot = (legion.troops ?? 0) * 10;
+    const per = Math.floor(tot / 6);
+    const rem = tot % 6;
+    const units = DEFAULT_LEGION_UNIT_TYPES.map((type, idx) => ({
+      name: ["主將", "前鋒", "左翼", "右翼", "左備", "右備"][idx],
+      type,
+      troops: per + (idx < rem ? 1 : 0),
+    }));
+    legion.units = units;
+    return units;
+  }
+
+  /**
+   * 玩家在首都外选择「解體」时，原版状态11必须先返首都；抵达后的
+   * 0x44D6/aiTick 才归还兵员并清除军团，不能在当前据点瞬间删除。
+   */
+  _orderDisbandAtCapital(legion, capital) {
+    if (!this.assignMarchOrder(legion, capital, false)) return false;
+    legion.commandState = 11;
+    this.app.hud?.flashEvent?.(
+      `「${legion.leader}」군단은 「${capital.name.trim()}」에 귀환한 뒤 해산합니다.`,
+    );
+    return true;
+  }
+
+  /** 军团解体: 将兵力全额返还势力预备兵池 (KI.EXE 0x463E & 0x4717) */
+  _disbandLegion(legion) {
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!me || !legion) return;
+
+    const units = this._getLegionUnits(legion);
+    for (const u of units) {
+      const count = u.troops || 0;
+      const poolAdd = Math.floor(count / 10);
+      const reserveField = LEGION_RESERVE_FIELD_BY_TYPE[u.type];
+      if (reserveField) me[reserveField] = (me[reserveField] ?? 0) + poolAdd;
+    }
+
+    const gen = sc.generals?.find((g) => g.name === legion.leader);
+    if (gen) {
+      gen.status = 0;
+      gen.is_monarch = false;
+    }
+    const monarch = sc.monarchOf(me);
+    if (monarch && monarch.name === legion.leader) {
+      monarch.status = 0;
+      monarch.is_monarch = false;
+    }
+
+    legion.dead = true;
+    sc.legions = sc.legions.filter((l) => !l.dead && l !== legion);
+
+    this.app.hud?.flashEvent?.(
+      `「${legion.leader}」군단을 해산했습니다. 병력은 예비병으로 편입됩니다.`,
+    );
+    this.app.hud?.refreshInfo?.();
+  }
+
+  /** 绘制行军指示/军团查看全套 UI (右侧军团详细信息面板 + 底部 NPC 提示窗口) */
+  _drawMarchingOrder(ctx) {
+    const m = this.marchingOrder;
+    const v = this.viewingLegion;
+    const legion = m?.legion ?? v;
+    if (!legion) return;
+
+    // 1. 绘制右侧 14×13 tiles 军团详细信息面板
+    this._drawLegionDetailPanel(ctx, legion);
+
+    // 2. 绘制底部 NPC 提示窗口
+    let promptText;
+    if (v) {
+      promptText = "우클릭하면 돌아갑니다.";
+    } else if (m.step === "choose_order" && m.targetCity) {
+      promptText = `${m.targetCity.name.trim()}(으)로 이동합니다. 지휘 방식을 선택하십시오.`;
+    } else {
+      promptText = "행군 목표 거점을 선택하십시오.";
+    }
+    this._drawBottomPromptWindow(ctx, promptText);
+  }
+
+  /** 绘制军团详细信息面板 (14×15 tiles = 224×240, KI.EXE 0x807B & 0x812A) */
+  _drawLegionDetailPanel(ctx, legion) {
+    if (!legion) return;
+    const sc = this.app.scenario;
+    if (!sc) return;
+
+    const W = innerWidth;
+    const pw = 224;
+    const ph = 240;
+    const res = this.panelRect("res");
+    const px = res ? res.x : W - pw - 4;
+    const targetY = res ? res.y + res.h + 8 : 36;
+    let py = targetY;
+    if (targetY + ph > innerHeight - 8) {
+      py = res ? res.y : 36;
+    }
+
+    if (this._gf) {
+      this._drawWindow(ctx, px - 8, py - 8, 14, 15, "cloud");
+    } else {
+      ctx.fillStyle = NAVY;
+      ctx.fillRect(px, py, pw, ph);
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+    }
+    const x = px;
+    const y = py;
+
+    // 使用军团所属势力信息；若无法确定（如查看非玩家军团），使用军团.faction
+    const legionFaction =
+      legion.faction == null
+        ? cmd.playerFaction(sc)
+        : sc.factions.find((f) => f.idx === legion.faction);
+    const gen = Number.isInteger(legion.generalIdx)
+      ? sc.generals?.find((g) => g.idx === legion.generalIdx)
+      : sc.generals?.find((g) => g.name === legion.leader);
+    const monarch = legionFaction ? sc.monarchOf(legionFaction) : null;
+    const isMonarch = legion.is_monarch || gen?.name === monarch?.name;
+
+    // 1. 头像 64x64
+    const world = this.app.world;
+    const portraitKey = portraitURL(gen ?? monarch, world);
+    if (this._legionPortraitKey !== portraitKey) {
+      this._legionPortraitKey = portraitKey;
+      this._legionPortraitImg = null;
+      loadImage(portraitKey)
+        .then((img) => {
+          if (this.app.scenario !== sc || this.app.world !== world || this._legionPortraitKey !== portraitKey) return;
+          this._legionPortraitImg = img;
+          this.app.view.draw();
+        })
+        .catch(() => {});
+    }
+    const avatarY = y + 14;
+    if (this._legionPortraitImg) {
+      ctx.drawImage(
+        this._legionPortraitImg,
+        0,
+        0,
+        128,
+        128,
+        x + 8,
+        avatarY,
+        64,
+        64,
+      );
+    } else {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(x + 8, avatarY, 64, 64);
+    }
+
+    // 2. 右侧信息: 將軍/君主, 首都, 總兵力, 士氣值
+    const cap = legionFaction ? sc.city(legionFaction.capital) : null;
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+    const infoRows = [
+      [isMonarch ? "군주" : "장군", legion.leader || "？", false],
+      ["수도", cap?.name?.trim() ?? "없음", false],
+      ["총병력", `${(legion.troops ?? 0) * 10}`, true],
+      ["사기", `${legion.morale ?? 200}`, true],
+    ];
+
+    infoRows.forEach(([label, val, isNum], i) => {
+      const iy = y + 14 + i * 16;
+      ctx.fillStyle = CREAM;
+      ctx.fillText(label, x + 76, iy);
+      ctx.fillStyle = "#ffffff";
+      if (isNum) {
+        ctx.font = DIN;
+        ctx.fillText(val, x + 150, iy);
+        ctx.font = FONT;
+      } else {
+        ctx.fillText(val, x + 150, iy);
+      }
+    });
+
+    // 竖直分隔白线
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 142.5, y + 12);
+    ctx.lineTo(x + 142.5, y + 80);
+    ctx.stroke();
+
+    // 3. 下方 6 队编制
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(x + 8, y + 86, 192, 120);
+
+    const unitNames = ["주장", "선봉", "좌익", "우익", "좌비", "우비"];
+    const units = this._getLegionUnits(legion);
+    const { cav, arc, inf } = this.imgs;
+    const typeImgs = [null, cav, arc, inf]; // 原始码：1=騎兵, 2=弓兵, 3=步兵
+
+    units.forEach((u, i) => {
+      const uy = y + 90 + i * 18;
+      ctx.fillStyle = CREAM;
+      ctx.fillText(unitNames[i] || "부대", x + 16, uy);
+
+      const rx = x + 95;
+      const ry = uy + 1;
+      const rw = 22;
+      const rh = 14;
+      ctx.fillStyle = "#d00000";
+      ctx.fillRect(rx, ry, rw, rh);
+      const img = typeImgs[u.type ?? 0];
+      if (img) {
+        ctx.drawImage(img, rx, ry, rw, rh);
+      }
+
+      ctx.font = DIN;
+      ctx.fillStyle = "#ffffff";
+      const s = `${u.troops ?? 0}`;
+      ctx.fillText(s, x + 196 - ctx.measureText(s).width, uy);
+      ctx.font = FONT;
+    });
+  }
+
+  _hitLegionDetailPanel(px, py) {
+    if (!this.marchingOrder && !this.viewingLegion) return false;
+    const W = innerWidth;
+    const pw = 224;
+    const ph = 240;
+    const res = this.panelRect("res");
+    const px0 = res ? res.x : W - pw - 4;
+    const targetY = res ? res.y + res.h + 8 : 36;
+    let py0 = targetY;
+    if (targetY + ph > innerHeight - 8) {
+      py0 = res ? res.y : 36;
+    }
+    return px >= px0 && px < px0 + pw && py >= py0 && py < py0 + ph;
+  }
+
+  /** 绘制底部统一规格信息提示窗口 (480×80, 30×5 tiles, 黑底金框 + NPC 头像 + 白字折行) */
+  _drawBottomPromptWindow(ctx, rawText) {
+    if (!this.imgs?.messageNpc) return;
+    const fw = 480;
+    const fh = 64;
+    const fx = Math.round((innerWidth - fw) / 2);
+    const fy = innerHeight - (fh + 16) - 24; // 底部留 24px 间距
+    const ftw = Math.ceil((fw + 16) / 16);
+    const fth = Math.ceil((fh + 16) / 16);
+    const { x, y } = this._drawWindow(ctx, fx, fy, ftw, fth, "black");
+    const ph = 64;
+    ctx.drawImage(this.imgs.messageNpc, x, y, ph, ph);
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#ffffff";
+    const tx = x + ph + 14;
+    const maxTextW = Math.max(40, (ftw - 1) * 16 - ph - 28);
+
+    const lines = [];
+    for (const paragraph of String(rawText ?? "").split("\n")) {
+      if (!paragraph) {
+        lines.push("");
+        continue;
+      }
+      let cur = "";
+      for (const char of paragraph) {
+        if (ctx.measureText(cur + char).width > maxTextW) {
+          lines.push(cur);
+          cur = char;
+        } else {
+          cur += char;
+        }
+      }
+      if (cur) lines.push(cur);
+    }
+
+    const lineH = 18;
+    const totalH = lines.length * lineH;
+    const textStartY = y + Math.max(0, Math.floor((ph - totalH) / 2));
+    lines.forEach((line, li) => {
+      ctx.fillText(line, tx, textStartY + li * lineH);
+    });
+  }
+
+  _hitBottomPromptWindow(px, py) {
+    if (!this.marchingOrder) return false;
+    const fw = 480;
+    const fh = 64;
+    const fx = Math.round((innerWidth - fw) / 2);
+    const fy = innerHeight - (fh + 16) - 24;
+    return px >= fx - 8 && px < fx + fw + 8 && py >= fy - 8 && py < fy + fh + 8;
+  }
+
+  /** 军师子菜单「據點」二级下拉菜单 (首都確認 / 據點一覽) */
+  showBaseMenu() {
+    this.closeCityCard();
+    this.closeListDialog();
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.selectedSubmenu = 5;
+    this.syncClock();
+
+    const cellW = 78;
+    const btnX = this.bx + 8 + 5 * cellW;
+    const wTiles = 7;
+    const hTiles = 4;
+    const ox = Math.round(btnX + (cellW - wTiles * 16) / 2);
+    const oy = 72;
+
+    this.baseMenu = {
+      ox,
+      oy,
+      wTiles,
+      hTiles,
+      items: ["首都確認", "據點一覽"],
+      hover: -1,
+    };
+    this.app.view.draw();
+  }
+
+  closeBaseMenu() {
+    if (!this.baseMenu) return;
+    this.baseMenu = null;
+    this.app.view.draw();
+  }
+
+  _hitBaseMenu(px, py) {
+    if (!this.baseMenu) return -1;
+    const { ox, oy, wTiles, hTiles, items } = this.baseMenu;
+    const x = ox + 8;
+    const y = oy + 8;
+    const w = (wTiles - 1) * 16;
+    const h = (hTiles - 1) * 16;
+    if (px >= x && px < x + w && py >= y && py < y + h) {
+      const rowH = h / items.length;
+      const i = Math.floor((py - y) / rowH);
+      return i >= 0 && i < items.length ? i : -1;
+    }
+    return -1;
+  }
+
+  _drawBaseMenu(ctx) {
+    if (!this.baseMenu) return;
+    const { ox, oy, wTiles, hTiles, items, hover } = this.baseMenu;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+    const w = win ? win.w : (wTiles - 1) * 16;
+    const h = win ? win.h : (hTiles - 1) * 16;
+    const rowH = h / items.length;
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+
+    items.forEach((item, i) => {
+      const iy = y + i * rowH;
+      const isHover = hover === i;
+      if (isHover) {
+        ctx.fillStyle = "#ffe000";
+        ctx.fillRect(x + 1, iy + 1, w - 2, rowH - 2);
+        ctx.fillStyle = "#0000bb";
+      } else {
+        ctx.fillStyle = "#ffffff";
+      }
+      const tw = ctx.measureText(item).width;
+      ctx.fillText(item, x + (w - tw) / 2, iy + (rowH - 16) / 2 + 1);
+    });
+  }
+
+  /** 军师子菜单「人事」二级下拉菜单 (內政官任命 / 內政官解任 / 外交官任命 / 外交官解任) */
+  showPersonnelMenu() {
+    this.closeCityCard();
+    this.closeListDialog();
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.selectedSubmenu = 1;
+    this.syncClock();
+
+    const cellW = 78;
+    const btnX = this.bx + 8 + 1 * cellW;
+    const wTiles = 8;
+    const hTiles = 6;
+    const ox = Math.round(btnX - 22);
+    const oy = 72;
+
+    this.personnelMenu = {
+      ox,
+      oy,
+      wTiles,
+      hTiles,
+      items: ["내정관 임명", "내정관 해임", "외교관 임명", "외교관 해임"],
+      hover: -1,
+    };
+    this.app.view.draw();
+  }
+
+  closePersonnelMenu() {
+    if (!this.personnelMenu) return;
+    this.personnelMenu = null;
+    this.app.view.draw();
+  }
+
+  _hitPersonnelMenu(px, py) {
+    if (!this.personnelMenu) return -1;
+    const { ox, oy, wTiles, hTiles, items } = this.personnelMenu;
+    const x = ox + 8;
+    const y = oy + 8;
+    const w = (wTiles - 1) * 16;
+    const h = (hTiles - 1) * 16;
+    if (px >= x && px < x + w && py >= y && py < y + h) {
+      const rowH = h / items.length;
+      const i = Math.floor((py - y) / rowH);
+      return i >= 0 && i < items.length ? i : -1;
+    }
+    return -1;
+  }
+
+  _drawPersonnelMenu(ctx) {
+    if (!this.personnelMenu) return;
+    const { ox, oy, wTiles, hTiles, items, hover } = this.personnelMenu;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+    const w = win ? win.w : (wTiles - 1) * 16;
+    const h = win ? win.h : (hTiles - 1) * 16;
+    const rowH = h / items.length;
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+
+    items.forEach((item, i) => {
+      const iy = y + i * rowH;
+      const isHover = hover === i;
+      if (isHover) {
+        ctx.fillStyle = "#ffe000";
+        ctx.fillRect(x + 1, iy + 1, w - 2, rowH - 2);
+        ctx.fillStyle = "#0000bb";
+      } else {
+        ctx.fillStyle = "#ffffff";
+      }
+      const tw = ctx.measureText(item).width;
+      ctx.fillText(item, x + (w - tw) / 2, iy + (rowH - 16) / 2 + 1);
+    });
+  }
+
+  /** 军师子菜单「進言」二级下拉菜单 (敵對提案 / 停戰提案 / 請求協助 / 遷都 / 請求君主出陣) */
+  showAdviceMenu() {
+    this.closeCityCard();
+    this.closeListDialog();
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeProposalAudience();
+    this.selectedSubmenu = 0;
+    this.syncClock();
+
+    const btnX = this.bx + 8;
+    const wTiles = 8;
+    const hTiles = 7;
+    const ox = Math.round(btnX - 22);
+    const oy = 72;
+
+    this.adviceMenu = {
+      ox,
+      oy,
+      wTiles,
+      hTiles,
+      items: ["敵對提案", "停戰提案", "請求協助", "遷都", "請求君主出陣"],
+      hover: -1,
+    };
+    this.app.view.draw();
+  }
+
+  closeAdviceMenu() {
+    if (!this.adviceMenu) return;
+    this.adviceMenu = null;
+    this.app.view.draw();
+  }
+
+  _hitAdviceMenu(px, py) {
+    if (!this.adviceMenu) return -1;
+    const { ox, oy, wTiles, hTiles, items } = this.adviceMenu;
+    const x = ox + 8;
+    const y = oy + 8;
+    const w = (wTiles - 1) * 16;
+    const h = (hTiles - 1) * 16;
+    if (px >= x && px < x + w && py >= y && py < y + h) {
+      const rowH = h / items.length;
+      const i = Math.floor((py - y) / rowH);
+      return i >= 0 && i < items.length ? i : -1;
+    }
+    return -1;
+  }
+
+  _drawAdviceMenu(ctx) {
+    if (!this.adviceMenu) return;
+    const { ox, oy, wTiles, hTiles, items, hover } = this.adviceMenu;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+    const w = win ? win.w : (wTiles - 1) * 16;
+    const h = win ? win.h : (hTiles - 1) * 16;
+    const rowH = h / items.length;
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+
+    items.forEach((item, i) => {
+      const iy = y + i * rowH;
+      const isHover = hover === i;
+      if (isHover) {
+        ctx.fillStyle = "#ffe000";
+        ctx.fillRect(x + 1, iy + 1, w - 2, rowH - 2);
+        ctx.fillStyle = "#0000bb";
+      } else {
+        ctx.fillStyle = "#ffffff";
+      }
+      const tw = ctx.measureText(item).width;
+      ctx.fillText(item, x + (w - tw) / 2, iy + (rowH - 16) / 2 + 1);
+    });
+  }
+
+  /**
+   * 0x30CB/0x3119：提案判定的关系字节。native 场景读 24×24 原始矩阵；
+   * 否则 v1 镜像（v1 场景非 native 权威，仅作显示/近似输入）。
+   */
+  _proposalRelationByte(sc, a, b, at) {
+    if (hasNativeDiplomacyMatrix(sc)) return nativeDiplomacyAt(sc, a, b, at);
+    return relation(sc, a, b) & 0xff;
+  }
+
+  /**
+   * 提案入口门（停战/协助专用）：6605/676F 事件环查重（type6→TALK73、
+   * type7→TALK74，304E 任意参数在途即拒）先于外交官门（目标diplomat_idx
+   * ==null→TALK55，\3=目标君主名）。敌对提案无此门（v1 dist实证：
+   * showHostileProposalFactions onPick直进audience；用户m2895一致），
+   * 故showHostileProposalAudience不调用本函数。返回 true=已拒绝。
+   */
+  async _proposalEntryGate(sc, me, target, dupType, dupTalk, dupName) {
+    let talk = null;
+    let name = "";
+    if (dupType != null && hasPendingStrategicEvent(sc, dupType)) {
+      talk = dupTalk;
+      name = dupName ?? "";
+    } else if (target?.diplomat_idx == null) {
+      talk = 55; // 0x65EF：CX=0x37。\3=目标君主名（hydrated faction.monarch）。
+      name = (target?.monarch ?? "").trim();
+    }
+    if (talk == null) return false;
+    warnSfx();
+    const lines = await formatTalkTokens(talk, name, "");
+    await this.showNpcMessageDialog({ lines, autoClose: 3000 });
+    this.selectedSubmenu = null;
+    this.syncClock();
+    this.app.view.draw();
+    return true;
+  }
+
+  /** 敌对提案进言对话系统 (100% 逆向复刻 KI.EXE 0x6475, 0x3830, 0x3B5A, 0x3BA9, 0x3C1E) */
+  async showHostileProposalAudience(targetFaction) {
+    const request = (this._proposalRequest = {});
+    this.closeCityCard();
+    this.closeListDialog(true);
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.selectedSubmenu = 0;
+    this.syncClock();
+
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!me || !targetFaction) return;
+    // v1对照（dist/src/ui/hud.js showHostileProposalFactions onPick）：敌对提案
+    // 入口无使者门，直接进audience；停战/协助才在列表层查对侧使者（分支A）。
+    // 故此处不调_proposalEntryGate（65EF门只留给停战/协助两处调用点）。
+
+    const monarch = sc.monarchOf(me);
+    const advGen = adv.getAdvisor(sc, me);
+    const monarchImg = monarch
+      ? await portrait(monarch, this.app.world).catch(() => null)
+      : null;
+    // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
+      : null;
+
+    const targetName = (targetFaction.monarch ?? "").trim();
+    const advName = (advGen?.name ?? "군사").trim();
+    const monarchTalkIdx = (monarch?.talk_idx ?? monarch?.idx ?? 0) % 3;
+
+    // 初始君主提问对白 (Talk 86..88)
+    const monarchGreeting = await formatTalkTokens(
+      86 + monarchTalkIdx,
+      targetName,
+      advName,
+    );
+
+    // 0x6475 敌对提案判定与理由位图（P35 权威模块，0 RNG）。
+    const bellicosity = me.bellicosity ?? 10;
+    const hostileVerdict = originalHostileProposalVerdict6475({
+      relationByte: this._proposalRelationByte(
+        sc,
+        me.idx,
+        targetFaction.idx,
+        "6475",
+      ),
+      bellicosity,
+      pendingType1OnTarget: hasPendingStrategicEvent(sc, 1, {
+        // 用户m3270“按原版来，不用比原版严”：6475现刷304E只约束type==1
+        // 且arg0==玩家，arg1不参与；Web旧查含arg1==目标，属偏严，已去。
+        arg0: me.idx,
+      }),
+      targetAttackingFaction: targetFaction.target_faction ?? 0xff,
+      playerIndex: me.idx,
+      targetMoneyWord: targetFaction.money ?? 0,
+      weStronger:
+        (me.n_cities ?? 1) * (bellicosity + 20) >
+        (targetFaction.n_cities ?? 1) * 25,
+    });
+
+    // 信赖度决定说服所需理由数 (KI.EXE 0x3C1E)
+    const requiredReasons = originalProposalRequiredReasons3C1E(
+      sc.trust ?? 255,
+    );
+
+    if (
+      this._proposalRequest !== request ||
+      this.app.scenario !== sc ||
+      this.selectedSubmenu !== 0
+    )
+      return;
+    this.proposalAudience = this._audienceWithMusic({
+      type: "hostile",
+      playerFaction: me,
+      targetFaction,
+      monarch,
+      advGen,
+      monarchImg,
+      advImg,
+      targetName,
+      advName,
+      monarchTalkIdx,
+      monarchLines: monarchGreeting,
+      advLines: null,
+      step: "greet",
+      timer: null,
+      timerAction: null,
+      reasonsHover: -1,
+      validReasons: hostileVerdict.reasons.map(Boolean),
+      verdictAl: hostileVerdict.al,
+      usedReasons: new Set(),
+      requiredReasons,
+      reasonsItems: [
+        "外交關係惡劣",
+        "我國較有利",
+        "敵正侵攻他國",
+        "敵勢力疲乏",
+        "撤回進言",
+      ],
+    });
+
+    this.app.view.draw();
+
+    // 延时 3 秒自动进入军师进言，或玩家点击左键立即进入
+    this._setProposalTimer(3000, async () => {
+      await this._advanceToAdvisorPropose();
+    });
+  }
+
+  /** 停战提案进言对话系统 (100% 逆向复刻 KI.EXE 0x64F1, 0x6577, 0x3830, 0x3B5A, 0x3BA9, 0x3C1E) */
+  async showTruceProposalAudience(targetFaction) {
+    const request = (this._proposalRequest = {});
+    this.closeCityCard();
+    this.closeListDialog(true);
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.selectedSubmenu = 0;
+    this.syncClock();
+
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!me || !targetFaction) return;
+    // 0x64F1 入口校验：0x6605 环查重(type6→TALK73)先于 0x65EF 外交官门（查目标侧）。
+    if (
+      await this._proposalEntryGate(
+        sc,
+        me,
+        targetFaction,
+        6,
+        73,
+        (targetFaction.monarch ?? "").trim(),
+      )
+    )
+      return;
+
+    const monarch = sc.monarchOf(me);
+    const advGen = adv.getAdvisor(sc, me);
+    const monarchImg = monarch
+      ? await portrait(monarch, this.app.world).catch(() => null)
+      : null;
+    // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
+      : null;
+
+    const targetName = (targetFaction.monarch ?? "").trim();
+    const advName = (advGen?.name ?? "군사").trim();
+    const monarchTalkIdx = (monarch?.talk_idx ?? monarch?.idx ?? 0) % 3;
+
+    // 初始君主提问对白 (Talk 150..152: "\4，有什麼事嗎？")
+    const monarchGreeting = await formatTalkTokens(
+      150 + monarchTalkIdx,
+      targetName,
+      advName,
+    );
+
+    // 0x6577 停战判定与理由位图（P35 权威模块，0 RNG）。
+    const bellicosity = me.bellicosity ?? 10;
+    const truceVerdict = originalTruceProposalVerdict6577({
+      relationByte: this._proposalRelationByte(
+        sc,
+        me.idx,
+        targetFaction.idx,
+        "6577",
+      ),
+      bellicosity,
+      weWeaker:
+        originalStrengthCompare6A28(
+          { cities: me.n_cities ?? 1, bellicosity },
+          { cities: targetFaction.n_cities ?? 1 },
+        ).mine <
+        (targetFaction.n_cities ?? 1) * 25,
+      anotherFactionTargetsMe: sc.factions.some(
+        (f) =>
+          f &&
+          (f.attr ?? 0) >= 0x80 &&
+          f.idx !== me.idx &&
+          f.target_faction === me.idx,
+      ),
+      targetAttackingFaction: targetFaction.target_faction ?? 0xff,
+      playerIndex: me.idx,
+      playerMoneyWord: me.money ?? 0,
+    });
+
+    // 信赖度决定说服所需理由数 (KI.EXE 0x3C1E)
+    const requiredReasons = originalProposalRequiredReasons3C1E(
+      sc.trust ?? 255,
+    );
+
+    if (
+      this._proposalRequest !== request ||
+      this.app.scenario !== sc ||
+      this.selectedSubmenu !== 0
+    )
+      return;
+    this.proposalAudience = this._audienceWithMusic({
+      type: "truce",
+      playerFaction: me,
+      targetFaction,
+      monarch,
+      advGen,
+      monarchImg,
+      advImg,
+      targetName,
+      advName,
+      monarchTalkIdx,
+      monarchLines: monarchGreeting,
+      advLines: null,
+      step: "greet",
+      timer: null,
+      timerAction: null,
+      reasonsHover: -1,
+      validReasons: truceVerdict.reasons.map(Boolean),
+      verdictAl: truceVerdict.al,
+      usedReasons: new Set(),
+      requiredReasons,
+      reasonsItems: [
+        "對我國較不利",
+        "我正在防禦戰",
+        "敵正侵攻他國",
+        "我國力疲乏",
+        "撤回進言",
+      ],
+    });
+
+    this.app.view.draw();
+
+    // 延时 3 秒自动进入军师进言，或玩家点击左键立即进入
+    this._setProposalTimer(3000, async () => {
+      await this._advanceToAdvisorPropose();
+    });
+  }
+
+  /** 请求协助进言对话系统 (100% 逆向复刻 KI.EXE 0x6623, 0x66D9, 0x6695, 0x301C) */
+  async showAssistanceProposalAudience(allyFaction, targetFaction) {
+    const request = (this._proposalRequest = {});
+    this.closeCityCard();
+    this.closeListDialog(true);
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.selectedSubmenu = 0;
+    this.syncClock();
+
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!me || !allyFaction || !targetFaction) return;
+    // 0x6623 入口校验：0x676F 环查重(type7→TALK74)先于 0x65EF 外交官门（查协助方R侧）。
+    if (
+      await this._proposalEntryGate(
+        sc,
+        me,
+        allyFaction,
+        7,
+        74,
+        (allyFaction.monarch ?? "").trim(),
+      )
+    )
+      return;
+
+    const monarch = sc.monarchOf(me);
+    const advGen = adv.getAdvisor(sc, me);
+    const monarchImg = monarch
+      ? await portrait(monarch, this.app.world).catch(() => null)
+      : null;
+    // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
+      : null;
+
+    const allyName = (allyFaction.monarch ?? "").trim();
+    const targetName = (targetFaction.monarch ?? "").trim();
+    const advName = (advGen?.name ?? "군사").trim();
+    const monarchTalkIdx = (monarch?.talk_idx ?? monarch?.idx ?? 0) % 3;
+
+    // 初始君主提问对白 (Talk 214..216: "\4啊，突然來找我是為了什麼事啊？")
+    const monarchGreeting = await formatTalkTokens(
+      214 + monarchTalkIdx,
+      allyName,
+      advName,
+    );
+
+    // 0x66D9 請求協助判定与理由位图（P35 权威模块，0 RNG）。
+    const bellicosity = me.bellicosity ?? 10;
+    const myPower = (me.n_cities ?? 1) * (bellicosity + 20);
+    const allyPower = (allyFaction.n_cities ?? 1) * 25;
+    const targetPower = (targetFaction.n_cities ?? 1) * 25;
+    const assistanceVerdict = originalAssistanceProposalVerdict66D9({
+      allyIndex: allyFaction.idx,
+      targetIndex: targetFaction.idx,
+      bellicosity,
+      relationToAllyByte: this._proposalRelationByte(
+        sc,
+        me.idx,
+        allyFaction.idx,
+        "66D9",
+      ),
+      relationToTargetByte: this._proposalRelationByte(
+        sc,
+        me.idx,
+        targetFaction.idx,
+        "66D9",
+      ),
+      targetAttackingMe: targetFaction.target_faction === me.idx,
+      myForce: myPower,
+      targetForce: targetPower,
+      allyStrongerThanMe: allyPower > myPower,
+      targetStrongerThanMe: targetPower > myPower,
+    });
+
+    // 信赖度决定说服所需理由数 (KI.EXE 0x3C1E)
+    const requiredReasons = originalProposalRequiredReasons3C1E(
+      sc.trust ?? 255,
+    );
+
+    if (
+      this._proposalRequest !== request ||
+      this.app.scenario !== sc ||
+      this.selectedSubmenu !== 0
+    )
+      return;
+    this.proposalAudience = this._audienceWithMusic({
+      type: "assistance",
+      playerFaction: me,
+      allyFaction,
+      targetFaction,
+      monarch,
+      advGen,
+      monarchImg,
+      advImg,
+      allyName,
+      targetName,
+      advName,
+      monarchTalkIdx,
+      monarchLines: monarchGreeting,
+      advLines: null,
+      step: "greet",
+      timer: null,
+      timerAction: null,
+      reasonsHover: -1,
+      validReasons: assistanceVerdict.reasons.map(Boolean),
+      verdictAl: assistanceVerdict.al,
+      usedReasons: new Set(),
+      requiredReasons,
+      reasonsItems: [
+        "外交關係良好",
+        "協力國強大",
+        "侵攻對象強大",
+        "我正在防禦戰",
+        "撤回進言",
+      ],
+    });
+
+    this.app.view.draw();
+
+    this._setProposalTimer(3000, async () => {
+      await this._advanceToAdvisorPropose();
+    });
+  }
+
+  /** 迁都进言对话系统 (100% 逆向复刻 KI.EXE 0x6909, 0x6951, 0x3B08, 0x33FD) */
+  async showRelocateCapitalAudience(targetCity) {
+    const request = (this._proposalRequest = {});
+    this.closeCityCard();
+    this.closeListDialog(true);
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.selectedSubmenu = 0;
+    this.syncClock();
+
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!me || !targetCity) return;
+
+    const monarch = sc.monarchOf(me);
+    const advGen = adv.getAdvisor(sc, me);
+    const monarchImg = monarch
+      ? await portrait(monarch, this.app.world).catch(() => null)
+      : null;
+    // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
+      : null;
+
+    const cityName = (targetCity.name ?? "").trim();
+    const advName = (advGen?.name ?? "군사").trim();
+    const monarchTalkIdx = (monarch?.talk_idx ?? monarch?.idx ?? 0) % 3;
+
+    // 初始君主提问对白 (Talk 386..388: "對此地是否有何不滿呢？")
+    const monarchGreeting = await formatTalkTokens(
+      386 + monarchTalkIdx,
+      "",
+      advName,
+      "",
+      "",
+      cityName,
+    );
+
+    // 迁都评估 (KI.EXE 0x6951): 比较新城与旧城 tier (type) 与生产力
+    const curCap =
+      (me.capital == null ? null : sc.cities[me.capital]) || targetCity;
+    const isBetter =
+      (targetCity.type ?? 2) <= (curCap.type ?? 2) &&
+      (targetCity.prod ?? 0) >= (curCap.prod ?? 0) * 0.7;
+
+    if (
+      this._proposalRequest !== request ||
+      this.app.scenario !== sc ||
+      this.selectedSubmenu !== 0
+    )
+      return;
+    this.proposalAudience = this._audienceWithMusic({
+      type: "relocate",
+      playerFaction: me,
+      targetCity,
+      curCap,
+      isBetter,
+      monarch,
+      advGen,
+      monarchImg,
+      advImg,
+      cityName,
+      advName,
+      monarchTalkIdx,
+      monarchLines: monarchGreeting,
+      advLines: null,
+      step: "greet",
+      timer: null,
+      timerAction: null,
+    });
+
+    this.app.view.draw();
+
+    this._setProposalTimer(3000, async () => {
+      await this._advanceToAdvisorPropose();
+    });
+  }
+
+  /** 请求君主出阵进言对话系统 (100% 逆向复刻 KI.EXE 0x699E, 0x69B4, 0x3B08, 0x6E8F, 0x5E80) */
+  async showMonarchDeployAudience() {
+    const request = (this._proposalRequest = {});
+    this.closeCityCard();
+    this.closeListDialog(true);
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeBaseMenu();
+    this.closePersonnelMenu();
+    this.closeAdviceMenu();
+    this.selectedSubmenu = 0;
+    this.syncClock();
+
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!me) return;
+
+    const monarch = sc.monarchOf(me);
+    if (!monarch) return;
+
+    // 检查君主是否已经在军团出征中 (KI.EXE 0x69A0: Talk 64)
+    const isDeploying =
+      monarch.status === 1 ||
+      sc.legions?.some(
+        (L) =>
+          !L.dead &&
+          L.faction === me.idx &&
+          (L.leader === monarch.name ||
+            L.leader === monarch.idx ||
+            L.is_monarch),
+      );
+    if (isDeploying) {
+      const lines = await formatTalkTokens(64);
+      await this.showNpcMessageDialog({
+        lines,
+        autoClose: 3000,
+        onClose: () => {
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        },
+      });
+      return;
+    }
+
+    const advGen = adv.getAdvisor(sc, me);
+    const monarchImg = monarch
+      ? await portrait(monarch, this.app.world).catch(() => null)
+      : null;
+    // Q69-(iii)：8EA0 语境（君主+军师成对显示）军师 FF 跳过 kao 请求，名字照常；有事项④上传覆盖则保留。调用点对应为功能语境对应（推断），行为复刻 8EA0 实锤。
+    const advImg = advGen && (advGen.portrait !== 255 || hasPortraitOverride(advGen, this.app.world))
+      ? await portrait(advGen, this.app.world).catch(() => null)
+      : null;
+
+    const advName = (advGen?.name ?? "군사").trim();
+    const monarchTalkIdx = (monarch?.talk_idx ?? monarch?.idx ?? 0) % 3;
+
+    // 初始君主提问对白 (Talk 396..398: "軍師，戰況有所不利嗎？")
+    const monarchGreeting = await formatTalkTokens(
+      396 + monarchTalkIdx,
+      "",
+      advName,
+    );
+
+    // 出阵评估 (100% 逆向 KI.EXE 0x699E - 0x69EC)
+    // 条件 1: 君主好战度 vs 国库资金 (0x69B6 - 0x69CE)
+    const bellicosity = me.bellicosity ?? 10;
+    const minGold = Math.max(0, (15 - bellicosity) * 400);
+    const currentGold = me.gold ?? 0;
+    const hasEnoughGold = currentGold >= 0 && currentGold >= minGold;
+
+    // 条件 2: 势力总预备兵力是否 >= 600 (即 6000 人, 0x69D2 - 0x69EC)
+    const totRes =
+      ((me.reserve_cav ?? 0) + (me.reserve_inf ?? 0) + (me.reserve_arc ?? 0)) *
+      10;
+    const hasEnoughReserves = totRes >= 6000;
+
+    const canDeploy = hasEnoughGold && hasEnoughReserves;
+
+    if (
+      this._proposalRequest !== request ||
+      this.app.scenario !== sc ||
+      this.selectedSubmenu !== 0
+    )
+      return;
+    this.proposalAudience = this._audienceWithMusic({
+      type: "monarch_deploy",
+      playerFaction: me,
+      monarch,
+      advGen,
+      canDeploy,
+      monarchImg,
+      advImg,
+      advName,
+      monarchTalkIdx,
+      monarchLines: monarchGreeting,
+      advLines: null,
+      step: "greet",
+      timer: null,
+      timerAction: null,
+    });
+
+    this.app.view.draw();
+
+    this._setProposalTimer(3000, async () => {
+      await this._advanceToAdvisorPropose();
+    });
+  }
+
+  _audienceWithMusic(audience) {
+    this.app.score?.beginAudience(audience);
+    return audience;
+  }
+
+  _setProposalTimer(ms, action) {
+    if (!this.proposalAudience) return;
+    if (this.proposalAudience.timer) {
+      clearTimeout(this.proposalAudience.timer);
+    }
+    this.proposalAudience.timerAction = action;
+    this.proposalAudience.timer = setTimeout(() => {
+      if (this.proposalAudience) {
+        this.proposalAudience.timer = null;
+        action();
+      }
+    }, ms);
+  }
+
+  async _advanceToAdvisorPropose() {
+    const p = this.proposalAudience;
+    if (!p) return;
+    p.step = "advisor_propose";
+    if (p.type === "truce") {
+      // 军师停战发言：Talk 153 (我認為與\3還是停戰為宜。)
+      p.advLines = await formatTalkTokens(153, p.targetName, p.advName);
+    } else if (p.type === "assistance") {
+      // 军师请求协助发言：Talk 217 (和\3大人合作，去打倒\3如何？)
+      p.advLines = await formatTalkTokens(
+        217,
+        [p.allyName, p.targetName],
+        p.advName,
+      );
+    } else if (p.type === "relocate") {
+      // 军师迁都发言：Talk 389 (為今後之事設想，我認為遷移到\2為宜。)
+      p.advLines = await formatTalkTokens(
+        389,
+        "",
+        p.advName,
+        "",
+        "",
+        p.cityName,
+      );
+    } else if (p.type === "monarch_deploy") {
+      // 军师请求君主出阵发言：Talk 399 (若請主公出陣，將士的士氣也會提高吧。)
+      p.advLines = await formatTalkTokens(399, "", p.advName);
+    } else {
+      // 军师敌对发言：Talk 89 (想請主公答允對\3的進兵。)
+      p.advLines = await formatTalkTokens(89, p.targetName, p.advName);
+    }
+    this.app.view.draw();
+
+    this._setProposalTimer(3000, async () => {
+      await this._advanceToMonarchReaction();
+    });
+  }
+
+  async _advanceToMonarchReaction() {
+    const p = this.proposalAudience;
+    if (!p) return;
+    const sc = this.app.scenario;
+    const me = p.playerFaction;
+    const targetFaction = p.targetFaction;
+
+    if (p.type === "relocate") {
+      if (p.isBetter) {
+        clickSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          390 + p.monarchTalkIdx,
+          "",
+          p.advName,
+          "",
+          "",
+          p.cityName,
+        );
+        this.app.view.draw();
+        this._setProposalTimer(3000, async () => {
+          // 0x6909：0x3B08完整对白返回后才调用0x33FD提交迁都。
+          if (hasNativeDiplomacyMatrix(sc)) {
+            // 0x33FD 迁都执行体（P38 已接线）：显式新首都提交——3408 xchg
+            // 写 F+3、340B 新旧相同即 ret、4502 军团前缘、341A 独立 CFD
+            // 玩家比较→3421 君主宣言行（075B 选择器 0x1A4=TALK[518+talk_idx]，
+            // \2=新城名、\4=君主名）+3445 5E60 显示门（规则 no-op）。
+            const result = performScenarioRelocationCommit(
+              sc,
+              me.idx,
+              p.targetCity.idx,
+            );
+            if (
+              result.status !== "unchanged" &&
+              result.status !== "player-message"
+            )
+              throw new RangeError(
+                `Uncovered native 0x33FD relocation status ${result.status}`,
+              );
+            sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
+            sc.capital = p.targetCity.idx;
+            this.app.hud.refreshTrust();
+            this.app.hud.refreshInfo?.();
+            this.app.hud.flashEvent(
+              `「${p.playerFaction.monarch}」同意遷都至「${p.cityName}」！信賴度 +10`,
+            );
+            const finishRelocation = () => {
+              this.closeProposalAudience();
+              const view = this.app.view;
+              const [wxp, wyp] = view.cityPixel(p.targetCity);
+              view.cam.x = innerWidth / 2 - wxp;
+              view.cam.y = innerHeight / 2 - wyp;
+              view.clampCam();
+              this.showCityCard(p.targetCity);
+              this.selectedSubmenu = 0;
+              this.syncClock();
+              this.app.view.draw();
+            };
+            if (result.status === "unchanged") {
+              finishRelocation();
+              return;
+            }
+            const talkIndex = personalityTalkIndex(result.reply.selector, {
+              ...result.monarchRecord,
+              talk_idx: result.reply.talkStyle,
+            });
+            if (!Number.isInteger(talkIndex))
+              throw new RangeError("Uncovered native 0x33FD monarch selector");
+            p.step = "declaration";
+            p.monarchLines = await formatTalkTokens(
+              talkIndex,
+              "",
+              result.reply.advisorName,
+              "",
+              "",
+              result.reply.cityName,
+            );
+            this.app.view.draw();
+            this._setProposalTimer(3000, finishRelocation);
+            return;
+          }
+          sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
+          me.capital = p.targetCity.idx;
+          sc.capital = p.targetCity.idx;
+          this.app.hud.refreshTrust();
+          this.app.hud.refreshInfo?.();
+          this.app.hud.flashEvent(
+            `「${p.playerFaction.monarch}」同意遷都至「${p.cityName}」！信賴度 +10`,
+          );
+          this.closeProposalAudience();
+          const view = this.app.view;
+          const [wxp, wyp] = view.cityPixel(p.targetCity);
+          view.cam.x = innerWidth / 2 - wxp;
+          view.cam.y = innerHeight / 2 - wyp;
+          view.clampCam();
+          this.showCityCard(p.targetCity);
+          this.selectedSubmenu = 0;
+          this.syncClock();
+          this.app.view.draw();
+        });
+      } else {
+        warnSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          393 + p.monarchTalkIdx,
+          "",
+          p.advName,
+          "",
+          "",
+          p.cityName,
+        );
+        sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(`遷都據點條件欠佳！進言被訓斥駁回，信賴度 -20`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+      }
+      return;
+    }
+
+    if (p.type === "monarch_deploy") {
+      if (p.canDeploy) {
+        clickSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          400 + p.monarchTalkIdx,
+          "",
+          p.advName,
+        );
+
+        const cap =
+          (me.capital == null ? null : sc.cities[me.capital]) ||
+          sc.citiesOf(me.idx)[0];
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          // 0x699E：0x3B08完整对白返回后才调用0x6E8F/0x5E80提交亲征。
+          let refused = false;
+          if (hasNativeDiplomacyMatrix(sc)) {
+            // 0x6A03 出陣提交体（P43 实锤）：6E8F 君主编成（候选序扣池、F14、占格、
+            // 士气封顶、L23=1、461D/6FD2、C4）；CF=1 则 6A06 jb 6A10 跳过清位与显示；
+            // 成功 [DI]&=0xFB 清委任位（君主亲领，C4→C0）。AL=8→5E80 纯显示见下
+            // refreshInfo（P32 全树零规则写入、零 RNG）。v1 分支行为不变。
+            refused = performScenarioMonarchDeployCommit(sc, p.monarch.idx).cf;
+            p.monarch.is_monarch = true;
+          } else {
+            me.reserve_cav = Math.max(0, (me.reserve_cav ?? 0) - 200);
+            me.reserve_inf = Math.max(0, (me.reserve_inf ?? 0) - 200);
+            me.reserve_arc = Math.max(0, (me.reserve_arc ?? 0) - 200);
+            p.monarch.status = 1;
+            p.monarch.is_monarch = true;
+            if (!sc.legions) sc.legions = [];
+            const capitalNode = scenarioRoadNode(sc, cap.x, cap.y);
+            const newLegion = {
+              leader: p.monarch.name,
+              generalIdx: p.monarch.idx,
+              is_monarch: true,
+              faction: me.idx,
+              x: cap.x,
+              y: cap.y,
+              prevX: cap.x,
+              prevY: cap.y,
+              troops: 600,
+              morale: factionLegionMoraleCap(me),
+              formation: 1,
+              target: null,
+              targetCity: cap.idx,
+              targetNode: capitalNode?.id ?? null,
+              _currentNode: capitalNode?.id ?? null,
+              roadEdgeOrNode: scenarioRoadRawAddress(sc, capitalNode?.id),
+              commandState: 0,
+              status: 0x80,
+              delegated: false,
+              _active: true,
+              units: DEFAULT_LEGION_UNIT_TYPES.map((type) => ({
+                type,
+                troops: 1000,
+              })),
+            };
+            ensureLegionSlot(sc.legions, newLegion, p.monarch.idx);
+            bindLegionSlotCounter(sc, newLegion);
+            resetLegionActionPhase(newLegion); // 6A03→6E8F→6FD2.
+            countLegionActivation(sc, newLegion);
+            // v2 写穿原生固定槽（直接 push 会被下一次 rebind 丢掉）。
+            publishLegacyLegionRecord(
+              sc,
+              newLegion,
+              "ui-monarch-deploy-legacy",
+              scenarioNativeRoadContext(sc)?.movement ?? null,
+            );
+          }
+          if (refused) {
+            // 6A06 jb 6A10：编成拒绝（某队三候选池均不足 50），无清位、无 5E80，
+            // 直接共享尾声（关闭接见+时钟+重绘），无信赖变动。
+            this.closeProposalAudience();
+            this.selectedSubmenu = null;
+            this.syncClock();
+            this.app.view.draw();
+            return;
+          }
+          this.app.hud.refreshInfo?.();
+          this.app.hud.flashEvent(
+            `「${p.monarch.name}」親征軍團出陣！駐守於「${cap.name}」。`,
+          );
+          this.closeProposalAudience();
+          if (cap) {
+            const view = this.app.view;
+            const [wxp, wyp] = view.cityPixel(cap);
+            view.cam.x = innerWidth / 2 - wxp;
+            view.cam.y = innerHeight / 2 - wyp;
+            view.clampCam();
+            this.showCityCard(cap);
+          }
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+      } else {
+        warnSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          403 + p.monarchTalkIdx,
+          "",
+          p.advName,
+        );
+        this.app.hud.flashEvent(`君主目前不便出陣。`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+      }
+      return;
+    }
+
+    if (p.type === "assistance") {
+      // 0x66D9 请求协助判定（P35 权威模块，verdict 在入口与理由位图一并算出）。
+      const al = p.verdictAl ?? 2;
+      if (al === 4)
+        throw new RangeError("Uncovered 0x66D9 verdict 4 (ally==target)");
+
+      if (al === 0) {
+        // 与协助国交情不够，君主严词驳回 (Talk 218..220)
+        warnSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          218 + p.monarchTalkIdx,
+          p.allyName,
+          p.advName,
+        );
+        sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(`與協助國交情不足！進言被訓斥駁回，信賴度 -20`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      if (al === 3) {
+        // 未与目标国交战，君主训斥驳回 (Talk 227..229: "\6沒必要和目前並未敵對的\3為敵。")
+        warnSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          227 + p.monarchTalkIdx,
+          p.targetName,
+          p.advName,
+        );
+        sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(`未與目標國交戰！進言被訓斥駁回，信賴度 -20`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      // 目标国正在攻击我方且实力占优 -> 直接同意 (Talk 221..223)
+      if (al === 1) {
+        clickSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          221 + p.monarchTalkIdx,
+          p.allyName,
+          p.advName,
+        );
+        sc.trust = Math.min(255, (sc.trust ?? 255) + 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(
+          `「${p.playerFaction.monarch}」同意請求協助！信賴度 +20`,
+        );
+
+        const envoyObj = sc.envoys?.[p.allyFaction.idx];
+        const envoyName = envoyObj?.name ?? "외교관";
+        enqueueDelayedStrategicEvent(
+          this.app,
+          {
+            type: 7,
+            arg0: p.allyFaction.idx,
+            arg1: p.targetFaction.idx,
+          },
+          0x14,
+        );
+
+        this.app.view.draw();
+        this._setProposalTimer(3000, async () => {
+          this.closeProposalAudience();
+          const lines = await formatTalkTokens(
+            60,
+            p.allyName,
+            p.advName,
+            envoyName,
+          );
+          await this.showNpcMessageDialog({
+            lines,
+            autoClose: 3000,
+            onClose: () => {
+              this.selectedSubmenu = null;
+              this.syncClock();
+              this.app.view.draw();
+            },
+          });
+        });
+        return;
+      }
+
+      // 询问理由 (Talk 224..226)
+      p.step = "choose_reason";
+      p.monarchLines = await formatTalkTokens(
+        224 + p.monarchTalkIdx,
+        p.allyName,
+        p.advName,
+      );
+      this.app.view.draw();
+      return;
+    }
+
+    if (p.type === "truce") {
+      // 0x6577 停战判定（P35 权威模块，verdict 入口已算）。
+      const al = p.verdictAl ?? 2;
+      if (al === 3) {
+        // 未在交战状态，君主训斥驳回 (Talk 163..165: "原本就沒有和\3交戰啊！混帳東西！！")
+        warnSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          163 + p.monarchTalkIdx,
+          p.targetName,
+          p.advName,
+        );
+        sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(`未處於交戰狀態！進言被訓斥駁回，信賴度 -20`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      // 友好度极低/君主好战驳回 (Talk 154..156)
+      if (al === 0) {
+        warnSfx();
+        p.step = "done";
+        p.monarchLines = await formatTalkTokens(
+          154 + p.monarchTalkIdx,
+          p.targetName,
+          p.advName,
+        );
+        sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(`進言被駁回！信賴度 -20`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      // 询问停战理由 (Talk 160..162: "事到如今，為何還要停戰？")
+      p.step = "choose_reason";
+      p.monarchLines = await formatTalkTokens(
+        160 + p.monarchTalkIdx,
+        p.targetName,
+        p.advName,
+      );
+      this.app.view.draw();
+      return;
+    }
+
+    // 0x6475 敌对提案判定（P35 权威模块，verdict 入口已算）。
+    const al = p.verdictAl ?? 2;
+
+    if (al === 1) {
+      // 对方已在进攻我方，直接同意开战 (Talk 93..95)
+      clickSfx();
+      p.step = "done";
+      p.monarchLines = await formatTalkTokens(
+        93 + p.monarchTalkIdx,
+        p.targetName,
+        p.advName,
+      );
+      sc.trust = Math.min(255, (sc.trust ?? 255) + 20);
+      this.app.completePlayerWarDeclaration?.(targetFaction);
+      this.app.hud.refreshTrust();
+      this.app.hud.flashEvent(`「${me.monarch}」同意開戰！信賴度 +20`);
+      this.app.view.draw();
+      this._setProposalTimer(3000, () => {
+        this.closeProposalAudience();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      });
+    } else if (al === 3) {
+      // 已经在交战状态中了 (Talk 99..101)
+      warnSfx();
+      p.step = "done";
+      p.monarchLines = await formatTalkTokens(
+        99 + p.monarchTalkIdx,
+        p.targetName,
+        p.advName,
+      );
+      sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+      this.app.hud.refreshTrust();
+      this.app.hud.flashEvent(`已處於交戰狀態！進言被駁回，信賴度 -20`);
+      this.app.view.draw();
+      this._setProposalTimer(3000, () => {
+        this.closeProposalAudience();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      });
+    } else if (al === 0) {
+      // 关系良好，无理由开战，直接驳回 (Talk 90..92)
+      warnSfx();
+      p.step = "done";
+      p.monarchLines = await formatTalkTokens(
+        90 + p.monarchTalkIdx,
+        p.targetName,
+        p.advName,
+      );
+      sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+      this.app.hud.refreshTrust();
+      this.app.hud.flashEvent(`關係良好，進言被駁回！信賴度 -20`);
+      this.app.view.draw();
+      this._setProposalTimer(3000, () => {
+        this.closeProposalAudience();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      });
+    } else {
+      // 需要开战理由 (Talk 96..98)
+      p.step = "choose_reason";
+      p.monarchLines = await formatTalkTokens(
+        96 + p.monarchTalkIdx,
+        p.targetName,
+        p.advName,
+      );
+      this.app.view.draw();
+    }
+  }
+
+  async _selectProposalReason(ri) {
+    const p = this.proposalAudience;
+    if (!p) return;
+
+    p.step = "reason_speak";
+    if (p.type === "truce") {
+      // 军师停战理由发言：Talk 167 + ri
+      p.advLines = await formatTalkTokens(167 + ri, p.targetName, p.advName);
+    } else if (p.type === "assistance") {
+      // 军师协助理由发言：Talk 231..235
+      const talkIdx = 231 + ri;
+      const tName = ri <= 1 ? p.allyName : p.targetName;
+      p.advLines = await formatTalkTokens(talkIdx, tName, p.advName);
+    } else {
+      // 军师开战理由发言：Talk 103 + ri
+      p.advLines = await formatTalkTokens(103 + ri, p.targetName, p.advName);
+    }
+    this.app.view.draw();
+
+    this._setProposalTimer(1500, async () => {
+      await this._evaluateProposalReason(ri);
+    });
+  }
+
+  async _evaluateProposalReason(ri) {
+    const p = this.proposalAudience;
+    if (!p) return;
+    const sc = this.app.scenario;
+
+    if (p.type === "assistance") {
+      // 协助理由评估 (KI.EXE 0x66D9)
+      if (ri === 4) {
+        // 撤回进言 (Talk 235: 那也不再勉強，一切就任憑主公的旨意。) -> 不扣信赖度，结束
+        p.step = "done";
+        this.app.view.draw();
+        this._setProposalTimer(2000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      if (p.usedReasons.has(ri)) {
+        // 重复理由 (Talk 275..277) -> 不扣信赖度，重新选理由
+        p.step = "repeating_reason";
+        p.monarchLines = await formatTalkTokens(
+          275 + p.monarchTalkIdx,
+          p.allyName,
+          p.advName,
+        );
+        this.app.view.draw();
+        this._setProposalTimer(2500, () => {
+          p.step = "choose_reason";
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      const isValid = p.validReasons[ri];
+      if (!isValid) {
+        // 假理由 / 谎言 (Talk 236 / 245 / 254 / 263) -> 信赖度 -20，驳回结束
+        warnSfx();
+        p.step = "done";
+        const baseTalks = [236, 245, 254, 263];
+        const talkIdx = baseTalks[ri] + p.monarchTalkIdx;
+        p.monarchLines = await formatTalkTokens(
+          talkIdx,
+          ri <= 1 ? p.allyName : p.targetName,
+          p.advName,
+        );
+        sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(`理由不實！進言被訓斥駁回，信賴度 -20`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      // 理由成立 (真理由!)
+      p.usedReasons.add(ri);
+      p.requiredReasons--;
+
+      if (p.requiredReasons > 0) {
+        // 仍需补充理由 (Talk 242 / 251 / 260 / 269)
+        clickSfx();
+        p.step = "need_more_reason";
+        const baseTalks = [242, 251, 260, 269];
+        const talkIdx = baseTalks[ri] + p.monarchTalkIdx;
+        p.monarchLines = await formatTalkTokens(
+          talkIdx,
+          ri <= 1 ? p.allyName : p.targetName,
+          p.advName,
+        );
+        this.app.view.draw();
+        this._setProposalTimer(2500, () => {
+          p.step = "choose_reason";
+          this.app.view.draw();
+        });
+      } else {
+        // 理由充分，说服成功，君主采纳并同意派使者请求协助! (Talk 239 / 248 / 257 / 266)
+        clickSfx();
+        p.step = "done";
+        const baseTalks = [239, 248, 257, 266];
+        const talkIdx = baseTalks[ri] + p.monarchTalkIdx;
+        p.monarchLines = await formatTalkTokens(
+          talkIdx,
+          ri <= 1 ? p.allyName : p.targetName,
+          p.advName,
+        );
+        sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(
+          `「${p.playerFaction.monarch}」同意向「${p.allyName}」請求協助！信賴度 +10`,
+        );
+
+        const envoyObj = sc.envoys?.[p.allyFaction.idx];
+        const envoyName = envoyObj?.name ?? "외교관";
+        enqueueDelayedStrategicEvent(
+          this.app,
+          {
+            type: 7,
+            arg0: p.allyFaction.idx,
+            arg1: p.targetFaction.idx,
+          },
+          0x14,
+        );
+
+        this.app.view.draw();
+        this._setProposalTimer(3000, async () => {
+          this.closeProposalAudience();
+          // 弹出 Talk 60: "那麼，就儘速向\1大人發出請求協助的指示。"
+          const lines = await formatTalkTokens(
+            60,
+            p.allyName,
+            p.advName,
+            envoyName,
+          );
+          await this.showNpcMessageDialog({
+            lines,
+            autoClose: 3000,
+            onClose: () => {
+              this.selectedSubmenu = null;
+              this.syncClock();
+              this.app.view.draw();
+            },
+          });
+        });
+      }
+      return;
+    }
+
+    if (p.type === "truce") {
+      // 停战理由评估 (KI.EXE 0x3B5A & 0x3BA9)
+      if (ri === 4) {
+        // 撤回进言 (Talk 171: 既然不和主公之意，也就沒辦法了。) -> 不扣信赖度，结束
+        p.step = "done";
+        this.app.view.draw();
+        this._setProposalTimer(2000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      if (p.usedReasons.has(ri)) {
+        // 重复理由 (Talk 211..213) -> 不扣信赖度，重新选理由
+        p.step = "repeating_reason";
+        p.monarchLines = await formatTalkTokens(
+          211 + p.monarchTalkIdx,
+          p.targetName,
+          p.advName,
+        );
+        this.app.view.draw();
+        this._setProposalTimer(2500, () => {
+          p.step = "choose_reason";
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      const isValid = p.validReasons[ri];
+      if (!isValid) {
+        // 假理由 / 谎言 (Talk 172..174 / 181..183 / 190..191 / 199..201) -> 信赖度 -20，驳回结束
+        warnSfx();
+        p.step = "done";
+        const talkIdx = 172 + ri * 9 + p.monarchTalkIdx;
+        p.monarchLines = await formatTalkTokens(
+          talkIdx,
+          p.targetName,
+          p.advName,
+        );
+        sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(`理由不實！進言被訓斥駁回，信賴度 -20`);
+        this.app.view.draw();
+        this._setProposalTimer(3000, () => {
+          this.closeProposalAudience();
+          this.selectedSubmenu = null;
+          this.syncClock();
+          this.app.view.draw();
+        });
+        return;
+      }
+
+      // 理由成立 (真理由!)
+      p.usedReasons.add(ri);
+      p.requiredReasons--;
+
+      if (p.requiredReasons > 0) {
+        // 仍需补充理由 (Talk 178..180 / 187..189 / 196..198 / 205..207)
+        clickSfx();
+        p.step = "need_more_reason";
+        const talkIdx = 178 + ri * 9 + p.monarchTalkIdx;
+        p.monarchLines = await formatTalkTokens(
+          talkIdx,
+          p.targetName,
+          p.advName,
+        );
+        this.app.view.draw();
+        this._setProposalTimer(2500, () => {
+          p.step = "choose_reason";
+          this.app.view.draw();
+        });
+      } else {
+        // 理由充分，说服成功，君主采纳并同意派使者停战! (Talk 175..177 / 184..186 / 193..195 / 202..204)
+        clickSfx();
+        p.step = "done";
+        const talkIdx = 175 + ri * 9 + p.monarchTalkIdx;
+        p.monarchLines = await formatTalkTokens(
+          talkIdx,
+          p.targetName,
+          p.advName,
+        );
+        sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
+        this.app.hud.refreshTrust();
+        this.app.hud.flashEvent(
+          `「${p.playerFaction.monarch}」同意派出停戰使者！信賴度 +10`,
+        );
+
+        const envoyObj = sc.envoys?.[p.targetFaction.idx];
+        const envoyName = envoyObj?.name ?? "외교관";
+        enqueueDelayedStrategicEvent(
+          this.app,
+          { type: 6, arg0: p.targetFaction.idx, arg1: 0 },
+          0x14,
+        );
+
+        this.app.view.draw();
+        this._setProposalTimer(3000, async () => {
+          this.closeProposalAudience();
+          // 弹出 Talk 59: "那麼，就儘速對\1大人下達停戰指示。"
+          const lines = await formatTalkTokens(
+            59,
+            p.targetName,
+            p.advName,
+            envoyName,
+          );
+          await this.showNpcMessageDialog({
+            lines,
+            autoClose: 3000,
+            onClose: () => {
+              this.selectedSubmenu = null;
+              this.syncClock();
+              this.app.view.draw();
+            },
+          });
+        });
+      }
+      return;
+    }
+
+    if (ri === 4) {
+      // 撤回进言 (Talk 144..146) -> 不扣信赖度，结束
+      p.step = "done";
+      p.monarchLines = await formatTalkTokens(
+        144 + p.monarchTalkIdx,
+        p.targetName,
+        p.advName,
+      );
+      this.app.view.draw();
+      this._setProposalTimer(3000, () => {
+        this.closeProposalAudience();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      });
+      return;
+    }
+
+    if (p.usedReasons.has(ri)) {
+      // 重复理由 (Talk 147..149) -> 不扣信赖度，重新选理由
+      p.step = "repeating_reason";
+      p.monarchLines = await formatTalkTokens(
+        147 + p.monarchTalkIdx,
+        p.targetName,
+        p.advName,
+      );
+      this.app.view.draw();
+      this._setProposalTimer(2500, () => {
+        p.step = "choose_reason";
+        this.app.view.draw();
+      });
+      return;
+    }
+
+    const isValid = p.validReasons[ri];
+    if (!isValid) {
+      // 假理由 / 谎言 (Talk 108..110 / 117..119 / 126..128 / 135..137) -> 信赖度 -20，驳回结束
+      warnSfx();
+      p.step = "done";
+      const talkIdx = 108 + ri * 9 + p.monarchTalkIdx;
+      p.monarchLines = await formatTalkTokens(talkIdx, p.targetName, p.advName);
+      sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
+      this.app.hud.refreshTrust();
+      this.app.hud.flashEvent(`理由不實！進言被訓斥駁回，信賴度 -20`);
+      this.app.view.draw();
+      this._setProposalTimer(3000, () => {
+        this.closeProposalAudience();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      });
+      return;
+    }
+
+    // 理由成立 (真理由!)
+    p.usedReasons.add(ri);
+    p.requiredReasons--;
+
+    if (p.requiredReasons > 0) {
+      // 仍需补充理由 (Talk 114..116 / 123..125 / 132..134 / 141..143)
+      clickSfx();
+      p.step = "need_more_reason";
+      const talkIdx = 114 + ri * 9 + p.monarchTalkIdx;
+      p.monarchLines = await formatTalkTokens(talkIdx, p.targetName, p.advName);
+      this.app.view.draw();
+      this._setProposalTimer(2500, () => {
+        p.step = "choose_reason";
+        this.app.view.draw();
+      });
+    } else {
+      // 理由充分，说服成功，君主采纳并同意开战! (Talk 111..113 / 120..122 / 129..131 / 138..140)
+      clickSfx();
+      p.step = "done";
+      const talkIdx = 111 + ri * 9 + p.monarchTalkIdx;
+      p.monarchLines = await formatTalkTokens(talkIdx, p.targetName, p.advName);
+      sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
+      this.app.completePlayerWarDeclaration?.(p.targetFaction);
+      this.app.hud.refreshTrust();
+      this.app.hud.flashEvent(
+        `「${p.playerFaction.monarch}」准許對「${p.targetName}」開戰！信賴度 +10`,
+      );
+      this.app.view.draw();
+      this._setProposalTimer(3000, () => {
+        this.closeProposalAudience();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+      });
+    }
+  }
+
+  /** 外交官返回汇报停战谈判结果 (KI.EXE 0x3327→0x36C4→0x3C3D) */
+  async showTruceNegotiationResult({ targetFaction, envoyName }) {
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    const targetName = (targetFaction?.monarch ?? "").trim();
+
+    // 第一步：Talk 57 "駐\3勢力的外交官\1大人前來報告。"
+    const step1Lines = await formatTalkTokens(57, targetName, "", envoyName);
+
+    await this.showNpcMessageDialog({
+      lines: step1Lines,
+      autoClose: 3000,
+      onClose: async () => {
+        // 0x3327在报告后才调用0x36C4；事件条目只携带目标势力。
+        const result = resolveStrategicNegotiation(
+          this.app,
+          targetFaction,
+          false,
+        );
+        if (!result) return;
+        const { outcome, goldRequired } = result;
+        // 第二步：根据谈判结果展示 Talk 43 / 44 / 45
+        if (outcome === 0) {
+          // 无条件达成 (Talk 43: "與\3停戰交涉的結果，無條件地達成了。")
+          clickSfx();
+          const step2Lines = await formatTalkTokens(43, targetName);
+          await this.showNpcMessageDialog({
+            lines: step2Lines,
+            autoClose: 3000,
+            onClose: () => {
+              settleFactionNegotiation(this.app, {
+                recipientFaction: targetFaction,
+                requesterFaction: me,
+                outcome,
+                goldRequired,
+              });
+              this.syncClock();
+              this.app.hud.buildLegend?.();
+              this.app.hud.flashEvent(
+                `與「${targetName}」停戰成功！雙方恢復和平。`,
+              );
+              this.app.view.draw();
+            },
+          });
+        } else if (outcome === 1) {
+          // 支付金钱达成 (Talk 44: "與\3停戰交涉的結果，已經\7成立了。")
+          clickSfx();
+          const costStr = `支付${goldRequired}金`;
+          const step2Lines = await formatTalkTokens(
+            44,
+            targetName,
+            "",
+            "",
+            costStr,
+          );
+          await this.showNpcMessageDialog({
+            lines: step2Lines,
+            autoClose: 3000,
+            onClose: () => {
+              settleFactionNegotiation(this.app, {
+                recipientFaction: targetFaction,
+                requesterFaction: me,
+                outcome,
+                goldRequired,
+              });
+              this.syncClock();
+              this.app.hud.buildLegend?.();
+              this.app.hud.refreshInfo?.();
+              this.app.hud.flashEvent(
+                `與「${targetName}」停戰成功！支付 ${goldRequired} 金。`,
+              );
+              this.app.view.draw();
+            },
+          });
+        } else {
+          // 谈判破裂 (Talk 45: "與\3的停戰交涉，很遺憾，談判破裂了。")
+          warnSfx();
+          const step2Lines = await formatTalkTokens(45, targetName);
+          await this.showNpcMessageDialog({
+            lines: step2Lines,
+            autoClose: 3000,
+            onClose: () => {
+              this.syncClock();
+              this.app.hud.flashEvent(`與「${targetName}」停戰談判破裂！`);
+              this.app.view.draw();
+            },
+          });
+        }
+      },
+    });
+  }
+
+  async _showIncomingDiplomacyRequest({
+    type,
+    requesterFaction,
+    targetFaction = null,
+    result,
+    onResolve,
+    nativeDecision = null,
+    generation = this._scenarioUiGeneration,
+  }) {
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    const monarch = me ? sc.monarchOf(me) : null;
+    if (!me || !monarch || !requesterFaction || !result) return false;
+    const requesterName = (requesterFaction.monarch ?? "").trim();
+    const targetName = (targetFaction?.monarch ?? "").trim();
+    const monarchImg = await portrait(monarch, this.app.world).catch(() => null);
+    // 38C7/38E6：提问行 = TALK 基 + 君主个性变体（3C99：v>=3 减 3）；
+    // 原版选项前无军师行，native 分支不显示 v1 的第二行。
+    const base = type === "incoming-truce" ? 360 : 373;
+    let questionTalk = base;
+    if (nativeDecision) {
+      const v = nativeDecision.personality;
+      questionTalk = base + (v >= 3 ? v - 3 : v);
+    }
+    const reportLines = await formatTalkTokens(questionTalk, requesterName);
+    const requestLines = nativeDecision
+      ? null
+      : await formatTalkTokens(base + 2, [requesterName, targetName]);
+    if (generation !== this._scenarioUiGeneration) return false;
+    this._proposalRequest = null;
+    this.proposalAudience = {
+      type,
+      playerFaction: me,
+      requesterFaction,
+      targetFaction,
+      monarch,
+      monarchImg,
+      advImg: this.imgs?.messageNpc ?? null,
+      monarchLines: reportLines,
+      advLines: requestLines,
+      step: "incoming_diplomacy_choice",
+      reasonsHover: -1,
+      incomingResult: result,
+      incomingResolve: onResolve,
+      nativeDecision,
+      timer: null,
+      timerAction: null,
+    };
+    this.app.score?.beginAudience(this.proposalAudience);
+    this.syncClock();
+    this.app.view.draw();
+    return true;
+  }
+
+  /** 0x3220/0x3262：入站外交与其它战略模态共用FIFO。 */
+  enqueueIncomingDiplomacyRequest(payload) {
+    if (!payload?.requesterFaction || !payload?.result) return;
+    this._strategicMessageQueue.push({
+      type: "incoming-diplomacy",
+      ...payload,
+    });
+    this._drainStrategicMessages();
+  }
+
+  async _finishIncomingDiplomacy(choice, amount = 0) {
+    const p = this.proposalAudience;
+    if (!p || (p.type !== "incoming-truce" && p.type !== "incoming-assistance"))
+      return;
+    // 3902（native）：pay 输入 0 落回无条件同意，UI 不吞掉；v1 保持原门。
+    if (!p.nativeDecision && choice === "pay" && amount <= 0) return;
+    const requesterName = (p.requesterFaction?.monarch ?? "").trim();
+    const targetName = (p.targetFaction?.monarch ?? "").trim();
+    let outcome;
+    let goldRequired;
+    let monarchTalk;
+    let advisorTalk = null;
+    let extraTalks = [];
+    let praiseTalk = null;
+    if (p.nativeDecision) {
+      const resolved = p.nativeDecision.resolveChoice?.(choice, amount);
+      if (!resolved) return;
+      outcome = resolved.outcome;
+      goldRequired = resolved.fee;
+      monarchTalk = resolved.responseTalk;
+      advisorTalk = resolved.advisorTalk;
+      extraTalks = [resolved.notifyTalk].filter((talk) => talk != null);
+      // 3DC9 借位台词（075B 展开 470+个性 解任行）：\4=玩家君主名字节。
+      praiseTalk = resolved.praiseTalk ?? null;
+    } else {
+      const resolved = resolveIncomingDiplomacyChoice(
+        this.app,
+        p.incomingResult,
+        choice,
+        amount,
+      );
+      if (!resolved) return;
+      ({ outcome, goldRequired } = resolved);
+      monarchTalk = p.type === "incoming-truce" ? 367 + outcome : 380 + outcome;
+    }
+    let committed = false;
+    p.incomingCommit = () => {
+      if (committed) return;
+      committed = true;
+      p.incomingResolve?.(outcome, goldRequired);
+    };
+    p.monarchLines = [
+      ...(await formatTalkTokens(
+        monarchTalk,
+        [requesterName, targetName],
+        "",
+        "",
+        `${goldRequired}`,
+      )),
+    ];
+    for (const talk of extraTalks) {
+      p.monarchLines.push(
+        ...(await formatTalkTokens(
+          talk,
+          [requesterName, targetName],
+          "",
+          "",
+          `${goldRequired}`,
+        )),
+      );
+    }
+    if (praiseTalk != null) {
+      p.monarchLines.push(
+        ...(await formatTalkTokens(
+          praiseTalk,
+          "",
+          (p.monarch?.name ?? "").trim(),
+        )),
+      );
+    }
+    p.advLines =
+      advisorTalk == null
+        ? null
+        : await formatTalkTokens(
+            advisorTalk,
+            [requesterName, targetName],
+            "",
+            "",
+            `${goldRequired}`,
+          );
+    p.step = "incoming_diplomacy_result";
+    this._setProposalTimer(3000, () => this._closeIncomingDiplomacy());
+    this.app.view.draw();
+  }
+
+  _closeIncomingDiplomacy() {
+    const commit = this.proposalAudience?.incomingCommit;
+    try {
+      commit?.();
+    } finally {
+      this.closeProposalAudience();
+      this._strategicMessageActive = false;
+      if (!this._strategicMessageQueue.length) this._clockHoldRequested = false;
+      this.syncClock();
+      this.app.hud?.refreshInfo?.();
+      this.app.hud?.buildLegend?.();
+      this.app.view.draw();
+      this._drainStrategicMessages();
+    }
+  }
+
+  /** 外交官返回汇报请求协助谈判结果 (KI.EXE 0x3388→0x3712→0x3C3D) */
+  async showAssistanceNegotiationResult({
+    allyFaction,
+    targetFaction,
+    envoyName,
+  }) {
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    const allyName = (allyFaction?.monarch ?? "").trim();
+    const targetName = (targetFaction?.monarch ?? "").trim();
+
+    // 第一步：Talk 57 "駐\3勢力的外交官\1大人前來報告。"
+    const step1Lines = await formatTalkTokens(57, allyName, "", envoyName);
+
+    await this.showNpcMessageDialog({
+      lines: step1Lines,
+      autoClose: 3000,
+      onClose: async () => {
+        // 0x3388在报告后才调用0x3712；事件条目携带协助/目标两势力。
+        const result = resolveStrategicNegotiation(
+          this.app,
+          allyFaction,
+          true,
+          targetFaction,
+        );
+        if (!result) return;
+        const { outcome, goldRequired } = result;
+        // 第二步：根据谈判结果展示 Talk 47 / 48 / 49
+        if (outcome === 0) {
+          // 无条件达成 (Talk 47: "與\3的合作交涉的結果，無條件成立了。")
+          clickSfx();
+          const step2Lines = await formatTalkTokens(47, allyName);
+          await this.showNpcMessageDialog({
+            lines: step2Lines,
+            autoClose: 3000,
+            onClose: () => {
+              settleFactionNegotiation(this.app, {
+                recipientFaction: allyFaction,
+                requesterFaction: me,
+                targetFaction,
+                outcome,
+                goldRequired,
+              });
+              this.syncClock();
+              this.app.hud.buildLegend?.();
+              this.app.hud.flashEvent(
+                `「${allyName}」同意協同進攻「${targetName}」！`,
+              );
+              this.app.view.draw();
+            },
+          });
+        } else if (outcome === 1) {
+          // 支付金钱达成 (Talk 48: "與\3的合作交涉，的結果，已經\7達成協定。")
+          clickSfx();
+          const costStr = `支付${goldRequired}金`;
+          const step2Lines = await formatTalkTokens(
+            48,
+            allyName,
+            "",
+            "",
+            costStr,
+          );
+          await this.showNpcMessageDialog({
+            lines: step2Lines,
+            autoClose: 3000,
+            onClose: () => {
+              settleFactionNegotiation(this.app, {
+                recipientFaction: allyFaction,
+                requesterFaction: me,
+                targetFaction,
+                outcome,
+                goldRequired,
+              });
+              this.syncClock();
+              this.app.hud.buildLegend?.();
+              this.app.hud.refreshInfo?.();
+              this.app.hud.flashEvent(
+                `「${allyName}」同意協同進攻「${targetName}」！支付 ${goldRequired} 金。`,
+              );
+              this.app.view.draw();
+            },
+          });
+        } else {
+          // 谈判破裂 (Talk 49: "與\3的合作交涉，很遺憾，交涉破裂了。")
+          warnSfx();
+          const step2Lines = await formatTalkTokens(49, allyName);
+          await this.showNpcMessageDialog({
+            lines: step2Lines,
+            autoClose: 3000,
+            onClose: () => {
+              this.syncClock();
+              this.app.hud.flashEvent(`與「${allyName}」的請求協助談判破裂！`);
+              this.app.view.draw();
+            },
+          });
+        }
+      },
+    });
+  }
+
+  closeProposalAudience() {
+    this._proposalRequest = null;
+    if (!this.proposalAudience) return;
+    const p = this.proposalAudience;
+    // 预算接见无提交关闭即按拒绝结算（grant 0/outcome 2，无写入）：ai.js 的
+    // _nativeBudgetContinuation 只在 commit 中清除；直接丢弃会令其永久残留，
+    // 下一次预算事件（如下月外交官）在 enqueue 处抛 overlapping 锁钟
+    // （用户报障：内政官 dialog 关闭后下月外交官 6/9 持钟）。提交中
+    // （budgetCommitting，grant 已定、结果对白待排）同样视为放弃，按拒绝计。
+    if (
+      (p.type === "domestic-budget" || p.type === "envoy-budget") &&
+      p.nativeBudget &&
+      !p.budgetCommitted
+    ) {
+      p.nativeBudget.commit?.(0, 2);
+    }
+    this.app.score?.endAudience(this.proposalAudience);
+    if (this.proposalAudience.timer) {
+      clearTimeout(this.proposalAudience.timer);
+    }
+    this.proposalAudience = null;
+    this.app.view.draw();
+    // 采纳时排入的后继对白（如敌对接受的 3526 宣战 TALK，其 onClose 才是提交）
+    // 在 audience 存续期间被 _canShowStrategicMessage 拦下；关闭时补一次 drain
+    // （同 _closeBudgetAudience 尾段模式），否则提交无限期滞留队列。
+    this._drainStrategicMessages();
+  }
+
+  /** 返回标题时丢弃旧剧本的异步对白/计时器，不执行其 onClose 状态回调。 */
+  resetScenarioUi() {
+    this._proposalRequest = null;
+    this.app.score?.discardAudience();
+    this._scenarioUiGeneration++;
+    if (this.proposalAudience?.timer) {
+      clearTimeout(this.proposalAudience.timer);
+    }
+    if (this._generalCardTimer) {
+      clearTimeout(this._generalCardTimer);
+      this._generalCardTimer = null;
+    }
+    this.proposalAudience = null;
+    this.generalCard = null;
+    this.exitConfirmDialog = null;
+    this._strategicMessageQueue.length = 0;
+    this._strategicMessageActive = false;
+    this._clockHoldRequested = true;
+  }
+
+  _hitProposalReasons(px, py) {
+    const p = this.proposalAudience;
+    if (
+      !p ||
+      ![
+        "choose_reason",
+        "envoy_budget_choice",
+        "incoming_diplomacy_choice",
+      ].includes(p.step) ||
+      !p.reasonsRect
+    )
+      return -1;
+    const { x, y, w, h, items } = p.reasonsRect;
+    if (px >= x && px < x + w && py >= y && py < y + h) {
+      const rowH = h / items.length;
+      const i = Math.floor((py - y) / rowH);
+      return i >= 0 && i < items.length ? i : -1;
+    }
+    return -1;
+  }
+
+  _clickProposalAudience(px, py, btn = 0) {
+    const p = this.proposalAudience;
+    if (!p) return false;
+    if (btn === 2) {
+      if (p.type === "envoy-budget") {
+        // 外交费报告是强制流程：整段屏蔽右键，只允许左键选择并推进。
+        // 右键必须被消费，不能触发通用回退或暗中视为拒绝。
+        return true;
+      }
+      if (p.type === "domestic-budget") {
+        // 0x3B7E取消会原地等待；数字键盘右键由公开分发退回三选项。
+        if (p.step === "envoy_budget_choice" || p.budgetCommitting) return true;
+        if (p.timer) {
+          clickSfx();
+          clearTimeout(p.timer);
+          p.timer = null;
+          const action = p.timerAction;
+          p.timerAction = null;
+          action?.();
+        }
+        return true;
+      }
+      clickSfx();
+      if (p.type === "incoming-truce" || p.type === "incoming-assistance") {
+        if (this.keypadDialog) this.closeKeypadDialog();
+        if (p.step === "incoming_diplomacy_result") {
+          if (p.timer) {
+            clearTimeout(p.timer);
+            p.timer = null;
+          }
+          this._closeIncomingDiplomacy();
+        }
+        // 有交互顺序对话框（m2985/m2990）：选择阶段右键一律无效，
+        // 不再视为拒绝；结果展示阶段沿自动关闭等价收尾。
+        return true;
+      }
+      // 最终结果框的右键与3秒自动关闭等价：先执行原版返回边界回调；
+      // 其它阶段（有交互顺序，m2985/m2990）右键一律无效，不取消进言。
+      if (p.step === "done" && p.timer) {
+        clearTimeout(p.timer);
+        p.timer = null;
+        const action = p.timerAction;
+        p.timerAction = null;
+        action?.();
+      }
+      // 有交互顺序阶段右键无效：消费，不关闭、不恢复计时（m2985/m2990）。
+      return true;
+    }
+    if (btn !== 0) return true;
+
+    if (
+      (p.type === "envoy-budget" || p.type === "domestic-budget") &&
+      p.step !== "envoy_budget_choice" &&
+      p.step !== "envoy_budget_result"
+    ) {
+      if (p.timer) {
+        clearTimeout(p.timer);
+        p.timer = null;
+        const action = p.timerAction;
+        p.timerAction = null;
+        action?.();
+      }
+      return true;
+    }
+
+    if (p.type === "incoming-truce" || p.type === "incoming-assistance") {
+      if (p.step === "incoming_diplomacy_choice") {
+        const ri = this._hitProposalReasons(px, py);
+        if (ri < 0) return true;
+        clickSfx();
+        if (ri === 0) {
+          void this._finishIncomingDiplomacy("accept");
+        } else if (ri === 1) {
+          const winW = 288;
+          const winH = 176;
+          const winX = Math.round((innerWidth - winW) / 2);
+          const winY = Math.round((innerHeight - winH) / 2) + 20;
+          p.step = "incoming_diplomacy_keypad";
+          this.showKeypadDialog(
+            p.type,
+            // 7C6E：native 键盘默认 0；v1 默认算法 fee。
+            p.nativeDecision
+              ? (p.nativeDecision.keypadDefault ?? 0)
+              : (p.incomingResult?.goldRequired ?? 0),
+            30000,
+            winX - 8,
+            winY + 96,
+          );
+        } else {
+          void this._finishIncomingDiplomacy("refuse");
+        }
+        return true;
+      }
+      if (p.step === "incoming_diplomacy_result" && p.timer) {
+        clearTimeout(p.timer);
+        p.timer = null;
+        this._closeIncomingDiplomacy();
+      }
+      return true;
+    }
+
+    if (p.type === "envoy-budget" || p.type === "domestic-budget") {
+      if (p.step === "envoy_budget_choice") {
+        const ri = this._hitProposalReasons(px, py);
+        if (ri < 0) return true;
+        clickSfx();
+        if (ri === 0) {
+          void this._finishBudgetAudience(p.budgetRequested, "accept");
+        } else if (ri === 1) {
+          const winW = 288;
+          const winH = 176;
+          const winX = Math.round((innerWidth - winW) / 2);
+          const winY = Math.round((innerHeight - winH) / 2) + 20;
+          p.step = "envoy_budget_keypad";
+          this.showKeypadDialog(
+            p.type,
+            // 7C6E：native 键盘默认 0（7CA2 xor si,si）；v1 默认建议额。
+            p.nativeBudget
+              ? (p.nativeBudget.keypadDefault ?? 0)
+              : p.budgetRequested,
+            30000,
+            winX - 8,
+            winY + 96,
+          );
+        } else {
+          void this._finishBudgetAudience(0, "refuse");
+        }
+        return true;
+      }
+      if (p.step === "envoy_budget_result" && p.timer) {
+        clearTimeout(p.timer);
+        p.timer = null;
+        this._closeBudgetAudience();
+      }
+      return true;
+    }
+
+    // 如果当前处于选择理由状态，优先检测点击理由项
+    if (p.step === "choose_reason") {
+      const ri = this._hitProposalReasons(px, py);
+      if (ri >= 0) {
+        clickSfx();
+        this._selectProposalReason(ri);
+        return true;
+      }
+      return true; // 处于选理由阶段时，点外面不快进
+    }
+
+    // 其它阶段（有等待计时器时）：左键点击任意位置立即触发下一步
+    if (p.timer) {
+      clearTimeout(p.timer);
+      p.timer = null;
+      if (typeof p.timerAction === "function") {
+        p.timerAction();
+      }
+      return true;
+    }
+
+    return true;
+  }
+
+  _drawProposalAudience(ctx) {
+    const p = this.proposalAudience;
+    if (!p) return;
+
+    const iw = innerWidth;
+    const ih = innerHeight;
+    const isBudget = p.type === "domestic-budget" || p.type === "envoy-budget";
+
+    // TALK 56/57 报告阶段由现有 generalCard 系统底部提示框绘制；
+    // 这里必须直接返回，避免 proposalAudience 再叠画一个空白/重复窗口。
+    if (isBudget && p.step === "budget_report") return;
+
+    if (isBudget) {
+      // ── 预算议政流程规格 (288×176 背景大图，原寸不拉伸) ──
+      const winW = 288;
+      const winH = 176;
+      const winX = Math.round((iw - winW) / 2);
+      const winY = Math.round((ih - winH) / 2) + 20;
+
+      const bgWin = this._drawWindow(ctx, winX - 8, winY - 8, 19, 12, "black");
+      const cx = bgWin ? bgWin.x : winX;
+      const cy = bgWin ? bgWin.y : winY;
+
+      const iventImg = this.imgs?.ivent1 || this.imgs?.ivent0;
+      if (iventImg) {
+        ctx.drawImage(iventImg, cx, cy, 288, 176);
+      } else {
+        ctx.fillStyle = "#112233";
+        ctx.fillRect(cx, cy, 288, 176);
+      }
+
+      // 左上方: 内政官/外交官发言框
+      const topW = 256;
+      const topH = 80;
+      const topX = Math.max(8, winX - 48);
+      const topY = Math.max(36, winY - 40);
+
+      let topLines = null;
+      if (
+        p.step === "budget_request" ||
+        p.step === "envoy_budget_choice" ||
+        p.step === "envoy_budget_keypad" ||
+        p.step === "budget_advisor_result"
+      ) {
+        topLines = p.workerRequestLines || p.monarchLines;
+      } else if (p.step === "envoy_budget_result") {
+        topLines = p.workerResultLines || p.monarchLines;
+      } else if (p.step === "budget_zero_worker") {
+        topLines = p.workerRequestLines || p.monarchLines;
+      } else if (p.step === "budget_zero_advisor") {
+        topLines = p.workerRequestLines;
+      }
+
+      if (topLines) {
+        this._drawSpeechBox(ctx, topX, topY, topW, topH, p.workerImg, topLines);
+      }
+
+      // 右下方: 君主发言框
+      const btmW = 256;
+      const btmH = 80;
+      const btmX = Math.min(iw - btmW - 8, winX + 80);
+      const btmY = Math.min(ih - btmH - 8, winY + 136);
+
+      let btmLines = null;
+      if (
+        p.step === "budget_advisor_result" ||
+        p.step === "envoy_budget_result"
+      ) {
+        btmLines = p.advisorResultLines;
+      } else if (p.step === "budget_zero_advisor") {
+        btmLines = p.advisorResultLines || p.monarchLines;
+      }
+
+      if (btmLines) {
+        this._drawSpeechBox(
+          ctx,
+          btmX,
+          btmY,
+          btmW,
+          btmH,
+          p.monarchImg,
+          btmLines,
+        );
+      }
+
+      // 三选项选择菜单 (答應 / 提示金額 / 拒絕)
+      if (p.step === "envoy_budget_choice") {
+        const rTilesW = 11;
+        const rTilesH = 5;
+        const rx = winX - 24;
+        const ry = winY + 56;
+
+        const rWin = this._drawWindow(ctx, rx, ry, rTilesW, rTilesH, "black");
+        const rInnerX = rWin ? rWin.x : rx + 8;
+        const rInnerY = rWin ? rWin.y : ry + 8;
+        const rInnerW = rWin ? rWin.w : (rTilesW - 1) * 16;
+        const rInnerH = rWin ? rWin.h : (rTilesH - 1) * 16;
+
+        const items = ["答應", "提示金額", "拒絕"];
+        p.reasonsRect = {
+          x: rInnerX,
+          y: rInnerY,
+          w: rInnerW,
+          h: rInnerH,
+          items,
+        };
+
+        const rowH = rInnerH / items.length;
+        ctx.font = FONT;
+        ctx.textBaseline = "top";
+
+        items.forEach((item, i) => {
+          const iy = rInnerY + i * rowH;
+          const isHover = p.reasonsHover === i;
+          if (isHover) {
+            ctx.fillStyle = "#ffe000";
+            ctx.fillRect(rInnerX + 1, iy + 1, rInnerW - 2, rowH - 2);
+            ctx.fillStyle = "#0000bb";
+          } else {
+            ctx.fillStyle = "#ffffff";
+          }
+          const tw = ctx.measureText(item).width;
+          ctx.fillText(
+            item,
+            rInnerX + (rInnerW - tw) / 2,
+            iy + (rowH - 16) / 2 + 1,
+          );
+        });
+      } else {
+        p.reasonsRect = null;
+      }
+      return;
+    }
+
+    // ── 以下为传统进言提案流程 (敌对/停战/请援等) ──
+    const winW = 288;
+    const winH = 176;
+    const winX = Math.round((iw - winW) / 2);
+    const winY = Math.round((ih - winH) / 2) + 20;
+
+    const bgWin = this._drawWindow(ctx, winX - 8, winY - 8, 19, 12, "black");
+    const cx = bgWin ? bgWin.x : winX;
+    const cy = bgWin ? bgWin.y : winY;
+
+    const iventImg = this.imgs?.ivent0;
+    if (iventImg) {
+      ctx.drawImage(iventImg, cx, cy, 288, 176);
+    } else {
+      ctx.fillStyle = "#112233";
+      ctx.fillRect(cx, cy, 288, 176);
+    }
+
+    // 2. 上方君主发言框 (17×5 tiles = 272×80，位于左上错落)
+    const topW = 272;
+    const topH = 80;
+    const topX = Math.max(8, winX - 72);
+    const topY = Math.max(40, winY - 16);
+    this._drawSpeechBox(
+      ctx,
+      topX,
+      topY,
+      topW,
+      topH,
+      p.monarchImg,
+      p.monarchLines,
+    );
+
+    // 3. 下方军师发言框 (17×5 tiles = 272×80，位于右下错落)
+    if (p.advLines) {
+      const btmW = 272;
+      const btmH = 80;
+      const btmX = Math.min(iw - btmW - 8, winX + 120);
+      const btmY = Math.min(ih - btmH - 8, winY + 136);
+      this._drawSpeechBox(ctx, btmX, btmY, btmW, btmH, p.advImg, p.advLines);
+    }
+
+    // 4. 开战理由选择菜单 (11×7 tiles = 176×112，位于中间偏左)
+    if (p.step === "choose_reason" || p.step === "incoming_diplomacy_choice") {
+      const rTilesW = 11;
+      const compactChoice = p.step === "incoming_diplomacy_choice";
+      const rTilesH = compactChoice ? 5 : 7;
+      const rx = winX - 24;
+      const ry = winY + 90;
+
+      const rWin = this._drawWindow(ctx, rx, ry, rTilesW, rTilesH, "black");
+      const rInnerX = rWin ? rWin.x : rx + 8;
+      const rInnerY = rWin ? rWin.y : ry + 8;
+      const rInnerW = rWin ? rWin.w : (rTilesW - 1) * 16;
+      const rInnerH = rWin ? rWin.h : (rTilesH - 1) * 16;
+
+      const items =
+        p.step === "incoming_diplomacy_choice"
+          ? ["無條件同意", "提供資金", "拒絕"]
+          : p.reasonsItems || [
+              "外交關係惡劣",
+              "我國較有利",
+              "敵正侵攻他國",
+              "敵勢力疲乏",
+              "撤回進言",
+            ];
+      p.reasonsRect = { x: rInnerX, y: rInnerY, w: rInnerW, h: rInnerH, items };
+
+      const rowH = rInnerH / items.length;
+      ctx.font = FONT;
+      ctx.textBaseline = "top";
+
+      items.forEach((item, i) => {
+        const iy = rInnerY + i * rowH;
+        const isHover = p.reasonsHover === i;
+        if (isHover) {
+          ctx.fillStyle = "#ffe000";
+          ctx.fillRect(rInnerX + 1, iy + 1, rInnerW - 2, rowH - 2);
+          ctx.fillStyle = "#0000bb";
+        } else {
+          ctx.fillStyle = "#ffffff";
+        }
+        const tw = ctx.measureText(item).width;
+        ctx.fillText(
+          item,
+          rInnerX + (rInnerW - tw) / 2,
+          iy + (rowH - 16) / 2 + 1,
+        );
+      });
+    } else {
+      p.reasonsRect = null;
+    }
+  }
+
+  /** 绘制黑底金框发言框 (左侧头像 64×64，右侧多行对白) */
+  _drawSpeechBox(ctx, px, py, w, h, img, lines) {
+    const tw = Math.ceil((w + 16) / 16);
+    const th = Math.ceil((h + 16) / 16);
+    const win = this._drawWindow(ctx, px, py, tw, th, "black");
+    const x = win ? win.x : px + 8;
+    const y = win ? win.y : py + 8;
+    const ch = win ? win.h : (th - 1) * 16;
+
+    // 左侧头像 64×64 (垂直居中于黑框内，避免溢出到边框)
+    const imgY = y + Math.max(0, Math.floor((ch - 64) / 2));
+    if (img) {
+      ctx.drawImage(img, x + 8, imgY, 64, 64);
+    } else {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(x + 8, imgY, 64, 64);
+    }
+
+    // 右侧文字
+    if (!lines) return;
+    ctx.textBaseline = "top";
+    const tx = x + 8 + 64 + 14;
+    const lineH = 18;
+    const rawLines = Array.isArray(lines) ? lines : [lines];
+    const totalH = rawLines.length * lineH;
+    const startY = y + Math.max(8, Math.floor((ch - totalH) / 2));
+
+    for (let li = 0; li < rawLines.length; li++) {
+      const line = rawLines[li];
+      const ly = startY + li * lineH;
+      if (Array.isArray(line)) {
+        let curX = tx;
+        for (const token of line) {
+          if (typeof token === "string") {
+            ctx.font = FONT;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(token, curX, ly);
+            curX += ctx.measureText(token).width;
+          } else if (token && typeof token === "object") {
+            ctx.font = token.isNum ? DIN : FONT;
+            ctx.fillStyle = token.color || "#ffffff";
+            const text = String(token.text ?? "");
+            ctx.fillText(text, curX, ly);
+            curX += ctx.measureText(text).width;
+          }
+        }
+      } else {
+        ctx.font = FONT;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(String(line ?? ""), tx, ly);
+      }
+    }
+  }
+
+  /** 武将特长/对白信息弹窗（现Web布局16×5 tiles；旧6580依据已撤销） */
+  async showGeneralCard(gen) {
+    if (!gen) return;
+    const { lines } = await quoteFor(gen);
+    const img = await portrait(gen, this.app.world).catch(() => null);
+    const w = 256;
+    const h = 80;
+    let px, py;
+    if (this.listDialog) {
+      const d = this.listDialog;
+      px = d.px + d.w - w - 24;
+      py = d.py + d.h - h - 36;
+    } else {
+      px = Math.round((innerWidth - w) / 2);
+      py = Math.round((innerHeight - h) / 2);
+    }
+    this.generalCard = { gen, img, lines, px, py, w, h };
+    this.app.view.draw();
+  }
+
+  /** 通用 NPC 提示信息弹窗 (如据点已有内政官提示: 19×5 tiles = 304×80，黑底金框，左侧 NPC 头像 64×64) */
+  async showNpcMessageDialog({
+    lines,
+    px,
+    py,
+    w = 304,
+    h = 80,
+    onClose = null,
+    autoClose = 3000,
+    generation = this._scenarioUiGeneration,
+  } = {}) {
+    const parts = Array.isArray(lines) ? lines.flat(Infinity) : [lines];
+    const hasVisibleText = parts.some((part) => {
+      const value =
+        part && typeof part === "object" ? (part.text ?? "") : (part ?? "");
+      return String(value).trim().length > 0;
+    });
+    // 系统消息不得创建只有头像和黑底的空壳窗口；有后续动作时直接续行。
+    if (!hasVisibleText) {
+      onClose?.();
+      return false;
+    }
+    let img = this.imgs?.messageNpc;
+    if (!img) {
+      img = await loadImage("grf/ui/message_npc.png").catch(() => null);
+    }
+    if (generation !== this._scenarioUiGeneration) return false;
+    if (px == null || py == null) {
+      if (this.listDialog) {
+        const d = this.listDialog;
+        px = d.px + d.w - w - 8;
+        py = d.py + 76;
+      } else {
+        px = Math.round((innerWidth - w) / 2);
+        py = Math.round((innerHeight - h) / 2);
+      }
+    }
+    if (this._generalCardTimer) {
+      clearTimeout(this._generalCardTimer);
+      this._generalCardTimer = null;
+    }
+    const card = { gen: null, img, lines, px, py, w, h, onClose };
+    this.generalCard = card;
+    if (autoClose) {
+      this._generalCardTimer = setTimeout(() => {
+        if (this.generalCard !== card) return;
+        this._generalCardTimer = null;
+        this.closeGeneralCard();
+      }, autoClose);
+    }
+    this.app.view.draw();
+    return true;
+  }
+
+  /** 武将固定发言对话弹窗 (如任命内政官「我立刻前往。」、解任「那我這就回京城。」、任命外交官「遵命。」，19×5 tiles = 304×80) */
+  async showGeneralMessageDialog(
+    gen,
+    text,
+    onClose = null,
+    {
+      w = 304,
+      h = 80,
+      px,
+      py,
+      autoClose = 3000,
+      generation = this._scenarioUiGeneration,
+    } = {},
+  ) {
+    if (!gen) return;
+    const img = await portrait(gen, this.app.world).catch(() => null);
+    if (generation !== this._scenarioUiGeneration) return;
+    if (px == null || py == null) {
+      if (this.listDialog) {
+        const d = this.listDialog;
+        px = d.px + d.w - w - 8;
+        py = d.py + 76;
+      } else {
+        px = Math.round((innerWidth - w) / 2);
+        py = Math.round((innerHeight - h) / 2);
+      }
+    }
+    if (this._generalCardTimer) {
+      clearTimeout(this._generalCardTimer);
+      this._generalCardTimer = null;
+    }
+    const card = { gen, img, lines: [text], px, py, w, h, onClose };
+    this.generalCard = card;
+    if (autoClose) {
+      this._generalCardTimer = setTimeout(() => {
+        if (this.generalCard !== card) return;
+        this._generalCardTimer = null;
+        this.closeGeneralCard();
+      }, autoClose);
+    }
+    this.app.view.draw();
+  }
+
+  closeGeneralCard() {
+    if (!this.generalCard) return;
+    if (this._generalCardTimer) {
+      clearTimeout(this._generalCardTimer);
+      this._generalCardTimer = null;
+    }
+    const onClose = this.generalCard.onClose;
+    this.generalCard = null;
+    if (this.listDialog) this.listDialog.selectedRow = -1;
+    if (onClose) {
+      onClose();
+      return;
+    }
+    this.syncClock();
+    this.app.view.draw();
+    this._drainStrategicMessages();
+  }
+
+  /** AI 宣战等战略通知：高优先模态关闭后按 FIFO 显示，3秒或右键关闭。 */
+  enqueueStrategicMessage(message) {
+    if (!message?.text) return;
+    this._strategicMessageQueue.push(message);
+    this._drainStrategicMessages();
+  }
+
+  /** 已确认TALK索引的战略通知；type10与规则事件共用格式化/FIFO。 */
+  enqueueTalkMessage(message) {
+    if (!Number.isInteger(message?.talkIndex)) return;
+    const first = { type: "talk-message", ...message };
+    const personalityIndex = personalityTalkIndex(
+      message.personalitySelector,
+      message.gen,
+    );
+    delete first.personalitySelector;
+    delete first.onComplete;
+    this._strategicMessageQueue.push(first);
+    let last = first;
+    if (personalityIndex != null) {
+      last = {
+        type: "talk-message",
+        gen: message.gen,
+        talkIndex: personalityIndex,
+        targetName: message.targetName,
+        advisorName: message.advisorName,
+        generalName: message.generalName ?? message.gen?.name?.trim?.() ?? "",
+        extraStr: message.extraStr,
+        cityName: message.cityName,
+        kind: `${message.kind ?? "talk"}-personality`,
+      };
+      this._strategicMessageQueue.push(last);
+    }
+    // onClose retains its existing first-message contract. A rule caller
+    // waiting for the entire TALK + personality sequence uses onComplete.
+    if (typeof message.onComplete === "function") {
+      const onClose = last.onClose;
+      last.onClose = () => {
+        onClose?.();
+        message.onComplete();
+      };
+    }
+    this._drainStrategicMessages();
+  }
+
+  /** type10：SAVE尾部事件轮中的通用TALK通知。 */
+  enqueueGenericTalkEvent(event) {
+    if (!Number.isInteger(event?.talkIndex)) return;
+    this._strategicMessageQueue.push({
+      type: "talk-message",
+      generic: true,
+      ...event,
+    });
+    this._drainStrategicMessages();
+  }
+
+  /** 0x5715 type-4：内政官按月回京申请治理预算。 */
+  enqueueDomesticBudgetReport(report) {
+    if (report?.cityIdx == null) return;
+    this._strategicMessageQueue.push({ type: "domestic-budget", ...report });
+    this._drainStrategicMessages();
+  }
+
+  /** 0x578F type-5：外交官按月回京申请外交维持费。 */
+  enqueueEnvoyBudgetReport(report) {
+    if (report?.targetIdx == null) return;
+    this._strategicMessageQueue.push({ type: "envoy-budget", ...report });
+    this._drainStrategicMessages();
+  }
+
+  async _showDomesticBudgetAudience(
+    message,
+    generation = this._scenarioUiGeneration,
+  ) {
+    const sc = this.app.scenario;
+    const city = sc.cities?.[message.cityIdx];
+    const me = cmd.playerFaction(sc);
+    if (!city) return false;
+    // native 32A9：SI=内政官将号在出队时已固定（32B6 门），不随 city.governor 重查。
+    let gen;
+    if (message.nativeBudget) {
+      gen = sc.generals?.[message.nativeGeneral];
+    } else {
+      if (city.governor == null) return false;
+      gen = sc.generals?.[city.governor];
+    }
+    const monarch = me ? sc.monarchOf(me) : null;
+    const advisor = sc.generals?.[me?.advisor_idx] ?? monarch;
+    if (!gen || !monarch || !advisor) return false;
+    const [governorImg, advisorImg, monarchImg] = await Promise.all([
+      portrait(gen, this.app.world).catch(() => null),
+      portrait(advisor, this.app.world).catch(() => null),
+      portrait(monarch, this.app.world).catch(() => null),
+    ]);
+    const rawRequested = Math.max(0, message.requested | 0);
+    // 0x39F1..0x39FA：只把入口建议额的1..499钳为500；键盘自定义值不钳。
+    const requested = rawRequested > 0 ? Math.max(500, rawRequested) : 0;
+    const reportLines = await formatTalkTokens(
+      56,
+      "",
+      "",
+      gen.name.trim(),
+      "",
+      city.name?.trim?.() || "거점",
+    );
+    if (generation !== this._scenarioUiGeneration) return false;
+    const audience = {
+      type: "domestic-budget",
+      playerFaction: me,
+      city,
+      monarch,
+      advisorGen: advisor,
+      advGen: gen,
+      advisorImg,
+      workerImg: governorImg,
+      monarchImg,
+      advImg: null,
+      // native 39E8 提交闭包必须随 audience 携带：ai.js 的
+      // _nativeBudgetContinuation 只在 commit 中清除；缺了它 _commitBudgetAudience
+      // 走 v1 扣款（预备金照减）却永不清门，下月事件即抛 overlapping（用户m2583实锤）。
+      nativeBudget: message.nativeBudget ?? null,
+      monarchLines: reportLines,
+      workerRequestLines: null,
+      advisorResultLines: null,
+      workerResultLines: null,
+      step: "budget_report",
+      requestTalkBase: 278,
+      budgetRequested: requested,
+      budgetAmount: requested,
+      budgetGrant: null,
+      budgetHover: -1,
+      reasonsHover: -1,
+      timer: null,
+      timerAction: null,
+    };
+    this.proposalAudience = audience;
+    const reportShown = await this._showBudgetReportCard(
+      audience,
+      reportLines,
+      generation,
+    );
+    if (generation !== this._scenarioUiGeneration) return false;
+    if (!reportShown) {
+      await this._advanceBudgetAudience();
+      return true;
+    }
+    this._setProposalTimer(3000, () => void this._advanceBudgetAudience());
+    this.syncClock();
+    return true;
+  }
+
+  async _showEnvoyBudgetAudience(
+    message,
+    generation = this._scenarioUiGeneration,
+  ) {
+    const sc = this.app.scenario;
+    const envoy = message.nativeBudget ? null : sc.envoys?.[message.targetIdx];
+    const target = sc.factions?.find((f) => f?.idx === message.targetIdx);
+    const me = cmd.playerFaction(sc);
+    // native 32E9：SI=外交官将号在出队时已固定（32F4 门），不依赖 v1 envoy 投影。
+    const gen = message.nativeBudget
+      ? sc.generals?.[message.nativeGeneral]
+      : (envoy?.gen_idx != null && sc.generals?.[envoy.gen_idx]) ||
+        sc.generals?.find((g) => g?.name?.trim?.() === envoy?.name?.trim?.());
+    const monarch = me ? sc.monarchOf(me) : null;
+    const advisor = sc.generals?.[me?.advisor_idx] ?? monarch;
+    if (!target || !gen || !monarch || !advisor) return false;
+    if (!message.nativeBudget && !envoy) return false;
+    const [envoyImg, advisorImg, monarchImg] = await Promise.all([
+      portrait(gen, this.app.world).catch(() => null),
+      portrait(advisor, this.app.world).catch(() => null),
+      portrait(monarch, this.app.world).catch(() => null),
+    ]);
+    const targetName = (target.monarch ?? "該勢力").trim();
+    const rawRequested = Math.max(0, message.requested | 0);
+    const requested = rawRequested > 0 ? Math.max(500, rawRequested) : 0;
+    const reportLines = await formatTalkTokens(
+      57,
+      targetName,
+      "",
+      gen.name.trim(),
+    );
+    if (generation !== this._scenarioUiGeneration) return false;
+    const audience = {
+      type: "envoy-budget",
+      playerFaction: me,
+      targetFaction: target,
+      envoy,
+      monarch,
+      advisorGen: advisor,
+      advGen: gen,
+      advisorImg,
+      workerImg: envoyImg,
+      monarchImg,
+      advImg: null,
+      // 同内政：native 提交闭包随身，否则 v1 扣款掩盖门不清（用户m2583实锤）。
+      nativeBudget: message.nativeBudget ?? null,
+      monarchLines: reportLines,
+      workerRequestLines: null,
+      advisorResultLines: null,
+      workerResultLines: null,
+      step: "budget_report",
+      requestTalkBase: 319,
+      budgetRequested: requested,
+      budgetAmount: requested,
+      budgetGrant: null,
+      budgetHover: -1,
+      reasonsHover: -1,
+      timer: null,
+      timerAction: null,
+    };
+    this.proposalAudience = audience;
+    const reportShown = await this._showBudgetReportCard(
+      audience,
+      reportLines,
+      generation,
+    );
+    if (generation !== this._scenarioUiGeneration) return false;
+    if (!reportShown) {
+      await this._advanceBudgetAudience();
+      return true;
+    }
+    this._setProposalTimer(3000, () => void this._advanceBudgetAudience());
+    this.syncClock();
+    return true;
+  }
+
+  async _showBudgetReportCard(audience, lines, generation) {
+    const w = 480;
+    const h = 80;
+    const shown = await this.showNpcMessageDialog({
+      lines,
+      w,
+      h,
+      px: Math.round((innerWidth - w) / 2),
+      py: Math.max(40, innerHeight - h - 24),
+      autoClose: 0,
+      generation,
+    });
+    if (shown && this.proposalAudience === audience && this.generalCard) {
+      this.generalCard.budgetReportAudience = audience;
+      return true;
+    }
+    return false;
+  }
+
+  _dismissBudgetReportCard(audience) {
+    if (this.generalCard?.budgetReportAudience !== audience) return;
+    if (this._generalCardTimer) {
+      clearTimeout(this._generalCardTimer);
+      this._generalCardTimer = null;
+    }
+    this.generalCard = null;
+  }
+
+  _budgetWorkerTalkIndex(base, gen) {
+    const raw = Math.max(0, gen?.talk_idx ?? 0) & 0xff;
+    return base + (raw >= 3 ? raw - 3 : raw);
+  }
+
+  async _advanceBudgetAudience() {
+    const p = this.proposalAudience;
+    if (!p || (p.type !== "envoy-budget" && p.type !== "domestic-budget"))
+      return;
+    if (p.step === "budget_report") this._dismissBudgetReportCard(p);
+    const targetName = (p.targetFaction?.monarch ?? "").trim();
+    const cityName = p.city?.name?.trim?.() || "거점";
+    const generalName = p.advGen?.name?.trim?.() || "";
+    let talkIndex;
+    let nextStep;
+    let nextAction;
+
+    if (p.step === "budget_report") {
+      if (p.budgetRequested === 0) {
+        p.budgetGrant = 0;
+        talkIndex = this._budgetWorkerTalkIndex(
+          p.requestTalkBase + 30,
+          p.advGen,
+        );
+        nextStep = "budget_zero_worker";
+        nextAction = () => void this._advanceBudgetAudience();
+      } else {
+        talkIndex = this._budgetWorkerTalkIndex(p.requestTalkBase, p.advGen);
+        nextStep = "budget_request";
+        nextAction = () => void this._advanceBudgetAudience();
+      }
+    } else if (p.step === "budget_request") {
+      p.step = "envoy_budget_choice";
+      p.timerAction = null;
+      this.app.view.draw();
+      return;
+    } else if (p.step === "budget_zero_worker") {
+      talkIndex = p.requestTalkBase + 35;
+      nextStep = "budget_zero_advisor";
+      nextAction = () => void this._advanceBudgetAudience();
+    } else if (p.step === "budget_zero_advisor") {
+      talkIndex = this._budgetWorkerTalkIndex(p.requestTalkBase + 36, p.advGen);
+      nextStep = "envoy_budget_result";
+      nextAction = () => this._closeBudgetAudience();
+    } else if (p.step === "budget_advisor_result") {
+      p.monarchLines = p.workerResultLines;
+      p.step = "envoy_budget_result";
+      this._setProposalTimer(3000, () => this._closeBudgetAudience());
+      this.app.view.draw();
+      return;
+    } else {
+      return;
+    }
+
+    const lines = await formatTalkTokens(
+      talkIndex,
+      targetName,
+      "",
+      generalName,
+      `${p.budgetRequested}`,
+      cityName,
+    );
+    if (this.proposalAudience !== p) return;
+    if (nextStep === "budget_request" || nextStep === "budget_zero_worker") {
+      this.app.score?.beginAudience(p);
+      p.workerRequestLines = lines;
+    } else if (nextStep === "budget_zero_advisor") {
+      p.advisorResultLines = lines;
+    }
+    p.monarchLines = lines;
+    p.step = nextStep;
+    this._setProposalTimer(3000, nextAction);
+    this.app.view.draw();
+  }
+
+  async _finishBudgetAudience(amount, mode) {
+    const p = this.proposalAudience;
+    if (
+      !p ||
+      (p.type !== "envoy-budget" && p.type !== "domestic-budget") ||
+      p.budgetCommitting
+    )
+      return;
+    const domestic = p.type === "domestic-budget";
+    if (
+      !p.nativeBudget &&
+      domestic &&
+      (p.city?.governor == null || p.city.governor !== p.advGen?.idx)
+    ) {
+      this._closeBudgetAudience();
+      return;
+    }
+    // 0x3A88：键盘返回的1..499保持原值；500下限只在0x39E8入口建议额生效。
+    const entered = Math.max(0, Math.min(30000, amount | 0));
+    const grant = mode === "refuse" ? 0 : entered;
+    const requested = p.budgetRequested;
+    let category = 3;
+    if (grant === 0) category = 2;
+    else if (grant === requested) category = 0;
+    else if (grant < requested) category = 1;
+    p.budgetCategory = category;
+    p.budgetCommitting = true;
+    p.step = "budget_committing";
+    p.budgetGrant = grant;
+
+    const targetName = (p.targetFaction?.monarch ?? "").trim();
+    const cityName = p.city?.name?.trim?.() || "거점";
+    const generalName = p.advGen?.name?.trim?.() || "";
+    const advisorTalk = p.requestTalkBase + 6 + category;
+    const workerTalk = this._budgetWorkerTalkIndex(
+      p.requestTalkBase + 10 + category * 5,
+      p.advGen,
+    );
+    const [advisorLines, workerLines] = await Promise.all([
+      formatTalkTokens(
+        advisorTalk,
+        targetName,
+        "",
+        generalName,
+        `${grant}`,
+        cityName,
+      ),
+      formatTalkTokens(
+        workerTalk,
+        targetName,
+        "",
+        generalName,
+        `${grant}`,
+        cityName,
+      ),
+    ]);
+    if (this.proposalAudience !== p) return;
+    p.budgetCommitting = false;
+    p.advisorResultLines = advisorLines;
+    p.workerResultLines = workerLines;
+    p.monarchLines = advisorLines;
+    p.step = "budget_advisor_result";
+    this._setProposalTimer(3000, () => void this._advanceBudgetAudience());
+    this.app.view.draw();
+  }
+
+  _commitBudgetAudience(p) {
+    if (!p || p.budgetCommitted || p.budgetGrant == null) return;
+    p.budgetCommitted = true;
+    const grant = Math.max(0, p.budgetGrant | 0);
+    // native 39E8 提交（3ADF..3AF0）：由 ai.js 闭包经严格桥写 +1A 并
+    // 563B 扣款；建议额 0 / 拒绝（outcome 2）无写入。native 不重新门控
+    // 内政官（SI 在 32A9 出队时已固定）。
+    if (p.nativeBudget) {
+      p.nativeBudget.commit?.(grant, p.budgetCategory ?? (grant > 0 ? 0 : 2));
+      return;
+    }
+    const domestic = p.type === "domestic-budget";
+    if (
+      domestic &&
+      (p.city?.governor == null || p.city.governor !== p.advGen?.idx)
+    )
+      return;
+    const budgetPoints = Math.min(255, Math.floor(grant / 128));
+    if (grant > 0) {
+      applyFactionFundsDelta(p.playerFaction, -grant);
+      if (p.advGen) p.advGen.assignment_budget = budgetPoints;
+    }
+    if (p.type === "envoy-budget") {
+      p.envoy.budget = budgetPoints;
+      p.envoy.requested = p.budgetRequested;
+      p.envoy.granted = grant;
+      p.envoy.reportPending = false;
+    }
+  }
+
+  _closeBudgetAudience() {
+    const p = this.proposalAudience;
+    this._dismissBudgetReportCard(p);
+    this._commitBudgetAudience(p);
+    this.closeProposalAudience();
+    this._strategicMessageActive = false;
+    if (!this._strategicMessageQueue.length) this._clockHoldRequested = false;
+    this.syncClock();
+    this.app.hud?.refreshInfo?.();
+    this.app.view.draw();
+    this._drainStrategicMessages();
+  }
+
+  _canShowStrategicMessage() {
+    return !(
+      this._strategicMessageActive ||
+      this.generalCard ||
+      this.app.battleView?.active ||
+      this.app.engageTransition?.active ||
+      this.settingsOpen ||
+      this.systemSaveDialog ||
+      this.systemLoadConfirmDialog ||
+      this.exitConfirmDialog ||
+      this.listDialog ||
+      this.choiceDialog ||
+      this.proposalAudience ||
+      this.formationDialog ||
+      this.financeDialog ||
+      this.keypadDialog
+    );
+  }
+
+  async _drainStrategicMessages() {
+    if (!this._strategicMessageQueue.length || !this._canShowStrategicMessage())
+      return;
+    const generation = this._scenarioUiGeneration;
+    const message = this._strategicMessageQueue.shift();
+    this._strategicMessageActive = true;
+    this._clockHoldRequested = true;
+    this.syncClock();
+    if (message.type === "incoming-diplomacy") {
+      const opened = await this._showIncomingDiplomacyRequest({
+        ...message,
+        generation,
+      });
+      if (generation !== this._scenarioUiGeneration) return;
+      if (!opened) this._closeIncomingDiplomacy();
+      return;
+    }
+    if (message.type === "talk-message") {
+      message.lines = message.generic
+        ? await formatGenericTalkEvent(
+            message.talkIndex,
+            message.arg0,
+            this.app.scenario,
+          )
+        : await formatTalkTokens(
+            message.talkIndex,
+            message.targetName ?? "",
+            message.advisorName ?? "",
+            message.generalName ?? message.gen?.name?.trim?.() ?? "",
+            message.extraStr ?? "",
+            message.cityName ?? "",
+          );
+      message.text = message.lines
+        .flat()
+        .map((token) =>
+          typeof token === "string" ? token : (token?.text ?? ""),
+        )
+        .join("");
+      if (generation !== this._scenarioUiGeneration) return;
+    }
+    if (message.type === "domestic-budget") {
+      const opened = await this._showDomesticBudgetAudience(
+        message,
+        generation,
+      );
+      if (generation !== this._scenarioUiGeneration) return;
+      // audience 未建成（缺将/缺主）时无 proposalAudience 可提交：直接按拒绝
+      // 结算 native 门，否则门永久残留。commit(0,2) 无写入，只清门。
+      if (!opened) message.nativeBudget?.commit?.(0, 2);
+      if (!opened) this._closeBudgetAudience();
+      return;
+    }
+    if (message.type === "envoy-budget") {
+      const opened = await this._showEnvoyBudgetAudience(message, generation);
+      if (generation !== this._scenarioUiGeneration) return;
+      if (!opened) message.nativeBudget?.commit?.(0, 2);
+      if (!opened) this._closeBudgetAudience();
+      return;
+    }
+    const w = 480;
+    const h = 80;
+    const px = Math.round((innerWidth - w) / 2);
+    const py = Math.max(40, innerHeight - h - 24);
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      try {
+        message.onClose?.();
+      } finally {
+        this._strategicMessageActive = false;
+        if (!this._strategicMessageQueue.length)
+          this._clockHoldRequested = false;
+        this.syncClock();
+        this.app.view.draw();
+        this._drainStrategicMessages();
+      }
+    };
+    // 0x237E按受灾玩家城逐条执行0xCE7；等该FIFO条目真正可见时再响，
+    // 避免同轮入队的多个城市把警告音并发叠在一起。
+    if (message.sound === "warn") warnSfx();
+    if (message.gen) {
+      await this.showGeneralMessageDialog(message.gen, message.text, finish, {
+        w,
+        h,
+        px,
+        py,
+        autoClose: 3000,
+        generation,
+      });
+    } else {
+      await this.showNpcMessageDialog({
+        lines: message.lines ?? [message.text],
+        w,
+        h,
+        px,
+        py,
+        autoClose: 3000,
+        onClose: finish,
+        generation,
+      });
+    }
+  }
+
+  _hitGeneralCard(px, py) {
+    const g = this.generalCard;
+    if (!g) return false;
+    return (
+      px >= g.px - 8 &&
+      px < g.px + g.w + 8 &&
+      py >= g.py - 8 &&
+      py < g.py + g.h + 8
+    );
+  }
+
+  _drawGeneralCard(ctx) {
+    const g = this.generalCard;
+    if (!g) return;
+    this._drawGeneralCardBox(ctx, g.px, g.py, g.w, g.h, g.img, g.lines);
+  }
+
+  _drawGeneralCardBox(ctx, px, py, w, h, img, lines) {
+    const tw = Math.ceil((w + 16) / 16);
+    const th = Math.ceil((h + 16) / 16);
+    const win = this._drawWindow(ctx, px - 8, py - 8, tw, th, "black");
+    const x = win ? win.x : px;
+    const y = win ? win.y : py;
+    const cw = win ? win.w : (tw - 1) * 16;
+    const ch = win ? win.h : (th - 1) * 16;
+
+    // 左侧武将/NPC 头像 64×64 (垂直居中于黑框内，避免溢出到边框)
+    const imgY = y + Math.max(0, Math.floor((ch - 64) / 2));
+    if (img) {
+      ctx.drawImage(img, x + 8, imgY, 64, 64);
+    } else {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(x + 8, imgY, 64, 64);
+    }
+
+    // 右侧对白文字
+    ctx.textBaseline = "top";
+    const tx = x + 8 + 64 + 14;
+    const maxTextW = Math.max(40, cw - 8 - 64 - 14 - 8);
+
+    // 提示框内自动回行：原版TALK固定分行不断行，全部文本拼成一股按框宽
+    // measure折行（用户确认：武将对话框/通用提示框自动回行、不强行换行）。
+    const fragments = [];
+    const pushText = (text, color, isNum) => {
+      const clean = String(text ?? "").replace(/\r?\n/g, "");
+      if (clean) fragments.push({ text: clean, color, isNum });
+    };
+    for (const raw of Array.isArray(lines) ? lines : [lines]) {
+      if (Array.isArray(raw)) {
+        for (const token of raw) {
+          if (typeof token === "string") pushText(token, "#ffffff", false);
+          else if (token && typeof token === "object")
+            pushText(token.text, token.color || "#ffffff", token.isNum);
+        }
+      } else {
+        pushText(raw, "#ffffff", false);
+      }
+    }
+    const renderLines = [];
+    let curLine = [];
+    let curW = 0;
+    const measureFrag = (text, isNum) => {
+      ctx.font = isNum ? DIN : FONT;
+      return ctx.measureText(text).width;
+    };
+    for (const frag of fragments) {
+      let rest = frag.text;
+      while (rest) {
+        let take = 0;
+        for (let i = 1; i <= rest.length; i++) {
+          if (curW + measureFrag(rest.slice(0, i), frag.isNum) > maxTextW) break;
+          take = i;
+        }
+        if (take === 0) {
+          if (curLine.length) {
+            renderLines.push(curLine);
+            curLine = [];
+            curW = 0;
+            continue;
+          }
+          take = 1;
+        }
+        const piece = rest.slice(0, take);
+        curLine.push({ text: piece, color: frag.color, isNum: frag.isNum });
+        curW += measureFrag(piece, frag.isNum);
+        rest = rest.slice(take);
+        if (rest) {
+          renderLines.push(curLine);
+          curLine = [];
+          curW = 0;
+        }
+      }
+    }
+    if (curLine.length) renderLines.push(curLine);
+
+    const lineH = 18;
+    const totalH = renderLines.length * lineH;
+    const startY = y + Math.max(8, Math.floor((ch - totalH) / 2));
+    for (let li = 0; li < renderLines.length; li++) {
+      const line = renderLines[li];
+      const ly = startY + li * lineH;
+      if (Array.isArray(line)) {
+        let curX = tx;
+        for (const token of line) {
+          if (typeof token === "string") {
+            ctx.font = FONT;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(token, curX, ly);
+            curX += ctx.measureText(token).width;
+          } else if (token && typeof token === "object") {
+            ctx.font = token.isNum ? DIN : FONT;
+            ctx.fillStyle = token.color || "#ffffff";
+            const text = String(token.text ?? "");
+            ctx.fillText(text, curX, ly);
+            curX += ctx.measureText(text).width;
+          }
+        }
+      } else {
+        ctx.font = FONT;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(String(line ?? ""), tx, ly);
+      }
+    }
+  }
+
+  /** 军师子菜单「編成」: 部队编成面板 (15×12 tiles = 240×192, inner 224×176) */
+  async showFormationDialog(gen) {
+    if (!gen) return;
+    const sc = this.app.scenario;
+    const f = cmd.playerFaction(sc);
+    if (!f) return;
+
+    const img = await portrait(gen, this.app.world).catch(() => null);
+
+    // 势力总可用预备兵池 (实际人数: reserve_* * 10)
+    const totalRes = [
+      (f.reserve_cav ?? 0) * 10, // 0: 騎兵
+      (f.reserve_inf ?? 0) * 10, // 1: 步兵
+      (f.reserve_arc ?? 0) * 10, // 2: 弓兵
+    ];
+
+    // 默认初始分配:
+    // 0: 主將 (騎兵 type: 0)
+    // 1: 前鋒 (騎兵 type: 0)
+    // 2: 左翼 (步兵 type: 1)
+    // 3: 右翼 (步兵 type: 1)
+    // 4: 左備 (弓兵 type: 2)
+    // 5: 右備 (弓兵 type: 2)
+    const units = [
+      { name: "主將", type: 0, troops: 0 },
+      { name: "前鋒", type: 0, troops: 0 },
+      { name: "左翼", type: 1, troops: 0 },
+      { name: "右翼", type: 1, troops: 0 },
+      { name: "左備", type: 2, troops: 0 },
+      { name: "右備", type: 2, troops: 0 },
+    ];
+
+    let ox, oy;
+    if (this.listDialog) {
+      const d = this.listDialog;
+      ox = d.px + Math.round((d.w - 15 * 16) / 2) + 8;
+      oy = d.py + 28;
+      if (d.footer) {
+        d.footer.text = "각 부대의 병종을 선택하십시오.";
+      }
+    } else {
+      ox = Math.round((innerWidth - 240) / 2);
+      oy = Math.round((innerHeight - 192) / 2);
+    }
+
+    this.formationDialog = {
+      gen,
+      portraitImg: img,
+      totalRes,
+      remRes: [0, 0, 0],
+      units,
+      totalTroops: 0,
+      ox,
+      oy,
+      wTiles: 15,
+      hTiles: 12,
+    };
+
+    this._recalcFormationTroops();
+    this.app.view.draw();
+  }
+
+  _recalcFormationTroops() {
+    const f = this.formationDialog;
+    if (!f) return;
+
+    // 对 3 个兵种分别计算:
+    // 0: 骑兵 (cav), 1: 步兵 (inf), 2: 弓兵 (arc)
+    for (let t = 0; t < 3; t++) {
+      const indices = [];
+      for (let i = 0; i < 6; i++) {
+        if (f.units[i].type === t) indices.push(i);
+      }
+      const k = indices.length;
+      const totalAvailable = f.totalRes[t];
+
+      if (k === 0) {
+        f.remRes[t] = totalAvailable;
+      } else {
+        const needed = k * 1000;
+        if (totalAvailable >= needed) {
+          for (const idx of indices) f.units[idx].troops = 1000;
+          f.remRes[t] = totalAvailable - needed;
+        } else {
+          // 不足 1000 时平均分配
+          const base = Math.floor(totalAvailable / k);
+          const rem = totalAvailable % k;
+          for (let order = 0; order < indices.length; order++) {
+            f.units[indices[order]].troops = base + (order < rem ? 1 : 0);
+          }
+          f.remRes[t] = 0;
+        }
+      }
+    }
+
+    f.totalTroops = f.units.reduce((sum, u) => sum + u.troops, 0);
+  }
+
+  closeFormationDialog() {
+    this.formationQuote = null;
+    if (!this.formationDialog) return;
+    this.formationDialog = null;
+    if (this.listDialog) {
+      this.listDialog.selectedRow = -1;
+      if (this.listDialog.footer) {
+        this.listDialog.footer.text = "군단을 편성합니다.\n무장을 선택하십시오.";
+      }
+    }
+    this.app.view.draw();
+  }
+
+  _hitFormationDialog(px, py) {
+    const f = this.formationDialog;
+    if (!f) return false;
+    const { ox, oy, wTiles = 15, hTiles = 12 } = f;
+    const inFormation =
+      px >= ox && px < ox + wTiles * 16 && py >= oy && py < oy + hTiles * 16;
+    if (inFormation) return true;
+    const q = this.formationQuote;
+    if (q) {
+      const { ox: qx, oy: qy, wTiles: qw = 20, hTiles: qh = 5 } = q;
+      if (px >= qx && px < qx + qw * 16 && py >= qy && py < qy + qh * 16) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  _clickFormationDialog(px, py) {
+    if (this.formationQuote) {
+      return true; // 存在发言/警告弹窗时，消费所有点击，只有右键能关闭
+    }
+    const f = this.formationDialog;
+    if (!f) return false;
+    const { ox, oy } = f;
+    const x = ox + 8;
+    const y = oy + 8;
+
+    // 1. 检查是否点击了 6 个队的兵种按钮:
+    for (let i = 0; i < 6; i++) {
+      const uy = y + 70 + i * 16;
+      const bx = x + 48,
+        by = uy + 1,
+        bw = 22,
+        bh = 14;
+      if (px >= bx && px < bx + bw && py >= by && py < by + bh) {
+        clickSfx();
+        // 切换顺序：骑兵(0) -> 步兵(1) -> 弓兵(2) -> 骑兵(0)
+        f.units[i].type = (f.units[i].type + 1) % 3;
+        this._recalcFormationTroops();
+        this.app.view.draw();
+        return true;
+      }
+    }
+
+    // 2. 检查是否点击了「確定」按钮:
+    const cx = x + 126,
+      cy = y + 144,
+      cw = 88,
+      ch = 20;
+    if (px >= cx && px < cx + cw && py >= cy && py < cy + ch) {
+      this._confirmFormation();
+      return true;
+    }
+
+    // 消费弹窗范围内的点击，防止点到下层列表
+    return true;
+  }
+
+  async _confirmFormation() {
+    const f = this.formationDialog;
+    if (!f) return;
+    const { gen, totalTroops, remRes, units } = f;
+    const sc = this.app.scenario;
+    const fac = cmd.playerFaction(sc);
+    if (!fac || !sc) return;
+
+    // 1. 检查主将 (units[0]) 或 前锋 (units[1]) 兵力是否 <= 0
+    if (units[0].troops <= 0 || units[1].troops <= 0) {
+      warnSfx();
+      const advGen = adv.getAdvisor(sc, fac) || sc.monarchOf(fac);
+      const pImg = advGen
+        ? await portrait(advGen, this.app.world).catch(() => null)
+        : null;
+      const { lines } = await quoteForIndex(62);
+      this.formationQuote = {
+        type: "warning",
+        img: pImg,
+        lines,
+        ox: f.ox,
+        oy: f.oy + (f.hTiles ?? 12) * 16 + 12,
+        wTiles: 20,
+        hTiles: 5,
+      };
+      this.app.view.draw();
+      return;
+    }
+
+    if (totalTroops <= 0) {
+      warnSfx();
+      this.app.hud?.flashEvent?.("병력이 부족하여 군단을 편성할 수 없습니다!");
+      return;
+    }
+
+    clickSfx();
+
+    // 1. 扣除势力预备兵
+    fac.reserve_cav = Math.max(0, Math.floor(remRes[0] / 10));
+    fac.reserve_inf = Math.max(0, Math.floor(remRes[1] / 10));
+    fac.reserve_arc = Math.max(0, Math.floor(remRes[2] / 10));
+
+    // 2. 武将身份变为軍團長 (status = 1)
+    gen.status = 1;
+
+    // 3. 确定驻守据点 (首都)
+    const cap =
+      (fac.capital == null ? null : sc.cities[fac.capital]) ||
+      sc.citiesOf(fac.idx)[0];
+    if (!cap) {
+      warnSfx();
+      this.app.hud?.flashEvent?.("사용할 수 있는 수도나 거점이 없습니다!");
+      return;
+    }
+
+    // 4. 创建新军团并驻守在首都（初始无目标据点 target: null，默认战斗指挥 delegated: false）
+    sc.legions = sc.legions || [];
+    const capitalNode = scenarioRoadNode(sc, cap.x, cap.y);
+    const newLegion = {
+      leader: gen.name,
+      generalIdx: gen.idx,
+      faction: fac.idx,
+      x: cap.x,
+      y: cap.y,
+      prevX: cap.x,
+      prevY: cap.y,
+      troops: Math.floor(totalTroops / 10), // 内部标准以 10 兵为单位
+      morale: factionLegionMoraleCap(fac),
+      formation: 1,
+      target: null,
+      targetCity: cap.idx,
+      targetNode: capitalNode?.id ?? null,
+      _currentNode: capitalNode?.id ?? null,
+      roadEdgeOrNode: scenarioRoadRawAddress(sc, capitalNode?.id),
+      commandState: 0,
+      status: 0x80,
+      delegated: false,
+      _active: true,
+      units: units.map((u) => ({
+        type: FORMATION_TYPE_TO_LEGION_TYPE[u.type],
+        troops: u.troops,
+      })),
+    };
+    ensureLegionSlot(sc.legions, newLegion, gen.idx);
+    bindLegionSlotCounter(sc, newLegion);
+    resetLegionActionPhase(newLegion); // Final six types, 6CDA→6FD2.
+    countLegionActivation(sc, newLegion);
+    // v2 写穿原生固定槽（直接 push 会被下一次 rebind 丢掉，军团凭空消失）。
+    // movement 占格 INC 与 6F86 对齐，否则首次行军步 fail-closed（L1a 缺失）。
+    publishLegacyLegionRecord(
+      sc,
+      newLegion,
+      "ui-formation-confirm",
+      scenarioNativeRoadContext(sc)?.movement ?? null,
+    );
+
+    // 5. 弹出编成对白（选句索引见075B；quoteForFormation回退策略未证全等）
+    const { lines } = await quoteForFormation(gen);
+    this.formationQuote = {
+      type: "success",
+      gen,
+      img: f.portraitImg,
+      lines,
+      ox: f.ox,
+      oy: f.oy + (f.hTiles ?? 12) * 16 + 12,
+      wTiles: 20,
+      hTiles: 5,
+      cap,
+    };
+    this.app.view.draw();
+  }
+
+  _drawFormationQuote(ctx) {
+    const q = this.formationQuote;
+    if (!q) return;
+    const { ox, oy, wTiles = 20, hTiles = 5, img, lines } = q;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+    const w = win ? win.w : (wTiles - 1) * 16;
+    const h = win ? win.h : (hTiles - 1) * 16;
+
+    // 左侧头像 64×64 (紧贴内框左上角)
+    if (img) {
+      ctx.drawImage(img, 0, 0, 128, 128, x, y, 64, 64);
+    } else {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(x, y, 64, 64);
+    }
+
+    // 右侧文字
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#ffffff";
+    const tx = x + 64 + 6;
+    const maxTextW = Math.max(120, w - 64 - 12);
+
+    const fullText = Array.isArray(lines)
+      ? lines.join("")
+      : String(lines || "");
+    const NO_START = "，。、？！；：」』）】”’";
+    const renderLines = [];
+    for (const paragraph of fullText.split("\n")) {
+      if (!paragraph) {
+        renderLines.push("");
+        continue;
+      }
+      let cur = "";
+      for (let i = 0; i < paragraph.length; i++) {
+        const ch = paragraph[i];
+        const test = cur + ch;
+        if (ctx.measureText(test).width > maxTextW && cur.length > 0) {
+          if (
+            NO_START.includes(ch) &&
+            ctx.measureText(test).width <= maxTextW + 16
+          ) {
+            renderLines.push(test);
+            cur = "";
+          } else {
+            renderLines.push(cur);
+            cur = ch;
+          }
+        } else {
+          cur = test;
+        }
+      }
+      if (cur) renderLines.push(cur);
+    }
+
+    const lineH = 18;
+    const totalH = renderLines.length * lineH;
+    const startY = y + Math.max(4, Math.floor((h - totalH) / 2));
+    renderLines.forEach((line, li) => {
+      ctx.fillText(line, tx, startY + li * lineH);
+    });
+  }
+
+  _drawFormationDialog(ctx) {
+    const f = this.formationDialog;
+    if (!f) return;
+    const { ox, oy, gen, portraitImg, units, totalTroops, remRes } = f;
+    const wTiles = 15,
+      hTiles = 12;
+
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "cloud");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+
+    // 1. 左上角武将头像 64×64
+    if (portraitImg) {
+      ctx.drawImage(portraitImg, 0, 0, 128, 128, x + 2, y + 2, 64, 64);
+    } else {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(x + 2, y + 2, 64, 64);
+    }
+
+    // 2. 右侧信息（將軍 / 總兵力 / 士氣值）
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("장군", x + 74, y + 6);
+    ctx.fillText(gen.name?.trim() ?? "", x + 120, y + 6);
+
+    ctx.fillText("총병력", x + 74, y + 26);
+    ctx.font = DIN;
+    ctx.fillStyle = "#ffffff";
+    const sTotalTroops = `${totalTroops}`;
+    ctx.fillText(
+      sTotalTroops,
+      x + 216 - ctx.measureText(sTotalTroops).width,
+      y + 26,
+    );
+
+    ctx.font = FONT;
+    ctx.fillText("사기", x + 74, y + 46);
+    ctx.font = DIN;
+    const sMorale = "200";
+    ctx.fillText(sMorale, x + 216 - ctx.measureText(sMorale).width, y + 46);
+
+    // 3. 左下方 6 队编制
+    const unitNames = ["주장", "선봉", "좌익", "우익", "좌비", "우비"];
+    for (let i = 0; i < 6; i++) {
+      const u = units[i];
+      const uy = y + 70 + i * 16;
+
+      // 队伍名
+      ctx.font = FONT;
+      ctx.fillStyle = "#ffffff";
+      ctx.textBaseline = "top";
+      ctx.fillText(unitNames[i], x + 6, uy);
+
+      // 兵种按钮（绿底 + 兵种图标）
+      const bx = x + 48,
+        by = uy + 1,
+        bw = 22,
+        bh = 14;
+      ctx.fillStyle = "#509040";
+      ctx.fillRect(bx, by, bw, bh);
+
+      let iconKey = "arc";
+      if (u.type === 0) iconKey = "cav";
+      else if (u.type === 1) iconKey = "inf";
+      const iconImg = this.imgs[iconKey];
+      if (iconImg) {
+        ctx.drawImage(iconImg, bx, by, bw, bh);
+      }
+
+      // 队伍兵力
+      ctx.font = DIN;
+      ctx.fillStyle = "#ffe080";
+      const sTroops = `${u.troops}`;
+      ctx.fillText(sTroops, x + 116 - ctx.measureText(sTroops).width, uy);
+    }
+
+    // 4. 右下方预备兵数
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.textBaseline = "top";
+    ctx.fillText("예비병", x + 126, y + 70);
+
+    // 预备兵三行（原版顺序：騎兵、弓兵、步兵）
+    const resTypes = [
+      { key: "cav", idx: 0 },
+      { key: "arc", idx: 2 },
+      { key: "inf", idx: 1 },
+    ];
+    for (let i = 0; i < 3; i++) {
+      const { key, idx } = resTypes[i];
+      const ry = y + 88 + i * 16;
+
+      // 红色背景图标
+      const rx = x + 126,
+        rby = ry + 1,
+        rw = 22,
+        rh = 14;
+      ctx.fillStyle = "#d00000";
+      ctx.fillRect(rx, rby, rw, rh);
+
+      const iconImg = this.imgs[key];
+      if (iconImg) {
+        ctx.drawImage(iconImg, rx, rby, rw, rh);
+      }
+
+      // 剩余预备兵数
+      ctx.font = DIN;
+      ctx.fillStyle = "#ffe080";
+      const sRes = `${remRes[idx]}`;
+      ctx.fillText(sRes, x + 214 - ctx.measureText(sRes).width, ry);
+    }
+
+    // 5. 確定 按钮
+    const cx = x + 126,
+      cy = y + 144,
+      cw = 88,
+      ch = 20;
+    ctx.fillStyle = "#c08020";
+    ctx.fillRect(cx, cy, cw, ch);
+    // 高光边框
+    ctx.fillStyle = "#f0c060";
+    ctx.fillRect(cx, cy, cw, 1);
+    ctx.fillRect(cx, cy, 1, ch);
+    // 阴影边框
+    ctx.fillStyle = "#603000";
+    ctx.fillRect(cx, cy + ch - 1, cw, 1);
+    ctx.fillRect(cx + cw - 1, cy, 1, ch);
+
+    ctx.font = FONT;
+    ctx.fillStyle = "#000000";
+    ctx.textBaseline = "middle";
+    const tw = ctx.measureText("확정").width;
+    ctx.fillText("확정", cx + (cw - tw) / 2, cy + ch / 2 + 1);
+
+    // 6. 若存在提示/武将发言弹窗，绘制于上方
+    if (this.formationQuote) {
+      this._drawFormationQuote(ctx);
+    }
+  }
+
+  showFinanceDialog() {
+    this.closeCityCard();
+    this.closeListDialog();
+    this.closeGeneralCard();
+    this.closeChoiceDialog();
+    this.closeFormationDialog();
+    this.closeBaseMenu();
+    this.closeKeypadDialog();
+
+    this.selectedSubmenu = 2;
+    this.syncClock();
+
+    const wTiles = 21;
+    const hTiles = 10;
+    const infoHTiles = 5;
+    const infoWTiles = 30; // 统一为武将弹窗宽度 480px (30 tiles)
+
+    const ox = this.bx + Math.round((640 - wTiles * 16) / 2);
+    const oy = Math.max(36, Math.round((innerHeight - hTiles * 16) / 2));
+    const infoOx = Math.round((innerWidth - infoWTiles * 16) / 2);
+    const infoOy = innerHeight - infoHTiles * 16 - 8;
+
+    this.financeDialog = {
+      ox,
+      oy,
+      wTiles,
+      hTiles,
+      infoOx,
+      infoOy,
+      infoWTiles,
+      infoHTiles,
+      advisorImg: null,
+    };
+
+    // 异步加载军师头像
+    const sc = this.app.scenario;
+    if (sc) {
+      const fac = cmd.playerFaction(sc);
+      const advGen =
+        (fac ? adv.getAdvisor(sc, fac) : null) ||
+        (fac ? sc.monarchOf(fac) : null);
+      if (advGen && advGen.portrait != null) {
+        portrait(advGen, this.app.world)
+          .then((img) => {
+            if (this.financeDialog) {
+              this.financeDialog.advisorImg = img;
+              this.app.view.draw();
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
+    this.app.view.draw();
+  }
+
+  _recalcFinanceDialog() {
+    const fd = this.financeDialog;
+    if (!fd) return;
+    const wTiles = fd.wTiles ?? 21;
+    const hTiles = fd.hTiles ?? 10;
+    const infoHTiles = fd.infoHTiles ?? 5;
+    const infoWTiles = fd.infoWTiles ?? 30;
+    fd.ox = this.bx + Math.round((640 - wTiles * 16) / 2);
+    fd.oy = Math.max(36, Math.round((innerHeight - hTiles * 16) / 2));
+    fd.infoOx = Math.round((innerWidth - infoWTiles * 16) / 2);
+    fd.infoOy = innerHeight - infoHTiles * 16 - 8;
+  }
+
+  closeFinanceDialog() {
+    this.closeKeypadDialog();
+    if (!this.financeDialog) return;
+    this.financeDialog = null;
+    this.app.view.draw();
+  }
+
+  showKeypadDialog(type, curVal, maxVal, ox, oy) {
+    const wTiles = 10;
+    const hTiles = 7;
+    const cw = (wTiles + 1) * 16;
+    const ch = (hTiles + 1) * 16;
+    const bx = this.bx ?? Math.max(0, Math.round((innerWidth - 640) / 2));
+    const minX = bx + 8;
+    const maxX = bx + 640 - cw + 8;
+    const minY = 32;
+    const maxY = innerHeight - ch + 8;
+
+    this.keypadDialog = {
+      type,
+      val: Math.min(maxVal, curVal ?? 0),
+      max: maxVal,
+      ox: Math.min(maxX, Math.max(minX, ox)),
+      oy: Math.min(maxY, Math.max(minY, oy)),
+      wTiles,
+      hTiles,
+    };
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  closeKeypadDialog() {
+    if (!this.keypadDialog) return;
+    this.keypadDialog = null;
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  _hitFinanceDialog(px, py) {
+    const f = this.financeDialog;
+    if (!f) return false;
+    const {
+      ox,
+      oy,
+      infoOx,
+      infoOy,
+      wTiles = 21,
+      hTiles = 10,
+      infoWTiles = 30,
+      infoHTiles = 5,
+    } = f;
+    const x = ox - 8;
+    const y = oy - 8;
+    const w = (wTiles + 1) * 16;
+    const h = (hTiles + 1) * 16;
+    const inMain = px >= x && px < x + w && py >= y && py < y + h;
+    if (inMain) return true;
+    if (infoOy != null) {
+      const ix = (infoOx ?? ox) - 8;
+      const iy = infoOy - 8;
+      const iw = ((infoWTiles ?? wTiles) + 1) * 16;
+      const ih = (infoHTiles + 1) * 16;
+      if (px >= ix && px < ix + iw && py >= iy && py < iy + ih) return true;
+    }
+    return false;
+  }
+
+  _hitKeypadDialog(px, py) {
+    const k = this.keypadDialog;
+    if (!k) return false;
+    const { ox, oy, wTiles = 10, hTiles = 7 } = k;
+    const x = ox - 8;
+    const y = oy - 8;
+    const w = (wTiles + 1) * 16;
+    const h = (hTiles + 1) * 16;
+    return px >= x && px < x + w && py >= y && py < y + h;
+  }
+
+  _clickKeypadDialog(px, py) {
+    const k = this.keypadDialog;
+    if (!k) return false;
+    const { ox, oy, wTiles = 10, hTiles = 7 } = k;
+    const kx = ox + 8;
+    const ky = oy + 8;
+    const kw = (wTiles - 1) * 16;
+    const kh = (hTiles - 1) * 16;
+
+    if (px < kx || px >= kx + kw || py < ky || py >= ky + kh) {
+      return true; // 消费外部点击
+    }
+
+    const headerH = 24;
+    if (py < ky + headerH) return true; // 显示区
+
+    const btnH = 24;
+    const ry = py - (ky + headerH);
+    const rx = px - kx;
+    const r = Math.floor(ry / btnH);
+    if (r < 0 || r >= 3) return true;
+
+    let c = -1;
+    if (rx < 24) c = 0;
+    else if (rx < 48) c = 1;
+    else if (rx < 72) c = 2;
+    else if (rx < 96) c = 3;
+    else if (rx < 144) c = 4;
+
+    if (c === -1) return true;
+
+    clickSfx();
+    const sc = this.app.scenario;
+
+    if (c === 4) {
+      if (r === 0) {
+        // ★需求 3：取消 -> 将当前输入的数复位清零为 0（不关闭窗口）
+        k.val = 0;
+      } else if (r === 1) {
+        // 最大
+        k.val = k.max;
+      } else if (r === 2) {
+        // 決定
+        if (k.type === "tax") {
+          sc.next_tax = k.val;
+        } else if (k.type === "cav") {
+          if (!sc.next_conscription) sc.next_conscription = [0, 0, 0];
+          sc.next_conscription[0] = k.val;
+        } else if (k.type === "arc") {
+          if (!sc.next_conscription) sc.next_conscription = [0, 0, 0];
+          sc.next_conscription[1] = k.val;
+        } else if (k.type === "inf") {
+          if (!sc.next_conscription) sc.next_conscription = [0, 0, 0];
+          sc.next_conscription[2] = k.val;
+        } else if (k.type === "envoy-budget" || k.type === "domestic-budget") {
+          const amount = k.val;
+          this.closeKeypadDialog();
+          void this._finishBudgetAudience(amount, "adjust");
+          return true;
+        } else if (
+          k.type === "incoming-truce" ||
+          k.type === "incoming-assistance"
+        ) {
+          const amount = k.val;
+          this.closeKeypadDialog();
+          void this._finishIncomingDiplomacy("pay", amount);
+          return true;
+        }
+        this.closeKeypadDialog();
+      }
+    } else if (c === 3) {
+      if (r === 0) {
+        // ◀ 回退
+        k.val = Math.floor(k.val / 10);
+      } else if (r === 1) {
+        // 0
+        k.val = Math.min(k.max, k.val * 10);
+      } else if (r === 2) {
+        // 00
+        k.val = Math.min(k.max, k.val * 100);
+      }
+    } else {
+      // 数字 1..9
+      const digits = [
+        [7, 8, 9],
+        [4, 5, 6],
+        [1, 2, 3],
+      ];
+      const d = digits[r][c];
+      k.val = Math.min(k.max, k.val * 10 + d);
+    }
+
+    this.app.view.draw();
+    return true;
+  }
+
+  _clickFinanceDialog(px, py) {
+    if (this.keypadDialog) {
+      return this._clickKeypadDialog(px, py);
+    }
+    const f = this.financeDialog;
+    if (!f) return false;
+    const { ox, oy } = f;
+    const fx = ox + 8;
+    const fy = oy + 8;
+    const sc = this.app.scenario;
+
+    // 键盘弹窗位置计算：
+    // X：位于图标列右侧偏右并留出间隙（图标列右界 fx + 246，留出 6px 间隙 -> ox = fx + 252）
+    // Y：位于当前设置行数字的下方一点，不遮挡当前及以上行的文字与数字
+    const keypadOx = fx + 252;
+
+    // 1. 次月 稅率 (绘制于 fy + 70，高 16)
+    if (px >= fx + 220 && px < fx + 312 && py >= fy + 68 && py < fy + 84) {
+      clickSfx();
+      const curVal = sc.next_tax ?? sc.tax ?? 18;
+      this.showKeypadDialog("tax", curVal, 100, keypadOx, fy + 88);
+      return true;
+    }
+
+    // 2. 次月 騎兵 徵兵數 (绘制于 fy + 86，高 16)
+    if (px >= fx + 220 && px < fx + 312 && py >= fy + 84 && py < fy + 99) {
+      clickSfx();
+      const curVal = sc.next_conscription?.[0] ?? 0;
+      this.showKeypadDialog("cav", curVal, 10000, keypadOx, fy + 104);
+      return true;
+    }
+
+    // 3. 次月 弓兵 徵兵數 (绘制于 fy + 101，高 16)
+    if (px >= fx + 220 && px < fx + 312 && py >= fy + 99 && py < fy + 114) {
+      clickSfx();
+      const curVal = sc.next_conscription?.[1] ?? 0;
+      this.showKeypadDialog("arc", curVal, 10000, keypadOx, fy + 119);
+      return true;
+    }
+
+    // 4. 次月 步兵 徵兵數 (绘制于 fy + 116，高 16)
+    if (px >= fx + 220 && px < fx + 312 && py >= fy + 114 && py < fy + 132) {
+      clickSfx();
+      const curVal = sc.next_conscription?.[2] ?? 0;
+      this.showKeypadDialog("inf", curVal, 10000, keypadOx, fy + 134);
+      return true;
+    }
+
+    return true;
+  }
+
+  _drawKeypadDialog(ctx) {
+    const k = this.keypadDialog;
+    if (!k) return;
+    const { ox, oy, val, wTiles = 10, hTiles = 7 } = k;
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "black");
+    const kx = win ? win.x : ox + 8;
+    const ky = win ? win.y : oy + 8;
+    const kw = (wTiles - 1) * 16;
+    const headerH = 24;
+    const btnH = 24;
+
+    // 顶部显示区域 144×24 黑底
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(kx, ky, kw, headerH);
+    ctx.font = DIN;
+    ctx.fillStyle = "#ffffff";
+    ctx.textBaseline = "middle";
+    const sVal = `${val}`;
+    const twVal = ctx.measureText(sVal).width;
+    ctx.fillText(
+      sVal,
+      kx + Math.round((kw - twVal) / 2),
+      ky + headerH / 2 + 0.5,
+    );
+
+    const btnData = [
+      [
+        { t: "7", type: "num", val: 7, w: 24 },
+        { t: "8", type: "num", val: 8, w: 24 },
+        { t: "9", type: "num", val: 9, w: 24 },
+        { t: "◀", type: "back", w: 24 },
+        { t: "취소", type: "cancel", w: 48 },
+      ],
+      [
+        { t: "4", type: "num", val: 4, w: 24 },
+        { t: "5", type: "num", val: 5, w: 24 },
+        { t: "6", type: "num", val: 6, w: 24 },
+        { t: "0", type: "num", val: 0, w: 24 },
+        { t: "최대", type: "max", w: 48 },
+      ],
+      [
+        { t: "1", type: "num", val: 1, w: 24 },
+        { t: "2", type: "num", val: 2, w: 24 },
+        { t: "3", type: "num", val: 3, w: 24 },
+        { t: "00", type: "00", w: 24 },
+        { t: "결정", type: "ok", w: 48 },
+      ],
+    ];
+
+    for (let r = 0; r < 3; r++) {
+      const by = ky + headerH + r * btnH;
+      let bx = kx;
+      for (const btn of btnData[r]) {
+        const isAction =
+          btn.type === "cancel" ||
+          btn.type === "max" ||
+          btn.type === "ok" ||
+          btn.type === "back";
+        ctx.fillStyle = isAction ? "#c08030" : "#509040";
+        ctx.fillRect(bx, by, btn.w, btnH);
+
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx + 0.5, by + 0.5, btn.w - 1, btnH - 1);
+
+        if (btn.type === "back") {
+          ctx.beginPath();
+          ctx.moveTo(bx + 16, by + 6);
+          ctx.lineTo(bx + 7, by + 12);
+          ctx.lineTo(bx + 16, by + 18);
+          ctx.closePath();
+          ctx.fillStyle = "#000000";
+          ctx.fill();
+        } else {
+          ctx.font = btn.type === "num" || btn.type === "00" ? DIN : FONT;
+          ctx.fillStyle = "#000000";
+          ctx.textBaseline = "middle";
+          const tw = ctx.measureText(btn.t).width;
+          ctx.fillText(btn.t, bx + (btn.w - tw) / 2, by + btnH / 2 + 0.5);
+        }
+
+        bx += btn.w;
+      }
+    }
+  }
+
+  _drawFinanceDialog(ctx) {
+    const fd = this.financeDialog;
+    if (!fd) return;
+    const {
+      ox,
+      oy,
+      infoOx,
+      infoOy,
+      wTiles = 21,
+      hTiles = 10,
+      infoWTiles = 30,
+      infoHTiles = 5,
+    } = fd;
+    const sc = this.app.scenario;
+    const data = getProjectedFinance(sc);
+
+    // ── 0. 底部信息提示窗口 (黑底 + 金框 + 军师/提示头像 + 自动回行文字) ──
+    const targetInfoOx =
+      infoOx ?? Math.round((innerWidth - infoWTiles * 16) / 2);
+    const targetInfoOy = infoOy ?? innerHeight - infoHTiles * 16 - 8;
+    const infoWin = this._drawWindow(
+      ctx,
+      targetInfoOx,
+      targetInfoOy,
+      infoWTiles,
+      infoHTiles,
+      "black",
+    );
+    const ix = infoWin ? infoWin.x : targetInfoOx + 8;
+    const iy = infoWin ? infoWin.y : targetInfoOy + 8;
+    const iw = infoWin ? infoWin.w : (infoWTiles - 1) * 16;
+    const ih = infoWin ? infoWin.h : (infoHTiles - 1) * 16;
+
+    // 左侧提示头像 64×64 (紧贴内框左上角，统一使用 message_npc)
+    const advImg = this.imgs?.messageNpc || fd.advisorImg;
+    if (advImg) {
+      ctx.drawImage(
+        advImg,
+        0,
+        0,
+        advImg.naturalWidth || advImg.width || 64,
+        advImg.naturalHeight || advImg.height || 64,
+        ix,
+        iy,
+        64,
+        64,
+      );
+    } else {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(ix, iy, 64, 64);
+    }
+
+    // 右侧提示文字 (自动回行)
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#ffffff";
+    const tx = ix + 64 + 14;
+    const maxTextW = Math.max(60, iw - 64 - 28);
+
+    const infoText = "다음 달 재정 계획을 설정하십시오.";
+    const renderLines = [];
+    for (const paragraph of infoText.split("\n")) {
+      if (!paragraph) {
+        renderLines.push("");
+        continue;
+      }
+      let cur = "";
+      for (let i = 0; i < paragraph.length; i++) {
+        const ch = paragraph[i];
+        const test = cur + ch;
+        if (ctx.measureText(test).width > maxTextW && cur.length > 0) {
+          renderLines.push(cur);
+          cur = ch;
+        } else {
+          cur = test;
+        }
+      }
+      if (cur) renderLines.push(cur);
+    }
+
+    const lineH = 20;
+    const totalTextH = renderLines.length * lineH;
+    const startTy = iy + Math.max(4, Math.floor((ih - totalTextH) / 2));
+    renderLines.forEach((line, li) => {
+      ctx.fillText(line, tx, startTy + li * lineH);
+    });
+
+    // ── 1. 财政主弹窗 (金框 + 云纹底) ──
+    const win = this._drawWindow(ctx, ox, oy, wTiles, hTiles, "cloud");
+    const x = win ? win.x : ox + 8;
+    const y = win ? win.y : oy + 8;
+
+    const { money, cav, arc, inf } = this.imgs;
+
+    // 1. 左上: 資金
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.textBaseline = "top";
+    ctx.fillText("자금", x + 16, y + 8);
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(x + 10, y + 26, 128, 16);
+
+    ctx.font = DIN;
+    ctx.fillStyle = "#ffffff";
+    const sTreasury = `${data.treasury}`;
+    ctx.fillText(sTreasury, x + 134 - ctx.measureText(sTreasury).width, y + 26);
+
+    // 2. 右上: 收入 / 支出 (带垂直分隔线 | 与黑底数值框)
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("수입", x + 158, y + 8);
+    ctx.fillText("지출", x + 158, y + 26);
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 194.5, y + 6);
+    ctx.lineTo(x + 194.5, y + 44);
+    ctx.stroke();
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(x + 198, y + 8, 110, 16);
+    ctx.fillRect(x + 198, y + 26, 110, 16);
+
+    ctx.font = DIN;
+    ctx.fillStyle = "#ffffff";
+    const sIncome = `${data.income}`;
+    ctx.fillText(sIncome, x + 304 - ctx.measureText(sIncome).width, y + 8);
+
+    const sExpense = `${data.expense}`;
+    ctx.fillText(sExpense, x + 304 - ctx.measureText(sExpense).width, y + 26);
+
+    // 3. 左下: 今月底
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("이번 달 말", x + 32, y + 50);
+
+    // 黑色连续底框
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(x + 98, y + 70, 48, 62);
+
+    // 稅率 (紅底圖標 + 數值)
+    ctx.fillText("세율", x + 16, y + 70);
+
+    ctx.fillStyle = "#d00000";
+    ctx.fillRect(x + 72, y + 70 + 1, 22, 14);
+    if (money) ctx.drawImage(money, x + 72, y + 70 + 1, 22, 14);
+
+    ctx.font = DIN;
+    ctx.fillStyle = "#ffffff";
+    const sCurTax = `${data.curTax}%`;
+    ctx.fillText(sCurTax, x + 142 - ctx.measureText(sCurTax).width, y + 70);
+
+    // 徵兵數 (3 行紅底圖標 + 數值)
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("징병수", x + 16, y + 86);
+
+    const redTroops = [
+      { img: cav, val: data.curCav, ty: y + 86 },
+      { img: arc, val: data.curArc, ty: y + 101 },
+      { img: inf, val: data.curInf, ty: y + 116 },
+    ];
+
+    for (const { img, val, ty } of redTroops) {
+      ctx.fillStyle = "#d00000";
+      ctx.fillRect(x + 72, ty + 1, 22, 14);
+      if (img) ctx.drawImage(img, x + 72, ty + 1, 22, 14);
+
+      ctx.font = DIN;
+      ctx.fillStyle = "#ffffff";
+      const sVal = `${val}`;
+      ctx.fillText(sVal, x + 142 - ctx.measureText(sVal).width, ty);
+    }
+
+    // 4. 右下: 次月
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("다음 달", x + 192, y + 50);
+
+    // 黑色连续底框
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(x + 250, y + 70, 56, 62);
+
+    // 稅率 (綠底按鈕 + 數值)
+    ctx.fillText("세율", x + 164, y + 70);
+
+    ctx.fillStyle = "#509040";
+    ctx.fillRect(x + 224, y + 70 + 1, 22, 14);
+    if (money) ctx.drawImage(money, x + 224, y + 70 + 1, 22, 14);
+
+    ctx.font = DIN;
+    ctx.fillStyle = "#ffffff";
+    const sNextTax = `${data.nextTax}%`;
+    ctx.fillText(sNextTax, x + 302 - ctx.measureText(sNextTax).width, y + 70);
+
+    // 徵兵數 (3 行綠底按鈕 + 數值)
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("징병수", x + 164, y + 86);
+
+    const greenTroops = [
+      { img: cav, val: data.nextCav, ty: y + 86 },
+      { img: arc, val: data.nextArc, ty: y + 101 },
+      { img: inf, val: data.nextInf, ty: y + 116 },
+    ];
+
+    for (const { img, val, ty } of greenTroops) {
+      ctx.fillStyle = "#509040";
+      ctx.fillRect(x + 224, ty + 1, 22, 14);
+      if (img) ctx.drawImage(img, x + 224, ty + 1, 22, 14);
+
+      ctx.font = DIN;
+      ctx.fillStyle = "#ffffff";
+      const sVal = `${val}`;
+      ctx.fillText(sVal, x + 302 - ctx.measureText(sVal).width, ty);
+    }
+
+    // 5. 若存在數字輸入彈窗，繪製于上方
+    if (this.keypadDialog) {
+      this._drawKeypadDialog(ctx);
+    }
+  }
+
+  _recalcCityCard() {
+    const c = this.cityCard;
+    if (!c) return;
+    c.px = 12;
+    c.py = innerHeight - c.h - 12;
+  }
+
+  _hitCityCard(px, py) {
+    const c = this.cityCard;
+    if (!c) return false;
+    return (
+      px >= c.px - 8 &&
+      px < c.px + c.w + 8 &&
+      py >= c.py - 8 &&
+      py < c.py + c.h + 8
+    );
+  }
+
+  _drawCityCard(ctx) {
+    const c = this.cityCard;
+    if (!c) return;
+    const { px, py, w, h, city, img } = c;
+    const tw = Math.ceil((w + 16) / 16),
+      th = Math.ceil((h + 16) / 16);
+    // 金框 + 黑底
+    if (this._gf) {
+      this._drawWindow(ctx, px - 8, py - 8, tw, th, "black");
+    } else {
+      ctx.fillStyle = NAVY;
+      ctx.fillRect(px, py, w, h);
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px + 1, py + 1, w - 2, h - 2);
+    }
+    const sc = this.app.scenario;
+    const f = city.faction == null ? null : sc.factions[city.faction];
+    const isCapital = f && f.capital === city.idx;
+
+    // 布局：左右 10 边距，城市图 140×140 占满纵向，右侧信息列
+    const pad = 10;
+    const iw = 140,
+      ih = 140;
+    const gap = 16;
+    const tx = px + pad + iw + gap;
+    const right = px + w - pad;
+    const top = py + pad;
+    let y = top;
+
+    // 左侧：城市图黑底衬
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(px + pad, top, iw, ih);
+    if (img) {
+      ctx.drawImage(img, px + pad, top, iw, ih);
+    }
+
+    // 右侧文字统一白色
+    ctx.textBaseline = "top";
+    ctx.font = FONT;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(city.name, tx, y);
+    if (isCapital) {
+      const nm = ctx.measureText(city.name).width;
+      ctx.fillText("수도", tx + nm + 8, y);
+    }
+    // 据点类型：与名称同行，靠右对齐
+    const tlabel = cityTypeLabel(city.type);
+    if (tlabel) {
+      const twd = ctx.measureText(tlabel).width;
+      ctx.fillText(tlabel, right - twd, y);
+    }
+    y += 22;
+    if (f) {
+      ctx.fillText(f.monarch, tx, y);
+      y += 22;
+    } else {
+      ctx.fillText("中立", tx, y);
+      y += 22;
+    }
+
+    // 数据区：黑底框
+    const boxH = h - pad * 2 - 22 * 2;
+    const boxY = y;
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(tx, boxY, right - tx, boxH);
+
+    const drawRow = (label, value, opts = {}) => {
+      ctx.font = FONT;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(label, tx + 8, y);
+      const v = `${value}`;
+      ctx.font = DIN;
+      ctx.fillStyle = opts.color ?? "#ffffff";
+      const vw = ctx.measureText(v).width;
+      ctx.fillText(v, right - 8 - vw, y);
+      y += 20;
+    };
+
+    y = boxY + 8;
+    const troops =
+      (city.sim ? city.sim.troops : city.troops) ?? city.troops ?? 0;
+    const rise = ((city.sim ? city.sim.morale : city.growth) ?? 100) - 100;
+    const defence = (city.sim ? city.sim.food : city.defence) ?? 0;
+    drawRow("城兵數", troops * 10);
+    drawRow("생산력", city.prod ?? 0);
+    drawRow("上昇值", rise, { color: rise < 0 ? "#ff4444" : "#ffffff" });
+    drawRow("防災值", defence);
+  }
+
+  wheel(px, py, dy) {
+    this.layout();
+    if (this.systemSaveDialog) {
+      const d = this.systemSaveDialog;
+      const { x, y, wTiles, hTiles } = this._systemSaveDialogRect();
+      if (px >= x && px < x + wTiles * 16 && py >= y && py < y + hTiles * 16) {
+        d.scroll = Math.max(0, Math.min(Math.max(0, d.rows.length - 4), d.scroll + Math.sign(dy)));
+        d.hover = -1;
+        this.app.view.draw();
+      }
+      return true;
+    }
+    if (!this.listDialog) return false;
+    const d = this.listDialog;
+    if (!this._hitListDialog(px, py)) return false;
+    if (
+      d.footer &&
+      px >= d.fx &&
+      px < d.fx + d.fw &&
+      py >= d.fy &&
+      py < d.fy + d.fh
+    )
+      return true;
+    if (d.rows.length <= d.cap) return true;
+    const step = 3;
+    const ns = Math.max(
+      0,
+      Math.min(d.rows.length - d.cap, d.scroll + (dy > 0 ? step : -step)),
+    );
+    if (ns !== d.scroll) {
+      d.scroll = ns;
+      d.hover = -1;
+      this.app.view.draw();
+    }
+    return true;
+  }
+
+  /** 面板几何 (窗口像素): 右侧两面板(小地图+资源)成列, 页面右缘对齐, 垂直居中 */
+  layout() {
+    const W = innerWidth;
+    this.bx = Math.max(0, Math.round((W - 640) / 2));
+    this.panels = mapPanelLayout({ width: W, height: innerHeight,
+      miniOpen: this.miniOpen, resOpen: this.resOpen, world: MINIMAP_WORLD });
+
+    if (this.financeDialog) {
+      this._recalcFinanceDialog();
+    }
+  }
+
+  panelRect(kind) {
+    return this.panels?.find((p) => p.kind === kind);
+  }
+
+  onModalClosed() {
+    this.selectedSubmenu = null; // 模态弹窗关闭 → 取消子菜单被选项
+    this.syncClock(); // 开始计时
+    this.app.view.draw();
+    this._drainStrategicMessages();
+  }
+
+  /** 菜单/弹窗打开时冻结战略时钟 (原版 [0xD2A]=1 主循环跳过时钟进位链)。 */
+  isMenuOpen() {
+    return !!(
+      this.submenuOpen ||
+      this.settingsOpen ||
+      this.systemSaveDialog ||
+      this.systemLoadConfirmDialog ||
+      this.exitConfirmDialog
+    );
+  }
+
+  /** 每帧合并战斗/模态、军师工作流与地图鼠标静止等待各自持有的暂停。 */
+  syncClock() {
+    const c = this.app.clock;
+    if (!c) return;
+    const modalOpen =
+      (this.app.hud?.dialogCount ?? 0) > 0 ||
+      !!(
+        this.settingsOpen ||
+        this.systemSaveDialog ||
+        this.systemLoadConfirmDialog ||
+        this.exitConfirmDialog ||
+        this.listDialog ||
+        this.choiceDialog ||
+        this.baseMenu ||
+        this.personnelMenu ||
+        this.adviceMenu ||
+        this.proposalAudience ||
+        this.formationDialog ||
+        this.formationQuote ||
+        this.financeDialog ||
+        this.keypadDialog ||
+        this.legionMenu ||
+        this.marchingOrder ||
+        this.viewingLegion ||
+        this.orderChoiceMenu ||
+        this.cityCard ||
+        this.generalCard ||
+        this._strategicMessageActive
+      );
+    const subActive = this.selectedSubmenu != null;
+    const battleActive = Boolean(
+      this.app.battleView?.active || this.app.engageTransition?.active,
+    );
+    c.hold =
+      battleActive ||
+      this._clockHoldRequested ||
+      modalOpen ||
+      subActive ||
+      this.app.mapPointerHold === true ||
+      this.app.runtimeEnabled === false ||
+      !!this.app._scenarioAssemblyPending ||
+      !!this.app._scenarioAssemblyIncomplete ||
+      !!this.app._strategicCityRequest ||
+      !!this.app._legionSlotBatch ||
+      !!this.app._strategicBattleFailure ||
+      !!this.app.endView?.active;
+  }
+
+  /** 军师一级菜单条仅遮挡自身640×48区域；同高度的左右地图仍可交互。 */
+  _hitAdvisorBar(px, py) {
+    return (
+      this.submenuOpen &&
+      py >= 32 &&
+      py < 80 &&
+      px >= this.bx &&
+      px < this.bx + 640
+    );
+  }
+
+  // ── 命中测试: 返回 true = 坐标在 UI 上, 地图交互不处理 ──
+  hitTest(px, py) {
+    this.layout();
+    // 查看非玩家军团时锁定地图，仅列表和右侧面板可交互
+    if (this.viewingLegion) return true;
+    // 行军目标选择阶段需要在大地图上拖拽寻址；只让右侧军团面板、
+    // 底部提示、命令选择菜单和实体工具栏区域占用输入，其余地图区域
+    // 继续交给地图拖拽/据点拾取。命令菜单展开后作为子层模态锁住地图。
+    if (this.orderChoiceMenu) return true;
+    if (this.marchingOrder) {
+      return (
+        this._hitLegionDetailPanel(px, py) ||
+        this._hitBottomPromptWindow(px, py) ||
+        this.hitMapChrome(px, py)
+      );
+    }
+
+    // ★军师菜单下任何一个菜单被选中打开时，整个游戏地图锁定不可移动，地图上的操作全部无效。
+    if (this.selectedSubmenu != null) return true;
+    if (this.proposalAudience) return true;
+    if (this.adviceMenu) return true;
+    if (this.legionMenu) return true;
+    if (this.choiceDialog) return true;
+    if (this.baseMenu) return true;
+    if (this.personnelMenu) return true;
+    if (this.listDialog) return true;
+    if (this.generalCard) return true;
+    if (this.formationDialog) return true;
+    if (this.financeDialog) return true;
+    if (this.keypadDialog) return true;
+    if (this.settingsOpen) return true;
+    if (this.systemSaveDialog) return true;
+    if (this.systemLoadConfirmDialog) return true;
+    if (this.exitConfirmDialog) return true;
+
+    return this.hitMapChrome(px, py);
+  }
+
+  // Physical canvas chrome only: modal input ownership must not hide exposed
+  // map movement from the independent pointer-idle hold.
+  hitMapChrome(px, py) {
+    this.layout();
+    if (this.cityCard && this._hitCityCard(px, py)) return true;
+    // 军师子菜单带
+    if (this._hitAdvisorBar(px, py)) return true;
+    if (py < 32 && px >= this.bx && px < this.bx + 640) return true; // 工具栏
+    if (
+      this.panels.some(
+        (p) => insidePanel(p, px, py),
+      )
+    )
+      return true;
+    return false;
+  }
+
+  /** 点击分发: 消费返回 true */
+  click(px, py, btn = 0, target = null) {
+    this.layout();
+
+    // ★右键层级回退规则 (用户定稿):
+    // 1. 若有子界面/弹窗打开或子菜单项处于被选状态，右键全部关闭回退到该菜单上，
+    //    取消该菜单上所有被选项，所有菜单恢复未被选中状态，并立即开始计时。
+    // 2. 若已回退到该菜单上且已无被选项，再次右键才关闭子菜单条本身。
+    if (btn === 2) {
+      if (this.exitConfirmDialog) {
+        clickSfx();
+        this.closeExitConfirmDialog();
+        return true;
+      }
+      if (this.systemLoadConfirmDialog) {
+        clickSfx();
+        this.closeSystemLoadConfirmDialog();
+        return true;
+      }
+      if (this.systemSaveDialog) {
+        clickSfx();
+        this.closeSystemSaveDialog();
+        return true;
+      }
+      if (this.settingsOpen) {
+        clickSfx();
+        this.settingsOpen = false;
+        this.syncClock(); // 开始计时!
+        this.app.view.draw();
+        return true;
+      }
+      // System dialogs/settings stay above tactical speech in the global
+      // hierarchy. Consume even an empty battle click; never reach the map or
+      // manufacture native local message input (IDs27/28/29).
+      if (this.app.battleView?.active) {
+        this.app.battleView.dismissBattleDialogue?.();
+        return true;
+      }
+      if (this.orderChoiceMenu || this.marchingOrder) {
+        clickSfx();
+        // 定稿层级：目标选择/命令菜单右键直接回到羽扇菜单条展开、八项未选中；
+        // 不重开军团列表，也不保留行军指示器。
+        this.resetAdvisorDescendants();
+        return true;
+      }
+      if (this.viewingLegion) {
+        clickSfx();
+        this.viewingLegion = null;
+        if (this.listDialog) {
+          this.listDialog.selectedRow = -1;
+          const sc = this.app.scenario;
+          const me = cmd.playerFaction(sc);
+          const src = this._legionListSourceCity;
+          this.listDialog.footer.text =
+            src && me && src.faction === me.idx
+              ? "행군을 지시할 군단을 선택하십시오."
+              : "확인할 군단을 선택하십시오.";
+        }
+        this.syncClock();
+        this.app.view.draw();
+        return true;
+      }
+      if (this.legionMenu) {
+        clickSfx();
+        this.closeLegionMenu();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+        return true;
+      }
+      if (this.keypadDialog) {
+        // 有交互顺序对话框（m2985/m2990）：数字键盘属预算/外交接见序列一步，
+        // 右键一律无效（消费，不后退、不关闭；强制外交费分支本就屏蔽）。
+        // 提示框类不受此限（generalCard等保持原右键关闭）。
+        return true;
+      }
+      if (this.proposalAudience) {
+        if (
+          this.proposalAudience.type === "envoy-budget" ||
+          this.proposalAudience.type === "domestic-budget"
+        ) {
+          return this._clickProposalAudience(px, py, btn);
+        }
+        // 有交互顺序对话框（m2985/m2990）：进言audience与外交接见序列中，
+        // 右键一律无效（消费，不视为拒绝、不关闭、不恢复计时）。
+        return true;
+      }
+      if (this.adviceMenu) {
+        clickSfx();
+        this.closeAdviceMenu();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+        return true;
+      }
+      if (this.formationQuote) {
+        clickSfx();
+        const isSuccess = this.formationQuote.type === "success";
+        this.formationQuote = null;
+        if (isSuccess) {
+          // 编成成功后，右键关闭发言弹窗同时关闭编成面板，回到编成列表
+          this.closeFormationDialog();
+          this.app.hud?.showFormation?.();
+        }
+        this.app.view.draw();
+        return true;
+      }
+      if (this.formationDialog) {
+        clickSfx();
+        this.closeFormationDialog();
+        return true;
+      }
+      if (this.financeDialog) {
+        clickSfx();
+        this.closeFinanceDialog();
+        this.selectedSubmenu = null;
+        this.syncClock();
+        this.app.view.draw();
+        return true;
+      }
+      if (this.generalCard) {
+        clickSfx();
+        this.closeGeneralCard();
+        return true;
+      }
+
+      const hadSelectedCity = Boolean(this.app?.view?.selectedCity);
+      const hadBaseMenu = Boolean(this.baseMenu);
+      const hadPersonnelMenu = Boolean(this.personnelMenu);
+      const hadAdviceMenu = Boolean(this.adviceMenu);
+      const hadLegionMenu = Boolean(this.legionMenu);
+      const hadMarchingOrder = Boolean(this.marchingOrder);
+      const hadOrderChoice = Boolean(this.orderChoiceMenu);
+      const hadProposal = Boolean(this.proposalAudience);
+      const hadSubActive = this.selectedSubmenu != null;
+      const hadList = Boolean(this.listDialog);
+      const hadChoice = Boolean(this.choiceDialog);
+      const hadCard = Boolean(this.cityCard);
+      const hadFormation = Boolean(this.formationDialog);
+      const hadFinance = Boolean(this.financeDialog);
+      const hadKeypad = Boolean(this.keypadDialog);
+      const domDlgs = Array.from(document.querySelectorAll(".panel")).filter(
+        (el) => el.id && el.style.display !== "none",
+      );
+      const hadDomDlg = domDlgs.length > 0;
+
+      if (
+        hadAdviceMenu ||
+        hadLegionMenu ||
+        hadMarchingOrder ||
+        hadOrderChoice ||
+        hadProposal ||
+        hadBaseMenu ||
+        hadPersonnelMenu ||
+        hadSubActive ||
+        hadList ||
+        hadChoice ||
+        hadCard ||
+        hadFormation ||
+        hadFinance ||
+        hadKeypad ||
+        hadDomDlg ||
+        hadSelectedCity
+      ) {
+        clickSfx();
+        if (hadProposal) {
+          if (
+            this.proposalAudience?.type === "incoming-truce" ||
+            this.proposalAudience?.type === "incoming-assistance"
+          )
+            void this._finishIncomingDiplomacy("refuse");
+          else this.closeProposalAudience();
+        }
+        if (hadAdviceMenu) this.closeAdviceMenu();
+        if (hadLegionMenu) this.closeLegionMenu();
+        if (hadOrderChoice) this.closeOrderChoiceMenu();
+        if (hadMarchingOrder) this.closeMarchingOrder();
+        if (hadKeypad) this.closeKeypadDialog();
+        if (hadFinance) this.closeFinanceDialog();
+        if (hadFormation) this.closeFormationDialog();
+        if (hadBaseMenu) this.closeBaseMenu();
+        if (hadPersonnelMenu) this.closePersonnelMenu();
+        this.viewingLegion = null;
+        this._legionListSourceCity = null;
+        if (hadList) this.closeListDialog();
+        if (hadChoice) this.closeChoiceDialog();
+        if (hadCard) this.closeCityCard();
+        for (const el of domDlgs) el.remove();
+        this.selectedSubmenu = null; // 取消菜单上所有的被选项
+        if (this.app?.view) this.app.view.selectedCity = null; // 取消据点选中状态
+        this.syncClock(); // 开始计时!
+        this.app.view.draw();
+        return true;
+      }
+
+      // 能关闭军师菜单的只有其父菜单项（羽扇图标）的开关切换，右键不关闭军师菜单条
+      if (this.settingsOpen) {
+        clickSfx();
+        this.settingsOpen = false;
+        this.syncClock();
+        this.app.view.draw();
+        return true;
+      }
+      return false;
+    }
+
+    // 刷新或关闭防丢失确认弹窗优先级最高：拦截所有左键点击
+    if (this.exitConfirmDialog) {
+      const i = this._hitExitConfirmDialog(px, py);
+      if (btn === 0) {
+        if (i === 0) {
+          this.confirmExit();
+          return true;
+        } else if (i === 1) {
+          this.closeExitConfirmDialog();
+          return true;
+        }
+      }
+      // 点击在弹窗其他区域：消费事件，不做任何操作（只有回车、右键或按钮响应）
+      return true;
+    }
+
+    // 羽扇是唯一开关且优先级最高：即使子层正在消费全部点击，也必须先命中。
+    const fanHit =
+      btn === 0 &&
+      py >= 3 &&
+      py < 28 &&
+      px - this.bx >= 336 &&
+      px - this.bx < 366;
+    if (fanHit) {
+      if (
+        this.proposalAudience?.type === "envoy-budget" ||
+        this.proposalAudience?.type === "domestic-budget"
+      ) {
+        return true;
+      }
+      clickSfx();
+      this.submenuOpen = !this.submenuOpen;
+      this.resetAdvisorDescendants();
+      return true;
+    }
+
+    if (this.keypadDialog && this.proposalAudience) {
+      return this._clickKeypadDialog(px, py);
+    }
+
+    if (this.proposalAudience) {
+      return this._clickProposalAudience(px, py, btn);
+    }
+
+    if (this.adviceMenu) {
+      const i = this._hitAdviceMenu(px, py);
+      if (btn === 0) {
+        if (i === 0) {
+          // 敵對提案
+          clickSfx();
+          this.closeAdviceMenu();
+          this.selectedSubmenu = 0;
+          this.syncClock();
+          this.app.hud.showHostileProposalFactions();
+          this.selectedSubmenu = 0;
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 1) {
+          // 停戰提案
+          clickSfx();
+          this.closeAdviceMenu();
+          this.selectedSubmenu = 0;
+          this.syncClock();
+          this.app.hud.showTruceProposalFactions();
+          this.selectedSubmenu = 0;
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 2) {
+          // 請求協助
+          clickSfx();
+          this.closeAdviceMenu();
+          this.selectedSubmenu = 0;
+          this.syncClock();
+          this.app.hud.showAssistanceAllyFactions();
+          this.selectedSubmenu = 0;
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 3) {
+          // 遷都
+          clickSfx();
+          this.closeAdviceMenu();
+          this.selectedSubmenu = 0;
+          this.syncClock();
+          this.app.hud.showRelocateCapitalCities();
+          this.selectedSubmenu = 0;
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 4) {
+          // 請求君主出陣
+          clickSfx();
+          this.closeAdviceMenu();
+          this.selectedSubmenu = 0;
+          this.syncClock();
+          this.showMonarchDeployAudience();
+          this.selectedSubmenu = 0;
+          this.app.view.draw();
+          return true;
+        }
+        if (i > 0 && i < this.adviceMenu.items.length) {
+          clickSfx();
+          this.closeAdviceMenu();
+          this.selectedSubmenu = 0;
+          this.syncClock();
+          this.app.hud.flashEvent(
+            `「${this.adviceMenu.items[i]}」界面還原中…（右鍵取消返回）`,
+          );
+          this.app.view.draw();
+          return true;
+        }
+      }
+      return true;
+    }
+
+    if (this.legionMenu) {
+      const i = this._hitLegionMenu(px, py);
+      if (btn === 0) {
+        if (i === 0) {
+          // 位置確認
+          clickSfx();
+          this.closeLegionMenu();
+          this.selectedSubmenu = 4;
+          this.syncClock();
+          this.showLegionLocate();
+          return true;
+        }
+        if (i === 1) {
+          // 行軍指示
+          clickSfx();
+          this.closeLegionMenu();
+          this.selectedSubmenu = 4;
+          this.syncClock();
+          this.showLegionMarchOrders();
+          return true;
+        }
+      }
+      return true;
+    }
+
+    if (this.marchingOrder) {
+      if (btn === 0) {
+        const sc = this.app.scenario;
+        const L = this.marchingOrder.legion;
+        if (!this.legionAcceptsMarchOrder(L, true)) {
+          this.resetAdvisorDescendants();
+          return true;
+        }
+
+        // 如果命令菜单已展开
+        if (this.orderChoiceMenu) {
+          const ci = this._hitOrderChoiceMenu(px, py);
+          if (ci >= 0) {
+            clickSfx();
+            const targetCity = this.marchingOrder.targetCity;
+            const src = this.marchingOrder.sourceCity;
+            if (ci === 0) {
+              // 戰鬥指揮 (玩家战术指挥)
+              if (!this.assignMarchOrder(L, targetCity, false)) return true;
+              this.app.hud?.flashEvent?.(
+                `「${L.leader}」군단이 「${targetCity.name.trim()}」(으)로 출발합니다.`,
+              );
+            } else if (ci === 1) {
+              // 委任 (AI自主指挥)
+              if (!this.assignMarchOrder(L, targetCity, true)) return true;
+              this.app.hud?.flashEvent?.(
+                `「${L.leader}」군단이 위임 상태로 「${targetCity.name.trim()}」(으)로 진군합니다.`,
+              );
+            } else if (ci === 2) {
+              // 解體：无论当前驻点，均先写状态11并沿道路返首都；
+              // 实际归还预备兵/移除军团由抵达后的aiTick执行。
+              if (!this._orderDisbandAtCapital(L, targetCity)) return true;
+            }
+            this.closeOrderChoiceMenu();
+            this.closeMarchingOrder();
+            if (src) {
+              // 大地图入口：命令完成后返回该城市军团列表
+              this.showLegionCard(src);
+            } else {
+              // 军师菜单入口：回到军师行军指示列表，可继续下达命令
+              this.selectedSubmenu = 4;
+              this.showLegionMarchOrders();
+            }
+            return true;
+          }
+          // 命令菜单是目标指示的子层模态；点在菜单外也只消费，不穿透地图或小地图。
+          return true;
+        }
+
+        // 目标据点指示阶段仍允许点击小地图导航；但若小地图被右侧军团
+        // 面板或底部提示覆盖，优先按实体 UI 拦截，不穿透导航。
+        if (
+          !this._hitLegionDetailPanel(px, py) &&
+          !this._hitBottomPromptWindow(px, py) &&
+          this._miniHit(px, py, { allowFactionPicker: false })
+        ) {
+          return true;
+        }
+
+        // 检查是否点击了地图上的据点
+        let clickedCity = target?.type === "city" ? target.city : null;
+        if (!clickedCity && sc?.cities) {
+          const view = this.app.view;
+          for (const c of sc.cities) {
+            const [wxp, wyp] = view.cityPixel(c);
+            const sx = view.sx(wxp);
+            const sy = view.sy(wyp);
+            if (Math.hypot(px - sx, py - sy) <= 18) {
+              clickedCity = c;
+              break;
+            }
+          }
+        }
+
+        if (clickedCity) {
+          clickSfx();
+          this.marchingOrder.targetCity = clickedCity;
+          this.marchingOrder.step = "choose_order";
+          this.showOrderChoiceMenu(clickedCity);
+          return true;
+        }
+      }
+      return true;
+    }
+
+    if (this.baseMenu) {
+      const i = this._hitBaseMenu(px, py);
+      if (btn === 0) {
+        if (i === 0) {
+          // 首都確認
+          clickSfx();
+          this.closeBaseMenu();
+          const sc = this.app.scenario;
+          const me = cmd.playerFaction(sc);
+          const cap = me && me.capital != null ? sc.cities[me.capital] : null;
+          if (cap) {
+            const view = this.app.view;
+            const [wxp, wyp] = view.cityPixel(cap);
+            view.cam.x = innerWidth / 2 - wxp;
+            view.cam.y = innerHeight / 2 - wyp;
+            view.clampCam();
+            this.showCityCard(cap);
+            this.selectedSubmenu = 5;
+            this.syncClock();
+          }
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 1) {
+          // 據點一覽
+          clickSfx();
+          this.closeBaseMenu();
+          this.selectedSubmenu = 5;
+          this.syncClock();
+          this.app.hud.showBaseCities();
+          this.selectedSubmenu = 5;
+          this.app.view.draw();
+          return true;
+        }
+      }
+      // 点击在二级菜单外：消费事件，不做任何操作（只有右键才能取消关闭）
+      return true;
+    }
+
+    if (this.personnelMenu) {
+      const i = this._hitPersonnelMenu(px, py);
+      if (btn === 0) {
+        if (i === 0) {
+          // 內政官任命
+          clickSfx();
+          this.closePersonnelMenu();
+          this.selectedSubmenu = 1;
+          this.syncClock();
+          this.app.hud.showAppointGovernorCities();
+          this.selectedSubmenu = 1;
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 1) {
+          // 內政官解任
+          clickSfx();
+          this.closePersonnelMenu();
+          this.selectedSubmenu = 1;
+          this.syncClock();
+          this.app.hud.showDismissGovernorCities();
+          this.selectedSubmenu = 1;
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 2) {
+          // 外交官任命
+          clickSfx();
+          this.closePersonnelMenu();
+          this.selectedSubmenu = 1;
+          this.syncClock();
+          this.app.hud.showAppointEnvoyFactions();
+          this.selectedSubmenu = 1;
+          this.app.view.draw();
+          return true;
+        }
+        if (i === 3) {
+          // 外交官解任
+          clickSfx();
+          this.closePersonnelMenu();
+          this.selectedSubmenu = 1;
+          this.syncClock();
+          this.app.hud.showDismissEnvoyFactions();
+          this.selectedSubmenu = 1;
+          this.app.view.draw();
+          return true;
+        }
+      }
+      // 点击在二级菜单外：消费事件，不做任何操作
+      return true;
+    }
+
+    if (this.formationDialog) {
+      return this._clickFormationDialog(px, py);
+    }
+
+    if (this.keypadDialog) {
+      return this._clickKeypadDialog(px, py);
+    }
+
+    if (this.financeDialog) {
+      return this._clickFinanceDialog(px, py);
+    }
+
+    if (this.generalCard) {
+      // 项目统一交互：NPC/武将提示只允许3秒自动关闭或右键立即关闭。
+      return true;
+    }
+
+    if (this.listDialog && this._hitListDialog(px, py)) {
+      const d = this.listDialog;
+      if (this._hitListDialogClose(px, py)) {
+        clickSfx();
+        this.closeListDialog();
+        return true;
+      }
+      if (btn === 0) {
+        const headerY = d.py + d.titleH;
+        if (
+          d.sortable &&
+          d.header.length &&
+          py >= headerY &&
+          py < headerY + d.headerH
+        ) {
+          const rx = px - d.px;
+          const column = d.cols.findIndex(
+            (col) => rx >= col.x && rx < col.x + col.w,
+          );
+          if (this._sortListDialog(column)) {
+            clickSfx();
+            this.app.view.draw();
+          }
+          return true;
+        }
+        // 滚动条点击处理 (left / right 均支持)
+        const hasScrollbar = d.scrollbar === "left" || d.scrollbar === "right";
+        if (hasScrollbar && d.rows.length > d.cap) {
+          const isLeft = d.scrollbar === "left";
+          const sbx = isLeft ? d.px + 1 : d.px + d.w - 17;
+          const sbw = 16;
+          if (px >= sbx && px < sbx + sbw) {
+            const btnH = 16;
+            // 上箭头 ▲
+            if (py >= d.py + d.titleH && py < d.py + d.titleH + btnH) {
+              clickSfx();
+              d.scroll = Math.max(0, d.scroll - 1);
+              this.app.view.draw();
+              return true;
+            }
+            // 下箭头 ▼
+            if (py >= d.py + d.h - btnH && py < d.py + d.h) {
+              clickSfx();
+              d.scroll = Math.min(d.rows.length - d.cap, d.scroll + 1);
+              this.app.view.draw();
+              return true;
+            }
+            // 轨道
+            const trackY = d.py + d.titleH + btnH;
+            const trackH = d.h - d.titleH - btnH * 2;
+            if (py >= trackY && py < trackY + trackH) {
+              clickSfx();
+              const rel = (py - trackY) / trackH;
+              d.scroll = Math.max(
+                0,
+                Math.min(
+                  d.rows.length - d.cap,
+                  Math.round(rel * (d.rows.length - d.cap)),
+                ),
+              );
+              this.app.view.draw();
+              return true;
+            }
+          }
+        }
+
+        const ry = py - d.py - d.top;
+        if (ry >= 0 && ry < d.cap * d.rowH) {
+          const ri = Math.floor(ry / d.rowH) + d.scroll;
+          const rx = px - d.px;
+          const ci = d.cols.findIndex(
+            (col) => rx >= col.x && rx < col.x + col.w,
+          );
+          if (ri >= 0 && ri < d.rows.length && d.onPickCell) {
+            clickSfx();
+            d.onPickCell(ri, ci);
+            return true;
+          }
+          if (ri >= 0 && ri < d.rows.length && d.onPick) {
+            clickSfx();
+            d.selectedRow = ri;
+            d.onPick(ri);
+            return true;
+          }
+        }
+      }
+      return true;
+    }
+
+    // 非玩家军团查看模式：点击列表外（含右侧面板/地图）均消费，不触发地图交互
+    if (this.viewingLegion) {
+      return true;
+    }
+
+    if (this.cityCard && this._hitCityCard(px, py)) {
+      return true;
+    }
+    if (this.choiceDialog) {
+      return this._clickChoice(px, py, btn);
+    }
+    unlockSfx();
+
+    // 工具栏图标
+    if (py >= 0 && py < 32 && px >= this.bx && px < this.bx + 640) {
+      const ix = px - this.bx;
+      const icons = [
+        ["fan", 336],
+        ["flag", 368],
+        ["map", 400],
+        ["book", 432],
+      ];
+      for (const [act, ix0] of icons) {
+        if (ix >= ix0 && ix < ix0 + 30 && py >= 3 && py < 28) {
+          clickSfx();
+          if (act === "fan") {
+            // 普通层的羽扇命中；子层优先命中已在click入口处理。
+            this.submenuOpen = !this.submenuOpen;
+            this.resetAdvisorDescendants();
+          }
+          if (act === "flag") this.resOpen = !this.resOpen;
+          if (act === "map") {
+            this.miniOpen = !this.miniOpen;
+            if (!this.miniOpen) {
+              this.selFaction = null;
+              this.closeListDialog?.();
+            }
+          }
+          if (act === "book") {
+            this.settingsOpen = !this.settingsOpen;
+            if (!this.settingsOpen) {
+              this.systemSaveDialog = null;
+              this.systemLoadConfirmDialog = null;
+            }
+            this.syncClock();
+          }
+          this.app.view.draw();
+          return true;
+        }
+      }
+      // 日期区无交互
+      return true;
+    }
+    // 军师菜单带交互 (单选机制: 当有任意子项被选中时，禁止点击其他项)
+    if (this._hitAdvisorBar(px, py)) {
+      if (this.selectedSubmenu != null) {
+        // 当前已有子菜单项被选中，不可点击其他子项
+        return true;
+      }
+      const cellW = 78;
+      const i = Math.floor((px - this.bx - 8) / cellW);
+      if (i >= 0 && i < 8) {
+        clickSfx();
+        this.submenuClick(i);
+      }
+      return true;
+    }
+    // 小地图: 点击在窗口内即消费
+    const mini = this.panelRect("mini");
+    if (mini && this._miniHit(px, py)) return true;
+    // 资源面板: 仅点击在面板内时消费
+    const res = this.panelRect("res");
+    if (
+      res && insidePanel(res, px, py)
+    )
+      return true;
+
+    // 系统选单「存檔讀取」防丢失确认弹窗
+    if (this.systemLoadConfirmDialog) {
+      const i = this._hitSystemLoadConfirmDialog(px, py);
+      if (btn === 0) {
+        if (i === 0) {
+          this.confirmSystemLoadConfirm();
+          return true;
+        } else if (i === 1) {
+          this.closeSystemLoadConfirmDialog();
+          return true;
+        }
+      }
+      // 点击在弹窗其他区域：消费事件，不做任何操作（只有右键或按钮响应）
+      return true;
+    }
+
+    // 系统选单「資料儲存」弹窗
+    if (this.systemSaveDialog) {
+      const d = this.systemSaveDialog;
+      const { x, y, wTiles } = this._systemSaveDialogRect();
+      const right = x + 8 + (wTiles - 1) * 16;
+      if (btn === 0 && d.rows.length > 4 && px >= right - 14 && px < right && py >= y + 36 && py < y + 236) {
+        d.scroll = Math.round((py - y - 36) / 200 * (d.rows.length - 4));
+        d.hover = -1;
+        this.app.view.draw();
+        return true;
+      }
+      const i = this._hitSystemSaveOrLoadDialog(this.systemSaveDialog, px, py);
+      if (btn === 0 && i >= 0) {
+        this.confirmSystemSave(i);
+        return true;
+      }
+      // 点击在弹窗外：消费事件，不做任何操作（只有右键才能取消关闭）
+      return true;
+    }
+
+    // 系统选单「存檔讀取」弹窗
+
+    // 系统选单主弹窗
+    if (this.settingsOpen) {
+      const i = this._hitSettings(px, py);
+      if (btn === 0 && i >= 0) {
+        this.settingsClick(i);
+        return true;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** 悬停: 更新 hoverAct, 返回是否需要重绘 */
+  hover(px, py) {
+    this.layout();
+    let changed = false;
+    if (this.proposalAudience) {
+      const p = this.proposalAudience;
+      // 三选项菜单悬停：进言理由 / 预算批准（内政/外交） / 外交来使选项
+      // 共用 reasonsHover 高亮绘制；缺了门则 hover 恒 -1（用户报障：批准資料无悬停）。
+      if (
+        p.step === "choose_reason" ||
+        p.step === "envoy_budget_choice" ||
+        p.step === "incoming_diplomacy_choice"
+      ) {
+        const old = p.reasonsHover;
+        p.reasonsHover = this._hitProposalReasons(px, py);
+        if (old !== p.reasonsHover) changed = true;
+      }
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.adviceMenu) {
+      const old = this.adviceMenu.hover;
+      this.adviceMenu.hover = this._hitAdviceMenu(px, py);
+      if (old !== this.adviceMenu.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.orderChoiceMenu) {
+      const old = this.orderChoiceMenu.hover;
+      this.orderChoiceMenu.hover = this._hitOrderChoiceMenu(px, py);
+      if (old !== this.orderChoiceMenu.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.legionMenu) {
+      const old = this.legionMenu.hover;
+      this.legionMenu.hover = this._hitLegionMenu(px, py);
+      if (old !== this.legionMenu.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.baseMenu) {
+      const old = this.baseMenu.hover;
+      this.baseMenu.hover = this._hitBaseMenu(px, py);
+      if (old !== this.baseMenu.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.personnelMenu) {
+      const old = this.personnelMenu.hover;
+      this.personnelMenu.hover = this._hitPersonnelMenu(px, py);
+      if (old !== this.personnelMenu.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.formationQuote) {
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.generalCard && this._hitGeneralCard(px, py)) {
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.formationDialog && this._hitFormationDialog(px, py)) {
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.choiceDialog) {
+      this._recalcChoice();
+      const old = this.choiceDialog.hover;
+      this.choiceDialog.hover = this._hitChoice(px, py);
+      changed = old !== this.choiceDialog.hover;
+      return changed;
+    }
+    if (this.exitConfirmDialog) {
+      const old = this.exitConfirmDialog.hover;
+      this.exitConfirmDialog.hover = this._hitExitConfirmDialog(px, py);
+      if (old !== this.exitConfirmDialog.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.systemLoadConfirmDialog) {
+      const old = this.systemLoadConfirmDialog.hover;
+      this.systemLoadConfirmDialog.hover = this._hitSystemLoadConfirmDialog(
+        px,
+        py,
+      );
+      if (old !== this.systemLoadConfirmDialog.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.systemSaveDialog) {
+      const old = this.systemSaveDialog.hover;
+      this.systemSaveDialog.hover = this._hitSystemSaveOrLoadDialog(
+        this.systemSaveDialog,
+        px,
+        py,
+      );
+      if (old !== this.systemSaveDialog.hover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.settingsOpen) {
+      const old = this.settingsHover;
+      this.settingsHover = this._hitSettings(px, py);
+      if (old !== this.settingsHover) changed = true;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+      return changed;
+    }
+    if (this.listDialog && this._hitListDialog(px, py)) {
+      const d = this.listDialog;
+      const old = d.hover;
+      const oldHeader = d.headerHover;
+      const ry = py - d.py - d.top;
+      let hov = -1;
+      let headerHover = -1;
+      if (
+        d.sortable &&
+        d.header.length &&
+        py >= d.py + d.titleH &&
+        py < d.py + d.titleH + d.headerH
+      ) {
+        const rx = px - d.px;
+        headerHover = d.cols.findIndex(
+          (col) => rx >= col.x && rx < col.x + col.w,
+        );
+      }
+      const hasScrollbar = d.scrollbar === "left" || d.scrollbar === "right";
+      const isLeft = d.scrollbar === "left";
+      const sbx = isLeft ? d.px : d.px + d.w - 18;
+      const inScroll =
+        hasScrollbar && d.rows.length > d.cap && px >= sbx && px < sbx + 18;
+      if (!inScroll && ry >= 0 && ry < d.cap * d.rowH) {
+        hov = Math.floor(ry / d.rowH) + d.scroll;
+        if (hov < 0 || hov >= d.rows.length) hov = -1;
+      }
+      d.hover = hov;
+      d.headerHover = headerHover;
+      changed = old !== hov || oldHeader !== headerHover;
+      if (this.hoverAct) {
+        this.hoverAct = null;
+        changed = true;
+      }
+    } else if (this.hoverAct) {
+      this.hoverAct = null;
+      changed = true;
+    }
+    return changed;
+  }
+
+  submenuClick(i) {
+    const hud = this.app.hud;
+    // 点击子菜单项: 记录被选状态, 停止计时 (用户定稿规则)
+    this.selectedSubmenu = i;
+    this.syncClock(); // 立即停止计时!
+    this.hoverAct = null;
+    this.app.view.draw();
+
+    if (i === 0) return this.showAdviceMenu(); // 進言
+    if (i === 1) return this.showPersonnelMenu(); // 人事
+    if (i === 2) return this.showFinanceDialog(); // 財政
+    if (i === 3) return hud.showFormation(); // 編成
+    if (i === 4) return this.showLegionMenu(); // 軍團
+    if (i === 5) return this.showBaseMenu(); // 據點
+    if (i === 6) return hud.showGenerals(); // 武將
+    if (i === 7) return hud.showFactions(); // 勢力
+    // 人事/財政/編成/軍團/據點 — 占位或实现
+    hud.flashEvent(`「${SUBMENU[i]}」 화면 복원 중…(우클릭 취소/돌아가기)`);
+  }
+
+  // ── 绿底 3D 浮雕按钮 (复刻原版 0xC14 + 0xE9C1 UI 按钮) ──
+  _drawReliefButton(ctx, x, y, w, h, text, isHover = false, isNum = false) {
+    // 绿色底色
+    ctx.fillStyle = isHover ? "#62aa4e" : "#509040";
+    ctx.fillRect(x, y, w, h);
+    // 3D 浮雕边框
+    // 顶线与左线 (浅高光)
+    ctx.fillStyle = "#88d070";
+    ctx.fillRect(x, y, w, 1);
+    ctx.fillRect(x, y, 1, h);
+    // 底线与右线 (深阴影)
+    ctx.fillStyle = "#183010";
+    ctx.fillRect(x, y + h - 1, w, 1);
+    ctx.fillRect(x + w - 1, y, 1, h);
+    // 最外层 1px 黑色轮廓
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+    // 黑色居中文字
+    ctx.fillStyle = "#000000";
+    ctx.font = isNum ? DIN : FONT;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + w / 2, y + h / 2 + 1);
+    ctx.textAlign = "left";
+  }
+
+  // ── 系统选单：「音效」是原CF9音量档，不是可切换的SFX音色 ──
+  _settingsRect() {
+    const W = innerWidth;
+    const H = innerHeight;
+    const wTiles = 14; // 外框 224px (内部 208px = 13 tiles)
+    const hTiles = 13; // 六行设置，外框208px，内部192px
+    const w = wTiles * 16;
+    const h = hTiles * 16;
+    const x = Math.round((W - w) / 2);
+    const y = Math.round((H - h) / 2);
+    return { x, y, w, h, wTiles, hTiles, rows: 6 };
+  }
+
+  _hitSettings(px, py) {
+    if (!this.settingsOpen) return -1;
+    const { x, y, wTiles, hTiles, rows } = this._settingsRect();
+    const cx = x + 8;
+    const cy = y + 8;
+    const cw = (wTiles - 1) * 16;
+    const ch = (hTiles - 1) * 16;
+    if (px < cx || py < cy || px >= cx + cw || py >= cy + ch) return -1;
+    const startRowY = cy + 30;
+    const rowStep = 26;
+    for (let i = 0; i < rows; i++) {
+      const ry = startRowY + i * rowStep;
+      if (py >= ry && py < ry + rowStep) return i;
+    }
+    return -1;
+  }
+
+  settingsClick(i) {
+    const hud = this.app.hud;
+    if (this.app.canPersist === false && (i === 0 || i === 1)) {
+      hud?.flashEvent?.("草稿試運行禁止正式存讀檔。");
+      return;
+    }
+    if (i === 0) {
+      // 資料儲存：打开居中 SAVE DATA 弹窗，保持计时停止
+      this.openSystemSaveDialog();
+    } else if (i === 1) {
+      // 存檔讀取：弹出防丢失确认弹窗，保持计时停止
+      this.openSystemLoadConfirmDialog();
+    } else if (i === 2) {
+      // KI:1756「音效」→5FF6/6056→60A1→02D0，TYPE只设音乐衰减。
+      const music = this.app.music;
+      if (music) music.setType((music.type + 1) % 5);
+      clickSfx(); // 原PC确认声不受CF9控制（0CDE→EB11）。
+      hud.flashEvent(`音效：${MUSIC_TYPE_LABELS[music?.type ?? 1]}`);
+    } else if (i === 3) {
+      // 戰略速度：最低速 -> 低速 -> 普通 -> 高速 -> 最高速 循环切换
+      const c = this.app.clock;
+      if (c) {
+        c.strategicSpeed = ((c.strategicSpeed ?? 2) + 1) % 5;
+      }
+      clickSfx();
+      hud.flashEvent(
+        `戰略速度：${STRATEGIC_SPEED_LABELS[this.app.clock?.strategicSpeed ?? 2]}`,
+      );
+    } else if (i === 4) {
+      // 戰術速度：最低速 -> 低速 -> 普通 -> 高速 -> 最高速 循环切换
+      this.app.tacticalSpeed = ((this.app.tacticalSpeed ?? 2) + 1) % 5;
+      // 旧调试兼容字段；BattleView正式推进只读取tacticalSpeed的IRQ门控。
+      this.app.tacticalSpeedFactor =
+        TACTICAL_SPEED_FACTORS[this.app.tacticalSpeed];
+      clickSfx();
+      hud.flashEvent(
+        `戰術速度：${TACTICAL_SPEED_LABELS[this.app.tacticalSpeed]}`,
+      );
+    } else if (i === 5) {
+      // 遊戲結束：返回首页
+      clickSfx();
+      this.settingsOpen = false;
+      this.syncClock();
+      this.app.returnToTitle();
+    }
+    this.app.view.draw();
+  }
+
+  _drawSettings(ctx) {
+    if (!this.settingsOpen) return;
+    const { x, y, wTiles, hTiles } = this._settingsRect();
+    const inner = this._drawWindow(ctx, x, y, wTiles, hTiles, "cloud");
+
+    // 标题：系 統 選 單（实际绘制字符串保留原版全角间隔）
+    ctx.font = FONT;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    const title = "系　統　選　單";
+    const tw = ctx.measureText(title).width;
+    ctx.fillText(title, inner.x + (inner.w - tw) / 2, inner.y + 14);
+
+    // 标题下方细白横线
+    const lineY = inner.y + 26;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(inner.x + 4, lineY + 0.5);
+    ctx.lineTo(inner.x + inner.w - 4, lineY + 0.5);
+    ctx.stroke();
+
+    // 单一「音效」行复用原CF9，保留现有Web保存/读取入口。
+    const startRowY = inner.y + 30;
+    const rowStep = 26;
+    const btnW = 66;
+    const btnH = 20;
+    const btnX = inner.x + inner.w - btnW - 10;
+
+    const labels = [
+      "資料儲存",
+      "存檔讀取",
+      "音　　效",
+      "戰略速度",
+      "戰術速度",
+      "遊戲結束",
+    ];
+
+    const c = this.app.clock;
+    const stratIdx = c?.strategicSpeed ?? 2;
+    const tactIdx = this.app.tacticalSpeed ?? 2;
+    const stratText = STRATEGIC_SPEED_LABELS[stratIdx] ?? "普通";
+    const tactText = TACTICAL_SPEED_LABELS[tactIdx] ?? "普通";
+
+    const musicType = this.app.music?.type ?? 1;
+    const btnTexts = [
+      this.app.canPersist === false ? "停用" : "OK",
+      this.app.canPersist === false ? "停用" : "OK",
+      MUSIC_TYPE_LABELS[musicType],
+      stratText,
+      tactText,
+      "OK",
+    ];
+
+    const hov = this.settingsHover ?? -1;
+
+    for (let i = 0; i < labels.length; i++) {
+      const ry = startRowY + i * rowStep;
+      const isRowHover = i === hov;
+
+      // 悬停行微高亮
+      if (isRowHover) {
+        ctx.fillStyle = "rgba(40, 80, 20, 0.4)";
+        ctx.fillRect(inner.x + 4, ry, inner.w - 8, rowStep);
+      }
+
+      // 左侧文字标签 (金黄色)
+      ctx.font = FONT;
+      ctx.fillStyle = GOLD;
+      ctx.textBaseline = "middle";
+      ctx.fillText(labels[i], inner.x + 12, ry + rowStep / 2);
+
+      // 右侧绿底 3D 浮雕按钮
+      const by = ry + Math.floor((rowStep - btnH) / 2);
+      this._drawReliefButton(
+        ctx,
+        btnX,
+        by,
+        btnW,
+        btnH,
+        btnTexts[i],
+        isRowHover,
+        i === 2 && musicType !== 0, // TYPE英文，關閉中文
+      );
+    }
+  }
+
+  // ── SAVE DATA / LOAD DATA 弹窗公共规格 (320×256 px, 内部 288×224 px) ──
+  _systemSaveDialogRect() {
+    const W = innerWidth;
+    const H = innerHeight;
+    const wTiles = 20; // 外框 320px
+    const hTiles = 16; // 外框 256px
+    const w = wTiles * 16;
+    const h = hTiles * 16;
+    const x = Math.round((W - w) / 2);
+    const y = Math.round((H - h) / 2);
+    return { x, y, w, h, wTiles, hTiles };
+  }
+
+  // ── 系统选单「存檔讀取」防丢失确认弹窗规格 (352×128 px, 内部 336×112 px) ──
+  _systemLoadConfirmDialogRect() {
+    const W = innerWidth;
+    const H = innerHeight;
+    const wTiles = 22; // 外框 352px
+    const hTiles = 8; // 外框 128px
+    const w = wTiles * 16;
+    const h = hTiles * 16;
+    const x = Math.round((W - w) / 2);
+    const y = Math.round((H - h) / 2);
+    return { x, y, w, h, wTiles, hTiles };
+  }
+
+  _hitSystemLoadConfirmDialog(px, py) {
+    if (!this.systemLoadConfirmDialog) return -1;
+    const { x, y, wTiles } = this._systemLoadConfirmDialogRect();
+    const innerX = x + 8;
+    const innerY = y + 8;
+    const innerW = (wTiles - 1) * 16;
+    const btnW = 76;
+    const btnH = 22;
+    const btnY = innerY + 74;
+    const btn0X = innerX + Math.floor(innerW / 2) - btnW - 16;
+    const btn1X = innerX + Math.floor(innerW / 2) + 16;
+
+    if (py >= btnY && py < btnY + btnH) {
+      if (px >= btn0X && px < btn0X + btnW) return 0; // 確認
+      if (px >= btn1X && px < btn1X + btnW) return 1; // 取消
+    }
+    return -1;
+  }
+
+  openSystemLoadConfirmDialog() {
+    if (this.app.canPersist === false) return false;
+    clickSfx();
+    this.settingsOpen = false;
+    this.systemSaveDialog = null;
+    this.systemLoadConfirmDialog = {
+      hover: -1,
+    };
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  closeSystemLoadConfirmDialog() {
+    if (!this.systemLoadConfirmDialog) return;
+    clickSfx();
+    this.systemLoadConfirmDialog = null;
+    this.settingsOpen = true; // 返回上一级系统选单
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  async confirmSystemLoadConfirm() {
+    clickSfx();
+    this.systemLoadConfirmDialog = null;
+    this.settingsOpen = false;
+    this.syncClock();
+    await this.app.returnToTitle(1);
+  }
+
+  // ── 刷新或关闭防丢失确认弹窗规格 (352×128 px, 内部 336×112 px) ──
+  _exitConfirmDialogRect() {
+    const W = innerWidth;
+    const H = innerHeight;
+    const wTiles = 22; // 外框 352px
+    const hTiles = 8; // 外框 128px
+    const w = wTiles * 16;
+    const h = hTiles * 16;
+    const x = Math.round((W - w) / 2);
+    const y = Math.round((H - h) / 2);
+    return { x, y, w, h, wTiles, hTiles };
+  }
+
+  _hitExitConfirmDialog(px, py) {
+    if (!this.exitConfirmDialog) return -1;
+    const { x, y, wTiles } = this._exitConfirmDialogRect();
+    const innerX = x + 8;
+    const innerY = y + 8;
+    const innerW = (wTiles - 1) * 16;
+    const btnW = 84;
+    const btnH = 22;
+    const btnY = innerY + 74;
+    const btn0X = innerX + Math.floor(innerW / 2) - btnW - 16;
+    const btn1X = innerX + Math.floor(innerW / 2) + 16;
+
+    if (py >= btnY && py < btnY + btnH) {
+      if (px >= btn0X && px < btn0X + btnW) return 0; // 确定退出
+      if (px >= btn1X && px < btn1X + btnW) return 1; // 返回游戏
+    }
+    return -1;
+  }
+
+  openExitConfirmDialog(action = "reload") {
+    if (this.exitConfirmDialog) return;
+    clickSfx();
+    this.exitConfirmDialog = {
+      hover: -1,
+      action,
+      message: "刷新或关闭会丢失当前进度，请检查是否已存档。",
+      buttons: ["确定退出", "返回游戏"],
+      defaultButton: 1,
+    };
+    this.syncClock();
+    if (this.app.view) {
+      this.app.view.hoverTarget = null;
+    }
+    const bctl = document.querySelector("#bctl");
+    const bbar = document.querySelector("#battle-bottom-bar");
+    if (bctl) bctl.style.pointerEvents = "none";
+    if (bbar) bbar.style.pointerEvents = "none";
+    if (this.app.battleView?.active) {
+      this.app.battleView.drag = null;
+      this.app.battleView.draw();
+    } else {
+      this.app.view?.draw?.();
+    }
+  }
+
+  closeExitConfirmDialog() {
+    if (!this.exitConfirmDialog) return;
+    clickSfx();
+    this.exitConfirmDialog = null;
+    const bctl = document.querySelector("#bctl");
+    const bbar = document.querySelector("#battle-bottom-bar");
+    if (bctl) bctl.style.pointerEvents = "";
+    if (bbar) bbar.style.pointerEvents = "";
+    this.syncClock();
+    if (this.app.battleView?.active) {
+      this.app.battleView.draw();
+    } else {
+      this.app.view?.draw?.();
+    }
+  }
+
+  confirmExit() {
+    clickSfx();
+    this.app.exitConfirmed = true;
+    const action = this.exitConfirmDialog?.action || "reload";
+    this.app.lastExitAction = action;
+    this.exitConfirmDialog = null;
+    const bctl = document.querySelector("#bctl");
+    const bbar = document.querySelector("#battle-bottom-bar");
+    if (bctl) bctl.style.pointerEvents = "";
+    if (bbar) bbar.style.pointerEvents = "";
+    this.syncClock();
+    if (action === "reload") {
+      location.reload();
+    } else {
+      try {
+        window.close();
+      } catch {}
+      if (!window.closed) {
+        location.reload();
+      }
+    }
+  }
+
+  _drawExitConfirmDialog(ctx) {
+    const d = this.exitConfirmDialog;
+    if (!d) return;
+    const { x, y, wTiles, hTiles } = this._exitConfirmDialogRect();
+    const inner = this._drawWindow(ctx, x, y, wTiles, hTiles, "cloud");
+
+    // 提示文字（两行居中）
+    ctx.font = FONT;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    const line1 = "刷新或关闭会丢失当前进度，";
+    const tw1 = ctx.measureText(line1).width;
+    ctx.fillText(line1, inner.x + (inner.w - tw1) / 2, inner.y + 24);
+
+    const line2 = "请检查是否已存档。";
+    const tw2 = ctx.measureText(line2).width;
+    ctx.fillText(line2, inner.x + (inner.w - tw2) / 2, inner.y + 48);
+
+    // 细白分割线
+    const lineY = inner.y + 64;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(inner.x + 8, lineY + 0.5);
+    ctx.lineTo(inner.x + inner.w - 8, lineY + 0.5);
+    ctx.stroke();
+
+    // 按钮
+    const btnW = 84;
+    const btnH = 22;
+    const btnY = inner.y + 74;
+    const btn0X = inner.x + Math.floor(inner.w / 2) - btnW - 16;
+    const btn1X = inner.x + Math.floor(inner.w / 2) + 16;
+
+    const isHov0 = d.hover === 0;
+    const isHov1 = d.hover === 1;
+
+    this._drawReliefButton(
+      ctx,
+      btn0X,
+      btnY,
+      btnW,
+      btnH,
+      "确定退出",
+      isHov0,
+      false,
+    );
+
+    this._drawReliefButton(
+      ctx,
+      btn1X,
+      btnY,
+      btnW,
+      btnH,
+      "返回游戏",
+      isHov1,
+      false,
+    );
+
+    // 突出默认按钮（返回游戏）
+    ctx.strokeStyle = "#ffd700";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(btn1X - 1.5, btnY - 1.5, btnW + 3, btnH + 3);
+  }
+
+  _hitSystemSaveOrLoadDialog(dlg, px, py) {
+    if (!dlg) return -1;
+    const { x, y, wTiles, hTiles } = this._systemSaveDialogRect();
+    const cx = x + 8;
+    const cy = y + 8;
+    const cw = (wTiles - 1) * 16;
+    const ch = (hTiles - 1) * 16;
+    if (px < cx || py < cy || px >= cx + cw || py >= cy + ch) return -1;
+    if (dlg.rows.length > 4 && px >= cx + cw - 14) return -1;
+    const startSlotY = cy + 28;
+    const slotStep = 50;
+    for (let i = 0; i < 4; i++) {
+      const sy = startSlotY + i * slotStep;
+      if (py >= sy && py < sy + slotStep) {
+        const index = i + (dlg.scroll ?? 0);
+        return index < dlg.rows.length ? index : -1;
+      }
+    }
+    return -1;
+  }
+
+  openSystemSaveDialog() {
+    if (this.app.canPersist === false) return false;
+    if (!canSnapshotState(this.app)) {
+      this.app.hud?.flashEvent?.("전투 처리 중에는 지금 저장할 수 없습니다.");
+      warnSfx();
+      return false;
+    }
+    clickSfx();
+    this.settingsOpen = false;
+    this.syncClock();
+
+    const rows = saveChoices(this.app.saves?.slots).map((s) => {
+      const i = s.slot;
+      let infoText = "";
+      let dateStr = "";
+      if (s && s.played) {
+        const scState = s.state;
+        const d = scState?.save_date || s.date;
+        if (d) {
+          const p = (n) => (n >= 10 ? `${n}` : ` ${n}`);
+          dateStr = `${d.year}年${p(d.month)}月${p(d.day)}日`;
+        } else {
+          dateStr = "184年 1月 1日";
+        }
+        if (s.label && s.label.includes("勢力：")) {
+          infoText = s.label.trim();
+        } else {
+          const chNum = (s.scenario_idx ?? 0) + 1;
+          const chStr =
+            ["一", "二", "三", "四", "五"][s.scenario_idx ?? 0] ?? chNum;
+          const fName =
+            scState?.factions?.[scState?.player_faction]?.name ||
+            scState?.rulerName ||
+            "－－";
+          const advName =
+            scState?.player_advisor?.name || scState?.advisorName || "－－";
+          infoText = `第${chStr}章勢力：${fName}　　軍師：${advName}`;
+        }
+      } else {
+        infoText = "（未使用）";
+        dateStr = "－－－－－－－－－－";
+      }
+      return {
+        slot: i,
+        infoText,
+        dateStr,
+        played: !!(s && s.played),
+      };
+    });
+
+    this.systemSaveDialog = {
+      rows,
+      scroll: 0,
+      hover: -1,
+    };
+    // Read-only remote status: no Trial network gate, clock or save identity change.
+    void this.app.refreshFormalStatus?.();
+    this.app.view.draw();
+    return true;
+  }
+
+  closeSystemSaveDialog() {
+    if (!this.systemSaveDialog) return;
+    clickSfx();
+    this.systemSaveDialog = null;
+    this.settingsOpen = true; // 返回上一级系统选单
+    this.syncClock();
+    this.app.view.draw();
+  }
+
+  async confirmSystemSave(rowIdx) {
+    const row = this.systemSaveDialog?.rows?.[rowIdx];
+    if (!row) return;
+    if (!canSnapshotState(this.app)) {
+      this.app.hud?.flashEvent?.("전투 처리 중에는 지금 저장할 수 없습니다.");
+      warnSfx();
+      return;
+    }
+    clickSfx();
+    const slotIdx = row.slot;
+    const sc = this.app.scenario;
+    const chNum = (this.app.scenarioIdx ?? 0) + 1;
+    const chStr =
+      ["一", "二", "三", "四", "五"][this.app.scenarioIdx ?? 0] ?? chNum;
+    const meF = sc.factions?.[sc.player_faction];
+    const rulerName = meF?.monarch || meF?.name || sc.rulerName || "－－";
+    const advName = sc.player_advisor?.name || sc.advisorName || "－－";
+    const label = `第${chStr}章勢力：${rulerName.trim()}　　軍師：${advName.trim()}`;
+
+    // 关闭弹窗并返回上一级系统选单
+    this.systemSaveDialog = null;
+    this.settingsOpen = true;
+    this.syncClock();
+    this.app.view.draw();
+
+    // 执行存档
+    await this.app.saveGame(slotIdx, label);
+  }
+
+  _drawSystemLoadConfirmDialog(ctx) {
+    const d = this.systemLoadConfirmDialog;
+    if (!d) return;
+    const { x, y, wTiles, hTiles } = this._systemLoadConfirmDialogRect();
+    const inner = this._drawWindow(ctx, x, y, wTiles, hTiles, "cloud");
+
+    // 提示文字（两行居中）
+    ctx.font = FONT;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    const line1 = "現在讀取存檔將會遺失目前遊戲進度，";
+    const tw1 = ctx.measureText(line1).width;
+    ctx.fillText(line1, inner.x + (inner.w - tw1) / 2, inner.y + 24);
+
+    const line2 = "是否確定？";
+    const tw2 = ctx.measureText(line2).width;
+    ctx.fillText(line2, inner.x + (inner.w - tw2) / 2, inner.y + 48);
+
+    // 细白分割线
+    const lineY = inner.y + 64;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(inner.x + 8, lineY + 0.5);
+    ctx.lineTo(inner.x + inner.w - 8, lineY + 0.5);
+    ctx.stroke();
+
+    // 按钮
+    const btnW = 76;
+    const btnH = 22;
+    const btnY = inner.y + 74;
+    const btn0X = inner.x + Math.floor(inner.w / 2) - btnW - 16;
+    const btn1X = inner.x + Math.floor(inner.w / 2) + 16;
+
+    const isHov0 = d.hover === 0;
+    const isHov1 = d.hover === 1;
+
+    this._drawReliefButton(
+      ctx,
+      btn0X,
+      btnY,
+      btnW,
+      btnH,
+      "確　認",
+      isHov0,
+      false,
+    );
+
+    this._drawReliefButton(
+      ctx,
+      btn1X,
+      btnY,
+      btnW,
+      btnH,
+      "取　消",
+      isHov1,
+      false,
+    );
+  }
+
+  _drawSystemSaveDialog(ctx) {
+    const d = this.systemSaveDialog;
+    if (!d) return;
+    this._drawSystemSaveOrLoad(ctx, d, "SAVE  DATA");
+  }
+
+  _drawSystemSaveOrLoad(ctx, d, titleText) {
+    const { x, y, wTiles, hTiles } = this._systemSaveDialogRect();
+    const inner = this._drawWindow(ctx, x, y, wTiles, hTiles, "cloud");
+
+    // 标题：SAVE DATA / LOAD DATA (英文居中大写)
+    ctx.font = '300 18px "Oswald", "Noto Serif TC", serif';
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    const tw = ctx.measureText(titleText).width;
+    ctx.fillText(titleText, inner.x + (inner.w - tw) / 2, inner.y + 14);
+
+    // 标题下方细白横线
+    const lineY = inner.y + 26;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(inner.x + 4, lineY + 0.5);
+    ctx.lineTo(inner.x + inner.w - 4, lineY + 0.5);
+    ctx.stroke();
+
+    // Four visible rows; storage capacity is independent of this viewport.
+    const startSlotY = inner.y + 28;
+    const slotStep = 50;
+    const btnW = 140;
+    const btnH = 20;
+    const btnX = inner.x + inner.w - btnW - (d.rows.length > 4 ? 22 : 8);
+    const scroll = d.scroll ?? 0;
+    if (d.rows.length > 4) {
+      const trackX = inner.x + inner.w - 12;
+      const trackH = slotStep * 4;
+      const thumbH = Math.max(12, trackH * 4 / d.rows.length);
+      ctx.fillStyle = '#222222';
+      ctx.fillRect(trackX, startSlotY, 8, trackH);
+      ctx.fillStyle = '#4a7828';
+      ctx.fillRect(trackX, startSlotY + (trackH - thumbH) * scroll / (d.rows.length - 4), 8, thumbH);
+    }
+
+    d.rows.slice(scroll, scroll + 4).forEach((row, i) => {
+      const sy = startSlotY + i * slotStep;
+      const isSlotHover = i + scroll === d.hover;
+
+      // 槽位高亮
+      if (isSlotHover) {
+        ctx.fillStyle = "rgba(40, 80, 20, 0.45)";
+        ctx.fillRect(inner.x + 4, sy, inner.w - 8, slotStep - 2);
+      }
+
+      // 第一行：第X章势力：XX  军师：XXX
+      ctx.font = FONT;
+      ctx.fillStyle = row.played ? GOLD : "#888888";
+      ctx.textBaseline = "top";
+      ctx.fillText(row.infoText, inner.x + 8, sy + 3);
+
+      // 第二行右侧：绿底 3D 浮雕日期按钮
+      const by = sy + 22;
+      this._drawReliefButton(
+        ctx,
+        btnX,
+        by,
+        btnW,
+        btnH,
+        row.dateStr,
+        isSlotHover,
+        true, // 使用 Oswald 优雅数字字体
+      );
+    });
+  }
+
+  /** UI 层绘制 (MapView.draw 末尾回调) */
+  draw(ctx) {
+    this._barImageResources?.assertCurrent();
+    if (!this.imgs) return;
+    this.layout();
+    const { bar, i1, i2, i3, i4 } = this.imgs;
+    // 工具栏原大顶部居中
+    ctx.drawImage(bar, this.bx, 0);
+    for (const [img, ix] of [
+      [i1, 336],
+      [i2, 368],
+      [i3, 400],
+      [i4, 432],
+    ])
+      ctx.drawImage(img, this.bx + ix, 3);
+    // 日期: 白色数字补于 年/月/日 (x496/529/562) 之前
+    const c = this.app.clock;
+    if (c) {
+      ctx.font = DIN;
+      ctx.fillStyle = c.hold ? "#aaaaaa" : "#ffffff"; // 暂停(鼠标活动)时灰显
+      ctx.textBaseline = "top";
+      const put = (txt, rightEdge) => {
+        const w = ctx.measureText(txt).width;
+        ctx.fillText(txt, this.bx + rightEdge - w, 8);
+      };
+      put(`${c.year}`, 494);
+      put(`${c.month}`, 527);
+      put(`${c.day}`, 560);
+    }
+    // 军师子菜单带 — 窗口构造：与 banner 同宽的金框 + 黑底 + 无分隔线 + 白字垂直居中
+    if (this.submenuOpen) {
+      const sx = this.bx,
+        sy = 32,
+        wTiles = 40,
+        hTiles = 3;
+      const { x, y, w, h } = this._drawWindow(
+        ctx,
+        sx,
+        sy,
+        wTiles,
+        hTiles,
+        "black",
+      );
+      const cellW = w / 8;
+      // 按钮文字
+      ctx.font = FONT;
+      ctx.textBaseline = "top";
+      SUBMENU.forEach((t, i) => {
+        const sel = this.selectedSubmenu === i;
+        const ix = x + i * cellW;
+        if (sel) {
+          // 被选状态: 实心米黄底 + 黑字
+          ctx.fillStyle = CREAM;
+          ctx.fillRect(ix + 1, y + 1, cellW - 2, h - 2);
+          ctx.fillStyle = "#000000";
+        } else {
+          ctx.fillStyle = "#ffffff";
+        }
+        const tw = ctx.measureText(t).width;
+        ctx.fillText(t, ix + (cellW - tw) / 2, y + (h - 16) / 2 + 1);
+      });
+    }
+    // 设置菜单
+    if (this.settingsOpen) {
+      this._drawSettings(ctx);
+    }
+    if (this.systemSaveDialog) {
+      this._drawSystemSaveDialog(ctx);
+    }
+    if (this.systemLoadConfirmDialog) {
+      this._drawSystemLoadConfirmDialog(ctx);
+    }
+    this._drainStrategicMessages();
+    if (this.miniOpen) this.drawMini(ctx);
+    if (this.resOpen) this.drawRes(ctx);
+    if (this.listDialog) {
+      this._recalcListDialog();
+      this._drawListDialog(ctx);
+    }
+    if (this.generalCard) {
+      this._drawGeneralCard(ctx);
+    }
+    if (this.formationDialog) {
+      this._drawFormationDialog(ctx);
+    }
+    if (this.financeDialog) {
+      this._drawFinanceDialog(ctx);
+    }
+    if (this.cityCard) {
+      this._recalcCityCard();
+      this._drawCityCard(ctx);
+    }
+    if (this.choiceDialog) {
+      this._drawChoice(ctx);
+    }
+    if (this.baseMenu) {
+      this._drawBaseMenu(ctx);
+    }
+    if (this.personnelMenu) {
+      this._drawPersonnelMenu(ctx);
+    }
+    if (this.adviceMenu) {
+      this._drawAdviceMenu(ctx);
+    }
+    if (this.legionMenu) {
+      this._drawLegionMenu(ctx);
+    }
+    if (this.marchingOrder || this.viewingLegion) {
+      this._drawMarchingOrder(ctx);
+    }
+    if (this.orderChoiceMenu) {
+      this._drawOrderChoiceMenu(ctx);
+    }
+    if (this.proposalAudience) {
+      this._drawProposalAudience(ctx);
+      if (this.keypadDialog) this._drawKeypadDialog(ctx);
+    }
+    if (this.exitConfirmDialog) {
+      this._drawExitConfirmDialog(ctx);
+    }
+  }
+
+  /** 小地图面板: 金框云窗 + 路网/海域底图 + 据点方块 + 军团路线 */
+  drawMini(ctx) {
+    this._barImageResources?.assertCurrent();
+    const p = this.panelRect("mini");
+    if (!p) return;
+    const { x: mx, y: my, w: mw, h: mh } = p.mapBox;
+    if (this._gf) {
+      this._drawWindow(ctx, p.frame.x, p.frame.y, p.w / 16, p.h / 16, "cloud");
+    } else {
+      ctx.fillStyle = NAVY;
+      ctx.fillRect(p.frame.x, p.frame.y, p.w, p.h);
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(p.frame.x + 1, p.frame.y + 1, p.w - 2, p.h - 2);
+    }
+    ctx.fillStyle = "#d0b080";
+    ctx.fillRect(mx, my, mw, mh);
+    const miniT = p.transform;
+    const r = miniT.rect;
+    const image = mw === 250 ? this.imgs.mbgLarge : this.imgs.mbg;
+    if (image) ctx.drawImage(image, r.x, r.y, r.w, r.h);
+    const sc = this.app.scenario;
+    if (!sc) return;
+    const me = cmd.playerFaction(sc);
+    const ks = miniT.scale;
+    const battles = minimapBattleMarkers(sc, this.app.engagementFx);
+    // 军团路线 (虚线: 军团→目标)
+    const t = this.app.clock?.dayProgress?.() ?? 1;
+    ctx.setLineDash([3, 3]);
+    for (const L of sc.legions) {
+      if (L.faction == null || !L.target) continue;
+      // Same committed segment and 8×movePeriod phase as the big-map marker;
+      // using dayProgress alone restarted this line on every strategic update.
+      const { wxp, wyp, isMoving, curT } = this.app.view.getLegionRenderPos(L, t);
+      ctx.strokeStyle = factionColorEx(sc, L.faction);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(...miniT.worldToDisplay(wxp, wyp));
+      // G3: v1 live route oracle deleted. Mirror the big-map native
+      // projection (L._march points); display never searches the graph.
+      const path =
+        L._march?.points?.slice(L._march.pointIndex ?? 0) ?? L._path ?? [];
+      if (isMoving && curT < 1) {
+        ctx.lineTo(...miniT.worldToDisplay(L.x * 16 + 8, L.y * 16 + 8));
+      }
+      for (const point of path) {
+        ctx.lineTo(...miniT.worldToDisplay(point.x * 16 + 8, point.y * 16 + 8));
+      }
+      if (!path.length) {
+        ctx.lineTo(...miniT.worldToDisplay(L.target.x * 16 + 8, L.target.y * 16 + 8));
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // 据点方块: 所有点 5x5(3x3色块+1px边框)
+    // 玩家黄填充#F0E000+红边框#D00000; 选中蓝填充#3040D0+白边框#FFFFFF; 其它蓝填充#3040D0+深蓝边框#002060; 空城白底黑框
+    for (const c of sc.cities) {
+      const [x, y] = miniT.worldToDisplay(c.x * 16 + 8, c.y * 16 + 8);
+      const f = sc.factionOf(c);
+      const isMe = me && f && f.idx === me.idx;
+      const isSel = f && this.selFaction === f.idx;
+      let style = MINI_MARKER_STYLES.neutral;
+      if (isMe) style = MINI_MARKER_STYLES.player;
+      else if (isSel) style = MINI_MARKER_STYLES.selected;
+      else if (f) style = MINI_MARKER_STYLES.other;
+      drawMinimapMarker(ctx, x, y, battles.get(c.idx)?.style ?? style);
+    }
+    // 两军野战同样是方块，不追加星形/十字。共享大地图的规则倒数相位；
+    // 暂停不换相，接触解除/战果完成后不保留尾闪。
+    for (const [key, marker] of battles) {
+      if (typeof key !== "string") continue;
+      drawMinimapMarker(ctx, ...miniT.worldToDisplay(marker.x * 16 + 8, marker.y * 16 + 8), marker.style);
+    }
+    // 视口线框: 当前大地图可视范围 (缩小一半, 并加 1px 右下黑色阴影)
+    const view = this.app.view;
+    const vx = (-view.cam.x / view.cam.scale) * ks;
+    const vy = (-view.cam.y / view.cam.scale) * ks;
+    const vw = ((innerWidth / view.cam.scale) * ks) / 2;
+    const vh = ((innerHeight / view.cam.scale) * ks) / 2;
+    const vrx = r.x + vx + vw / 2;
+    const vry = r.y + vy + vh / 2;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "#000000";
+    ctx.strokeRect(vrx + 1.5, vry + 1.5, vw, vh);
+    ctx.strokeStyle = "#ffffff";
+    ctx.strokeRect(vrx + 0.5, vry + 0.5, vw, vh);
+    // 底部势力名牌在地图下方: 左红底黄徽(我方), 右蓝底蓝徽(选中势力)
+    const by = p.bannerY;
+    this._banner(ctx, mx, by, p.bannerWidth, 20, me, "#D00000", "#F0E000", "#D00000");
+    const sel = sc.factions.find((f) => f.idx === this.selFaction);
+    this._banner(
+      ctx,
+      p.secondBannerX,
+      by,
+      p.bannerWidth,
+      20,
+      sel,
+      "#3040D0",
+      "#3040D0",
+      "#FFFFFF",
+    );
+  }
+
+  /** 小地图底部势力名牌 (固定色底+方块徽记+居中白字) */
+  _banner(ctx, x, y, w, hgt, f, bg, emblemFill, emblemBorder) {
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, y, w, hgt);
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, hgt - 1);
+    // 左侧方块徽记 (与据点同色)
+    const ex = x + 6,
+      ey = y + Math.round((hgt - 8) / 2);
+    ctx.fillStyle = emblemBorder;
+    ctx.fillRect(ex, ey, 8, 8);
+    ctx.fillStyle = emblemFill;
+    ctx.fillRect(ex + 1, ey + 1, 6, 6);
+    // 君主名水平居中 (徽记右侧)
+    ctx.font = '12px "Noto Serif TC","PMingLiU",serif';
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    const text = f ? f.monarch.trim() : "－－－－";
+    const tw = ctx.measureText(text).width;
+    const emblemW = 18;
+    ctx.fillText(text, x + emblemW + (w - emblemW - tw) / 2, y + hgt / 2);
+  }
+
+  /** 设置小地图默认查看的势力: 本章第一个有城的非玩家势力 */
+  setDefaultSelFaction() {
+    const sc = this.app.scenario;
+    if (!sc) return;
+    const me = cmd.playerFaction(sc);
+    const first = sc.factions.find((f) => f.idx !== me?.idx && f.n_cities > 0);
+    this.selFaction = first ? first.idx : (me?.idx ?? null);
+  }
+
+  /** 路网层 (离屏缓存): 地形图块 20(道路)/200(过河段) → 1px 网格 */
+  _drawRoads(ctx, mx, my, mw, mh) {
+    if (!this._roadCv) {
+      const cv = document.createElement("canvas");
+      cv.width = mw;
+      cv.height = mh;
+      const c2 = cv.getContext("2d");
+      c2.fillStyle = "#e8d060"; // 原版小地图路网土黄
+      const build = (u8) => {
+        for (let cy = 0; cy < 256; cy++)
+          for (let cx = 0; cx < 384; cx++) {
+            const t = u8[cy * 384 + cx];
+            if (t === 20 || t === 200)
+              c2.fillRect(
+                mx - mx + Math.round(cx / 2),
+                Math.round(cy / 2),
+                1,
+                1,
+              );
+          }
+        this._roadCv = cv;
+      };
+      fetch("mmap_map.bin")
+        .then((r) => r.arrayBuffer())
+        .then((b) => build(new Uint8Array(b)))
+        .catch(() => {});
+    }
+    if (this._roadCv) ctx.drawImage(this._roadCv, mx, my);
+  }
+
+  /** 小地图点击: 窗口内任意点击均被消费; 地图区 → 大地图居中; 右名牌 → 选择势力 */
+  _miniHit(px, py, { allowFactionPicker = true } = {}) {
+    const p = this.panelRect("mini");
+    if (!p) return false;
+    // 整个小地图面板（含金框）内点击都消费，避免落到大地图
+    if (!insidePanel(p, px, py)) return false;
+    const { x: mx, y: my, w: mw, h: mh } = p.mapBox;
+    const miniT = p.transform;
+    // 名牌区: 右名牌点击 → 弹势力列表选择显示势力
+    const by = p.bannerY;
+    if (py >= by && py < by + 20 && px >= mx && px < mx + mw) {
+      if (px >= p.secondBannerX && allowFactionPicker) {
+        clickSfx();
+        this._pickSelFaction();
+      }
+      return true;
+    }
+    // 地图区: 点到哪, 大地图就移到哪 (视口中心=点击点)；留边经统一变换拒导航，只消费。
+    if (px >= mx && py >= my && px < mx + mw && py < my + mh) {
+      clickSfx();
+      const view = this.app.view;
+      const world = miniT.displayToWorld(px, py);
+      if (!world) return true;
+      const wxp = world[0] * view.cam.scale;
+      const wyp = world[1] * view.cam.scale;
+      view.cam.x = innerWidth / 2 - wxp;
+      view.cam.y = innerHeight / 2 - wyp;
+      view.clampCam();
+      view.draw();
+      return true;
+    }
+    // 金框/其它非交互区: 消费但无动作
+    return true;
+  }
+
+  /** 势力选择列表 (小地图右名牌): 原版权势一览双列窗，蓝字=当前查看势力 */
+  _pickSelFaction() {
+    const sc = this.app.scenario;
+    if (!sc) return;
+    if (this.listDialog) this.closeListDialog();
+    const cand = sc.factions.filter((f) => f.n_cities > 0);
+    const rowH = 18;
+    const titleH = 20;
+    const maxVisRows = 10;
+    const rows = [];
+    for (let i = 0; i < cand.length; i += 2) {
+      const cell = (f) => {
+        if (!f) return "";
+        return {
+          t: f.monarch.trim(),
+          color: f.idx === this.selFaction ? "#3040D0" : "#000000",
+        };
+      };
+      rows.push({
+        cells: [cell(cand[i]), cell(cand[i + 1])],
+        factionIdxs: [cand[i]?.idx, cand[i + 1]?.idx],
+      });
+    }
+    this.layout();
+    const mini = this.panelRect("mini");
+    if (!mini) return;
+    const w = 120;
+    const h = titleH + Math.min(rows.length, maxVisRows) * rowH;
+    this.openListDialog({
+      title: "勢力一覽",
+      titleBar: true,
+      header: [],
+      cols: [
+        { x: 8, w: 48, align: "left" },
+        { x: 60, w: 48, align: "left" },
+      ],
+      rows,
+      rowH,
+      w,
+      h,
+      x: mini.mapBox.x + mini.mapBox.w - w,
+      y: mini.frame.y + mini.frame.h + 8, // list frame attaches below map frame
+      onPickCell: (ri, ci) => {
+        const idx = rows[ri]?.factionIdxs?.[ci];
+        if (idx == null) return;
+        this.selFaction = idx;
+        this.closeListDialog();
+        this.app.view.draw();
+      },
+    });
+  }
+
+  /** 资源面板: 君主卡 + 信賴度 + 資金/預備兵 */
+  async drawRes(ctx) {
+    this._barImageResources?.assertCurrent();
+    const p = this.panelRect("res");
+    if (!p) return;
+    const sc = this.app.scenario;
+    const me = cmd.playerFaction(sc);
+    if (!me) return;
+    const { money, cav, arc, inf } = this.imgs;
+    if (this._gf) {
+      this._drawWindow(ctx, p.x - 8, p.y - 8, 14, 13, "cloud");
+    } else {
+      ctx.fillStyle = NAVY;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+    }
+    // 君主头像 64×64 (懒加载缓存)
+    const mon = sc.monarchOf(me);
+    const world = this.app.world;
+    const key = portraitURL(mon, world);
+    if (this.portraitKey !== key) {
+      this.portraitKey = key;
+      this.portraitImg = null;
+      loadImage(key)
+        .then((img) => {
+          if (this.app.scenario !== sc || this.app.world !== world || this.portraitKey !== key) return;
+          this.portraitImg = img;
+          this.app.view.draw();
+        })
+        .catch(() => {});
+    }
+    if (this.portraitImg)
+      ctx.drawImage(this.portraitImg, 0, 0, 128, 128, p.x + 8, p.y + 8, 64, 64);
+    // 君主/首都/軍師 (頭像右側：標籤 x=76 按四字寬度預留, 豎白線 x=142.5, 數值 x=150)
+    const cap = sc.city(me.capital);
+    const advGen = adv.getAdvisor(sc, me);
+    ctx.font = FONT;
+    ctx.textBaseline = "top";
+    const rows = [
+      ["군주", me.monarch],
+      ["수도", cap?.name?.trim() ?? "－"],
+      ["군사", advGen ? advGen.name.trim() : "－－－"],
+    ];
+    rows.forEach(([k, v], i) => {
+      const y = p.y + 16 + i * 16;
+      ctx.fillStyle = CREAM;
+      ctx.fillText(k, p.x + 76, y);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(v, p.x + 150, y);
+    });
+
+    // 豎白線 (按四字寬度預留，高度從 y+14 到 y+61)
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(p.x + 142.5, p.y + 14);
+    ctx.lineTo(p.x + 142.5, p.y + 61);
+    ctx.stroke();
+
+    // 信賴度: 标签与进度条分两行; 黑底条, 中央细红条 (高度 2px)。原版按 255 为满格 (KI.EXE 0x5F27: w = floor((trust * 100 + 159) / 160))
+    const ty = p.y + 78;
+    ctx.fillStyle = CREAM;
+    ctx.fillText("신뢰도", p.x + 8, ty);
+    const trust = sc.trust ?? 0;
+    const bx = p.x + 8,
+      by = ty + 20,
+      bw = 192;
+    ctx.fillStyle = "#050505";
+    ctx.fillRect(bx, by, bw, 8);
+    ctx.fillStyle = trust <= 32 ? "#ff3333" : "#dd0000";
+    const barWidth = Math.round((bw * Math.min(255, trust)) / 255);
+    ctx.fillRect(bx, by + 3, barWidth, 2);
+    // 資金 / 預備兵 (原版规格: 黑底框 + 红底剪影图标 + 白色数值)
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(p.x + 8, p.y + 112, 192, 72);
+
+    ctx.font = FONT;
+    ctx.fillStyle = CREAM;
+    ctx.fillText("자금", p.x + 16, p.y + 118);
+    ctx.fillText("예비병", p.x + 16, p.y + 134);
+
+    const resItems = [
+      { img: money, val: me.gold ?? 0 },
+      { img: cav, val: (me.reserve_cav ?? 0) * 10 },
+      { img: arc, val: (me.reserve_arc ?? 0) * 10 },
+      { img: inf, val: (me.reserve_inf ?? 0) * 10 },
+    ];
+
+    const rx = p.x + 95,
+      rw = 22,
+      rh = 14;
+
+    resItems.forEach(({ img, val }, i) => {
+      const iy = p.y + 118 + i * 16;
+      const ry = iy + 1;
+
+      // 红色背景图标
+      ctx.fillStyle = "#d00000";
+      ctx.fillRect(rx, ry, rw, rh);
+
+      if (img) {
+        ctx.drawImage(img, rx, ry, rw, rh);
+      }
+
+      // 数值 (Oswald / DIN)
+      ctx.font = DIN;
+      const s = `${val}`;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(s, p.x + 196 - ctx.measureText(s).width, iy);
+      ctx.font = FONT;
+    });
+  }
+}
