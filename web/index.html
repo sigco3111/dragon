@@ -1,11 +1,15 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <title>臥龍傳</title>
+    <title>와룡전(臥龍傳)</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
     <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png" />
+    <!-- 한글 표시용 웹폰트 (한글화 샘플) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet" />
     <style>
       :root {
         /* GameBar canvas popups and tactical DOM popups share this 16px policy. */
@@ -24,7 +28,11 @@
         height: 100%;
         background: #141414;
         overflow: hidden;
-        font-family: "Noto Serif TC", "PMingLiU", serif;
+        font-family: "Noto Serif KR", "Noto Serif TC", "PMingLiU", serif;
+      }
+      select,
+      button {
+        font-family: "Noto Serif KR", "Noto Serif TC", "PMingLiU", sans-serif;
       }
       #cv {
         display: none;
@@ -168,7 +176,7 @@
         width: calc(160px * var(--battle-ui-scale));
         overflow: visible;
         color: #e8d9b0;
-        font-family: "Noto Serif TC", "PMingLiU", serif;
+        font-family: "Noto Serif KR", "Noto Serif TC", "PMingLiU", serif;
         font-size: calc(11px * var(--battle-ui-scale));
         line-height: 1.25;
         z-index: 31;
