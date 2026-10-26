@@ -2,7 +2,7 @@
 // or holds game rules. Static OPL3 rendering/volume limits: re-notes-audio.md.
 import { ORIGINAL_BIOS_TICK_SECONDS } from "./speaker.js";
 const FADE_TICKS = [2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 20];
-export const MUSIC_TYPE_LABELS = ["關閉", "TYPE1", "TYPE2", "TYPE3", "TYPE4"];
+export const MUSIC_TYPE_LABELS = ["끄기", "TYPE1", "TYPE2", "TYPE3", "TYPE4"];
 const MONTH_TRACKS = [5, 5, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5];
 export function seasonalMusicTrack(month) {
   return MONTH_TRACKS[month - 1] ?? null;
