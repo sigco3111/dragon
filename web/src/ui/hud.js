@@ -17,15 +17,15 @@ import {
 // SINARIO 武将记录 +0x0E/+0x0F/+0x10 高四位：攻城、野战、水战专长。
 // 624px 内窗配合列表外框恰好占满 640px 战略画布，并为右侧滚动条留位。
 const GENERAL_LIST_HEADER = [
-  "武將名",
-  "武術",
-  "統率",
-  "政治",
-  "攻城",
-  "野戰",
-  "水戰",
-  "勢力",
-  "身分",
+  "무장명",
+  "무력",
+  "통솔",
+  "정치",
+  "공성",
+  "야전",
+  "수전",
+  "세력",
+  "신분",
 ];
 const GENERAL_LIST_COLS = [
   { x: 8, w: 80, align: "left" },
@@ -438,23 +438,23 @@ export class HUD {
     );
 
     const getIdentity = (g) => {
-      if (g.status === 4) return "俘虜";
-      if (g.is_monarch || g.status === 5) return "君主";
-      if (g.status === 1) return "軍團長";
-      if (g.status === 2) return "內政官";
-      if (g.status === 3) return "外交官";
+      if (g.status === 4) return "포로";
+      if (g.is_monarch || g.status === 5) return "군주";
+      if (g.status === 1) return "군단장";
+      if (g.status === 2) return "내정관";
+      if (g.status === 3) return "외교관";
       // 动态反查 (status 为 0 时的 fallback)
       if (sc.legions?.some((L) => L.leader === g.name || L.leader === g.idx)) {
-        return "軍團長";
+        return "군단장";
       }
       if (sc.cities?.some((c) => c.governor === g.idx)) {
-        return "內政官";
+        return "내정관";
       }
       if (
         sc.envoys &&
         Object.values(sc.envoys).some((e) => e?.name === g.name?.trim())
       ) {
-        return "外交官";
+        return "외교관";
       }
       return "－－－";
     };
@@ -496,24 +496,24 @@ export class HUD {
     if (!f) return;
 
     const getIdentity = (g) => {
-      if (g.is_player) return "軍師";
-      if (g.status === 4) return "俘虜";
-      if (g.is_monarch || g.status === 5) return "君主";
-      if (g.status === 1) return "軍團長";
-      if (g.status === 2) return "內政官";
-      if (g.status === 3) return "外交官";
+      if (g.is_player) return "군사";
+      if (g.status === 4) return "포로";
+      if (g.is_monarch || g.status === 5) return "군주";
+      if (g.status === 1) return "군단장";
+      if (g.status === 2) return "내정관";
+      if (g.status === 3) return "외교관";
       // 动态反查 (status 为 0 时的 fallback)
       if (sc.legions?.some((L) => L.leader === g.name || L.leader === g.idx)) {
-        return "軍團長";
+        return "군단장";
       }
       if (sc.cities?.some((c) => c.governor === g.idx)) {
-        return "內政官";
+        return "내정관";
       }
       if (
         sc.envoys &&
         Object.values(sc.envoys).some((e) => e?.name === g.name?.trim())
       ) {
-        return "外交官";
+        return "외교관";
       }
       return "－－－";
     };
@@ -546,7 +546,7 @@ export class HUD {
       w: GENERAL_LIST_WIDTH,
       h: 352,
       footer: {
-        text: "進行軍隊編組。請選擇武將。",
+        text: "군단을 편성합니다. 무장을 선택하십시오.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -595,7 +595,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["據點名", "生產力", "上昇率", "防災", "城兵", "內政官"],
+      header: ["거점명", "생산력", "상승률", "방재", "수비병", "내정관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 68, align: "right" },
@@ -610,7 +610,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "要派遣內政官到哪個據點？",
+        text: "내정관을 파견할 거점을 선택하십시오.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -633,9 +633,9 @@ export class HUD {
             lines: [
               [
                 { text: cityName, color: "#f8a800" },
-                { text: `　已有${govName}　大人`, color: "#ffffff" },
+                { text: `에는 이미 ${govName} 님이`, color: "#ffffff" },
               ],
-              "前去赴任了。",
+              "부임해 있습니다.",
             ],
             onClose: () => {
               if (this.app.gamebar.listDialog) {
@@ -679,7 +679,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["武將名", "武術", "統率", "政治", "勢力", "身分"],
+      header: ["무장명", "무력", "통솔", "정치", "세력", "신분"],
       cols: [
         { x: 8, w: 80, align: "left" },
         { x: 96, w: 48, align: "right" },
@@ -694,7 +694,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "請選擇任命之武將。",
+        text: "임명할 무장을 선택하십시오.",
         portrait: "message_npc",
       },
       onCancel: () => {
@@ -709,7 +709,7 @@ export class HUD {
           this.app.gamebar.listDialog.selectedRow = ri;
         }
         // 弹出武将对话小弹窗「我立刻前往。」
-        this.app.gamebar.showGeneralMessageDialog(gen, "我立刻前往。", () => {
+        this.app.gamebar.showGeneralMessageDialog(gen, "즉시 출발하겠습니다.", () => {
           this.showAppointGovernorCities();
         });
       },
@@ -751,7 +751,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["據點名", "生產力", "上昇率", "防災", "城兵", "內政官"],
+      header: ["거점명", "생산력", "상승률", "방재", "수비병", "내정관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 68, align: "right" },
@@ -766,7 +766,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "要解任哪個據點的內政官？",
+        text: "내정관을 해임할 거점을 선택하십시오.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -787,10 +787,10 @@ export class HUD {
           this.app.gamebar.showNpcMessageDialog({
             lines: [
               [
-                { text: "是否有所差錯？", color: "#ffffff" },
+                { text: "착오가 있는 것 같습니다. ", color: "#ffffff" },
                 { text: cityName, color: "#f8a800" },
               ],
-              "並未派遣任何人。",
+              "에는 파견된 사람이 없습니다.",
             ],
             onClose: () => {
               if (this.app.gamebar.listDialog) {
@@ -810,7 +810,7 @@ export class HUD {
         // 弹出武将发言弹窗「那我這就回京城。」
         this.app.gamebar.showGeneralMessageDialog(
           gov,
-          "那我這就回京城。",
+          "그럼 수도로 돌아가겠습니다.",
           () => {
             this.showDismissGovernorCities();
           },
@@ -854,7 +854,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["勢力名", "武將", "據點", "首都", "外交", "外交官"],
+      header: ["세력명", "무장", "거점", "수도", "외교", "외교관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 56, align: "right" },
@@ -916,7 +916,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["勢力名", "武將", "據點", "首都", "外交", "外交官"],
+      header: ["세력명", "무장", "거점", "수도", "외교", "외교관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 56, align: "right" },
@@ -1016,7 +1016,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["勢力名", "武將", "據點", "首都", "外交", "外交官"],
+      header: ["세력명", "무장", "거점", "수도", "외교", "외교관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 56, align: "right" },
@@ -1117,7 +1117,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["勢力名", "武將", "據點", "首都", "外交", "外交官"],
+      header: ["세력명", "무장", "거점", "수도", "외교", "외교관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 56, align: "right" },
@@ -1183,7 +1183,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["據點名", "生產力", "上昇率", "防災", "城兵", "內政官"],
+      header: ["거점명", "생산력", "상승률", "방재", "수비병", "내정관"],
       cols: [
         { x: 8, w: 80, align: "left" },
         { x: 96, w: 56, align: "right" },
@@ -1264,7 +1264,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["勢力名", "武將", "據點", "首都", "外交", "外交官"],
+      header: ["세력명", "무장", "거점", "수도", "외교", "외교관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 56, align: "right" },
@@ -1279,7 +1279,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "要派遣外交官到哪個勢力？",
+        text: "외교관을 파견할 세력을 선택하십시오.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -1298,9 +1298,9 @@ export class HUD {
             lines: [
               [
                 { text: monarchName + "　", color: "#f8a800" },
-                { text: `勢力已有${envoyName}`, color: "#ffffff" },
+                { text: `세력에는 이미 ${envoyName} 님이`, color: "#ffffff" },
               ],
-              "大人前去赴任了。",
+              "부임해 있습니다.",
             ],
             onClose: () => {
               if (this.app.gamebar.listDialog) {
@@ -1325,17 +1325,17 @@ export class HUD {
     if (!f || !targetFaction) return;
 
     const getIdentity = (g) => {
-      if (g.is_player) return "軍師";
-      if (g.status === 4) return "俘虜";
-      if (g.is_monarch || g.status === 5) return "君主";
-      if (g.status === 1) return "軍團長";
-      if (g.status === 2) return "內政官";
-      if (g.status === 3) return "外交官";
+      if (g.is_player) return "군사";
+      if (g.status === 4) return "포로";
+      if (g.is_monarch || g.status === 5) return "군주";
+      if (g.status === 1) return "군단장";
+      if (g.status === 2) return "내정관";
+      if (g.status === 3) return "외교관";
       if (sc.legions?.some((L) => L.leader === g.name || L.leader === g.idx)) {
-        return "軍團長";
+        return "군단장";
       }
       if (sc.cities?.some((c) => c.governor === g.idx)) {
-        return "內政官";
+        return "내정관";
       }
       if (
         sc.envoys &&
@@ -1343,7 +1343,7 @@ export class HUD {
           (e) => e?.name === g.name?.trim() || e?.gen_idx === g.idx,
         )
       ) {
-        return "外交官";
+        return "외교관";
       }
       return "－－－";
     };
@@ -1375,7 +1375,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["武將名", "武術", "統率", "政治", "勢力", "身分"],
+      header: ["무장명", "무력", "통솔", "정치", "세력", "신분"],
       cols: [
         { x: 8, w: 80, align: "left" },
         { x: 96, w: 48, align: "right" },
@@ -1390,7 +1390,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "請選擇任命之武將。",
+        text: "임명할 무장을 선택하십시오.",
         portrait: "message_npc",
       },
       onCancel: () => {
@@ -1418,7 +1418,7 @@ export class HUD {
           this.app.gamebar.listDialog.selectedRow = ri;
         }
         // 弹出武将对话弹窗「遵命。」(3秒自动关闭或右键关闭)
-        this.app.gamebar.showGeneralMessageDialog(gen, "遵命。", () => {
+        this.app.gamebar.showGeneralMessageDialog(gen, "명에 따르겠습니다.", () => {
           this.showAppointEnvoyFactions();
         });
       },
@@ -1461,7 +1461,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["勢力名", "武將", "據點", "首都", "外交", "外交官"],
+      header: ["세력명", "무장", "거점", "수도", "외교", "외교관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 56, align: "right" },
@@ -1476,7 +1476,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "要解任哪個勢力的外交官？",
+        text: "외교관을 해임할 세력을 선택하십시오.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -1495,9 +1495,9 @@ export class HUD {
             lines: [
               [
                 { text: monarchName + "　", color: "#f8a800" },
-                { text: "勢力仍未派遣任", color: "#ffffff" },
+                { text: "세력에는 아직", color: "#ffffff" },
               ],
-              "何人．．．",
+              "파견된 외교관이 없습니다.",
             ],
             onClose: () => {
               if (this.app.gamebar.listDialog) {
@@ -1533,7 +1533,7 @@ export class HUD {
         // 弹出武将对话弹窗「遵命。」(3秒自动关闭或右键关闭)
         this.app.gamebar.showGeneralMessageDialog(
           gen || { name: envoyObj.name, portrait: 0 },
-          "遵命。",
+          "명에 따르겠습니다.",
           () => {
             this.showDismissEnvoyFactions();
           },
@@ -1577,7 +1577,7 @@ export class HUD {
 
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["據點名", "生產力", "上昇率", "防災", "城兵", "內政官"],
+      header: ["거점명", "생산력", "상승률", "방재", "수비병", "내정관"],
       cols: [
         { x: 8, w: 78, align: "left" },
         { x: 88, w: 68, align: "right" },
@@ -1643,7 +1643,7 @@ export class HUD {
     });
     this.app.gamebar.openListDialog({
       title: "",
-      header: ["勢力名", "武將", "據點", "首都", "外交", "外交官"],
+      header: ["세력명", "무장", "거점", "수도", "외교", "외교관"],
       cols: [
         { x: 8, w: 80, align: "left" },
         { x: 92, w: 54, align: "left" },
@@ -1701,14 +1701,14 @@ export class HUD {
     this._listDialog(
       "musterdlg",
       `編成 — 選將 (預備兵 ${f.troops ?? 0})`,
-      ["武將", "武力", "統率", "政治", "身分"],
+      ["무장", "武力", "통솔", "정치", "신분"],
       cands.map((g) => ({
         cells: [
           g.name,
           `${g.ability.force}`,
           `${g.ability.lead}`,
           `${g.ability.politics}`,
-          g.is_monarch ? "君主" : "武將",
+          g.is_monarch ? "군주" : "무장",
         ],
       })),
       [120, 40, 40, 40, 50],
@@ -1721,7 +1721,7 @@ export class HUD {
 
   /** 編成第二步: 兵力分配 (六職各 1000, 總和不超預備兵) */
   _musterAllocate(sc, f, gen) {
-    const DIVS = ["主將", "前鋒", "左翼", "右翼", "左備", "右備"];
+    const DIVS = ["주장", "선봉", "좌익", "우익", "좌비", "우비"];
     const dlg = h("div", {
       id: "musterdlg",
       class: "panel",
@@ -1804,7 +1804,7 @@ export class HUD {
           },
           "确定",
         ),
-        h("button", { onclick: () => dlg.remove() }, "取消"),
+        h("button", { onclick: () => dlg.remove() }, "취소"),
       ),
     );
     document.body.append(this._modal(dlg));
@@ -1812,7 +1812,7 @@ export class HUD {
 
   /** 編成第三步: 出陣确认 — 军师头像 +「遵命！各位！出陣了！」 */
   _musterConfirm(sc, f, gen, divs) {
-    const names = ["主將", "前鋒", "左翼", "右翼", "左備", "右備"];
+    const names = ["주장", "선봉", "좌익", "우익", "좌비", "우비"];
     const advGen = adv.getAdvisor(sc, f);
     const dlg = h("div", {
       id: "musterdlg",
@@ -2100,4 +2100,4 @@ export class HUD {
     beforeInstall();
     this.card.style.display = "flex";
   }
-        }
+                 }
