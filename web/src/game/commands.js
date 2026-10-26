@@ -164,7 +164,7 @@ export function checkTrustGameOver(app) {
   if (app.clock) app.clock.speed = 0;
   app.endView?.show({
     img: "grf/gameover.png",
-    caption: "信賴度歸零，軍師之職不保…（點擊返回標題）",
+    caption: "신뢰도가 0이 되어 군사의 자리를 보전하지 못했습니다… (클릭하면 타이틀로 돌아갑니다)",
   });
   return true;
 }
