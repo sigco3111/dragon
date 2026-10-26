@@ -267,7 +267,7 @@ const app = {
   },
 
   beginNewGame(i, playerFaction, advisor) {
-    if (this.trialEnded) return Promise.reject(new Error("試運行已結束，請開啟新視窗"));
+    if (this.trialEnded) return Promise.reject(new Error("시험 실행이 끝났습니다. 새 창을 여세요"));
     return this.enterGame(() => this.setScenario(i, playerFaction, advisor));
   },
 
@@ -285,9 +285,9 @@ const app = {
     const saved = this.saves?.slots.find((slot) => slot.slot === slotIdx);
     admitSavedScenario(saved, this);
     await this.enterGame(async () => {
-      if (!(await this.loadSave(slotIdx))) throw new Error("無法讀取指定存檔");
+      if (!(await this.loadSave(slotIdx))) throw new Error("지정한 저장을 불러올 수 없습니다");
     });
-    this.hud?.flashEvent?.(`讀檔：${this._lastLoadedSaveLabel}`);
+    this.hud?.flashEvent?.(`불러오기: ${this._lastLoadedSaveLabel}`);
   },
 
   setRuntimeEnabled(enabled) {
@@ -554,7 +554,7 @@ const app = {
         else if (this.clock === previousClock && previousClock)
           previousClock.hold =
             Boolean(this._scenarioAssemblyIncomplete) || previousHold;
-        this.hud?.flashEvent?.("道路資料載入失敗，無法裝配此局。");
+        this.hud?.flashEvent?.("도로 데이터를 불러오지 못해 이 판을 구성할 수 없습니다.");
         globalThis.__dragonDebug?.reportError?.(
           "strategic map navigation assets failed to load",
           error,
@@ -758,7 +758,7 @@ const app = {
     if (!this.checkFormalCurrent()) return { saved: "blocked", reason: "superseded" };
     if (this.canPersist === false) return { saved: "blocked", reason: "trial" };
     if (!this.runtimeEnabled) {
-      this.hud?.flashEvent?.("遊戲目前已暫停，無法存檔。");
+      this.hud?.flashEvent?.("게임이 일시정지 중이라 저장할 수 없습니다.");
       return { saved: "blocked" };
     }
     // A queued save belongs to its calling session, not the next scene that
@@ -804,11 +804,11 @@ const app = {
         slotIdx = sv.slot;
         this.saves = next;
       } catch (error) {
-        if (isCurrent()) this.hud?.flashEvent?.("本機存檔失敗，原存檔未變更。");
+        if (isCurrent()) this.hud?.flashEvent?.("저장에 실패했습니다. 기존 저장은 변경되지 않았습니다.");
         return { saved: "failed", error };
       }
       this.loadedSaveSlot = slotIdx;
-      this.hud?.flashEvent?.(`存檔：槽${slotIdx + 1} ${label}`);
+      this.hud?.flashEvent?.(`저장: 슬롯${slotIdx + 1} ${label}`);
       return { saved: "local" };
     };
     const queued = this._saveQueue.then(operation, operation);
@@ -1069,7 +1069,7 @@ window.addEventListener(
 window.addEventListener("beforeunload", (e) => {
   if (app.exitConfirmed || !app.gameStarted || !app.scenario) return;
   e.preventDefault();
-  const msg = "刷新或关闭会丢失当前进度，请检查是否已存档。";
+  const msg = "새로고침하거나 닫으면 진행 상황을 잃습니다. 저장했는지 확인하세요.";
   e.returnValue = msg;
   return msg;
 });
