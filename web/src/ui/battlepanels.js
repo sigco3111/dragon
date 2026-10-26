@@ -51,6 +51,9 @@ export const BATTLE_PANEL_SPECS = Object.freeze({
     copyAlign: "center",
     topAnchor: "title",
     bottomAnchor: "cards",
+    // Player-side window sits ABOVE the unit-card row, not on top of it:
+    // bottom edge = anchor.bottom + anchor.height + this gap.
+    bottomGap: 4,
   }),
 });
 

@@ -1466,7 +1466,7 @@ export class GameBar {
     const per = Math.floor(tot / 6);
     const rem = tot % 6;
     const units = DEFAULT_LEGION_UNIT_TYPES.map((type, idx) => ({
-      name: ["主將", "前鋒", "左翼", "右翼", "左備", "右備"][idx],
+      name: ["주장", "선봉", "좌익", "우익", "좌비", "우비"][idx],
       type,
       troops: per + (idx < rem ? 1 : 0),
     }));
@@ -1770,7 +1770,7 @@ export class GameBar {
       oy,
       wTiles,
       hTiles,
-      items: ["首都確認", "據點一覽"],
+      items: ["수도 확인", "거점 일람"],
       hover: -1,
     };
     this.app.view.draw();
@@ -1923,7 +1923,7 @@ export class GameBar {
       oy,
       wTiles,
       hTiles,
-      items: ["敵對提案", "停戰提案", "請求協助", "遷都", "請求君主出陣"],
+      items: ["적대 제안", "정전 제안", "협조 요청", "천　　도", "군주 출진 요청"],
       hover: -1,
     };
     this.app.view.draw();
@@ -2110,11 +2110,11 @@ export class GameBar {
       usedReasons: new Set(),
       requiredReasons,
       reasonsItems: [
-        "外交關係惡劣",
-        "我國較有利",
-        "敵正侵攻他國",
-        "敵勢力疲乏",
-        "撤回進言",
+        "외교 관계 악화",
+        "아국이 유리함",
+        "적이 타국을 침공 중",
+        "적 세력이 피로함",
+        "진언 철회",
       ],
     });
 
@@ -2237,11 +2237,11 @@ export class GameBar {
       usedReasons: new Set(),
       requiredReasons,
       reasonsItems: [
-        "對我國較不利",
-        "我正在防禦戰",
-        "敵正侵攻他國",
-        "我國力疲乏",
-        "撤回進言",
+        "아국에 불리함",
+        "방어전을 치르는 중",
+        "적이 타국을 침공 중",
+        "아국 국력이 피로함",
+        "진언 철회",
       ],
     });
 
@@ -2367,11 +2367,11 @@ export class GameBar {
       usedReasons: new Set(),
       requiredReasons,
       reasonsItems: [
-        "外交關係良好",
-        "協力國強大",
-        "侵攻對象強大",
-        "我正在防禦戰",
-        "撤回進言",
+        "외교 관계 양호",
+        "협력국이 강대함",
+        "침공 대상이 강대함",
+        "방어전을 치르는 중",
+        "진언 철회",
       ],
     });
 
@@ -2673,7 +2673,7 @@ export class GameBar {
             this.app.hud.refreshTrust();
             this.app.hud.refreshInfo?.();
             this.app.hud.flashEvent(
-              `「${p.playerFaction.monarch}」同意遷都至「${p.cityName}」！信賴度 +10`,
+              `「${p.playerFaction.monarch}」이(가) 「${p.cityName}」(으)로의 천도에 동의했습니다! 신뢰도 +10`,
             );
             const finishRelocation = () => {
               this.closeProposalAudience();
@@ -2716,7 +2716,7 @@ export class GameBar {
           this.app.hud.refreshTrust();
           this.app.hud.refreshInfo?.();
           this.app.hud.flashEvent(
-            `「${p.playerFaction.monarch}」同意遷都至「${p.cityName}」！信賴度 +10`,
+            `「${p.playerFaction.monarch}」이(가) 「${p.cityName}」(으)로의 천도에 동의했습니다! 신뢰도 +10`,
           );
           this.closeProposalAudience();
           const view = this.app.view;
@@ -2742,7 +2742,7 @@ export class GameBar {
         );
         sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
         this.app.hud.refreshTrust();
-        this.app.hud.flashEvent(`遷都據點條件欠佳！進言被訓斥駁回，信賴度 -20`);
+        this.app.hud.flashEvent(`천도 거점의 조건이 좋지 않습니다! 진언이 기각되었습니다. 신뢰도 -20`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -2835,7 +2835,7 @@ export class GameBar {
           }
           this.app.hud.refreshInfo?.();
           this.app.hud.flashEvent(
-            `「${p.monarch.name}」親征軍團出陣！駐守於「${cap.name}」。`,
+            `「${p.monarch.name}」 친정 군단이 출진했습니다! 「${cap.name}」에 주둔합니다.`,
           );
           this.closeProposalAudience();
           if (cap) {
@@ -2858,7 +2858,7 @@ export class GameBar {
           "",
           p.advName,
         );
-        this.app.hud.flashEvent(`君主目前不便出陣。`);
+        this.app.hud.flashEvent(`군주는 지금 출진할 수 없습니다.`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -2887,7 +2887,7 @@ export class GameBar {
         );
         sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
         this.app.hud.refreshTrust();
-        this.app.hud.flashEvent(`與協助國交情不足！進言被訓斥駁回，信賴度 -20`);
+        this.app.hud.flashEvent(`협조국과의 교분이 부족합니다! 진언이 기각되었습니다. 신뢰도 -20`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -2909,7 +2909,7 @@ export class GameBar {
         );
         sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
         this.app.hud.refreshTrust();
-        this.app.hud.flashEvent(`未與目標國交戰！進言被訓斥駁回，信賴度 -20`);
+        this.app.hud.flashEvent(`목표 국가와 교전 중이 아닙니다! 진언이 기각되었습니다. 신뢰도 -20`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -2932,7 +2932,7 @@ export class GameBar {
         sc.trust = Math.min(255, (sc.trust ?? 255) + 20);
         this.app.hud.refreshTrust();
         this.app.hud.flashEvent(
-          `「${p.playerFaction.monarch}」同意請求協助！信賴度 +20`,
+          `「${p.playerFaction.monarch}」이(가) 협조 요청에 동의했습니다! 신뢰도 +20`,
         );
 
         const envoyObj = sc.envoys?.[p.allyFaction.idx];
@@ -2994,7 +2994,7 @@ export class GameBar {
         );
         sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
         this.app.hud.refreshTrust();
-        this.app.hud.flashEvent(`未處於交戰狀態！進言被訓斥駁回，信賴度 -20`);
+        this.app.hud.flashEvent(`교전 상태가 아닙니다! 진언이 기각되었습니다. 신뢰도 -20`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -3016,7 +3016,7 @@ export class GameBar {
         );
         sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
         this.app.hud.refreshTrust();
-        this.app.hud.flashEvent(`進言被駁回！信賴度 -20`);
+        this.app.hud.flashEvent(`진언이 기각되었습니다! 신뢰도 -20`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -3053,7 +3053,7 @@ export class GameBar {
       sc.trust = Math.min(255, (sc.trust ?? 255) + 20);
       this.app.completePlayerWarDeclaration?.(targetFaction);
       this.app.hud.refreshTrust();
-      this.app.hud.flashEvent(`「${me.monarch}」同意開戰！信賴度 +20`);
+      this.app.hud.flashEvent(`「${me.monarch}」이(가) 개전에 동의했습니다! 신뢰도 +20`);
       this.app.view.draw();
       this._setProposalTimer(3000, () => {
         this.closeProposalAudience();
@@ -3072,7 +3072,7 @@ export class GameBar {
       );
       sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
       this.app.hud.refreshTrust();
-      this.app.hud.flashEvent(`已處於交戰狀態！進言被駁回，信賴度 -20`);
+      this.app.hud.flashEvent(`이미 교전 상태입니다! 진언이 기각되었습니다. 신뢰도 -20`);
       this.app.view.draw();
       this._setProposalTimer(3000, () => {
         this.closeProposalAudience();
@@ -3091,7 +3091,7 @@ export class GameBar {
       );
       sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
       this.app.hud.refreshTrust();
-      this.app.hud.flashEvent(`關係良好，進言被駁回！信賴度 -20`);
+      this.app.hud.flashEvent(`관계가 양호하여 진언이 기각되었습니다! 신뢰도 -20`);
       this.app.view.draw();
       this._setProposalTimer(3000, () => {
         this.closeProposalAudience();
@@ -3185,7 +3185,7 @@ export class GameBar {
         );
         sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
         this.app.hud.refreshTrust();
-        this.app.hud.flashEvent(`理由不實！進言被訓斥駁回，信賴度 -20`);
+        this.app.hud.flashEvent(`이유가 사실과 다릅니다! 진언이 기각되었습니다. 신뢰도 -20`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -3230,7 +3230,7 @@ export class GameBar {
         sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
         this.app.hud.refreshTrust();
         this.app.hud.flashEvent(
-          `「${p.playerFaction.monarch}」同意向「${p.allyName}」請求協助！信賴度 +10`,
+          `「${p.playerFaction.monarch}」이(가) 「${p.allyName}」에게 협조를 요청하는 데 동의했습니다! 신뢰도 +10`,
         );
 
         const envoyObj = sc.envoys?.[p.allyFaction.idx];
@@ -3313,7 +3313,7 @@ export class GameBar {
         );
         sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
         this.app.hud.refreshTrust();
-        this.app.hud.flashEvent(`理由不實！進言被訓斥駁回，信賴度 -20`);
+        this.app.hud.flashEvent(`이유가 사실과 다릅니다! 진언이 기각되었습니다. 신뢰도 -20`);
         this.app.view.draw();
         this._setProposalTimer(3000, () => {
           this.closeProposalAudience();
@@ -3356,7 +3356,7 @@ export class GameBar {
         sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
         this.app.hud.refreshTrust();
         this.app.hud.flashEvent(
-          `「${p.playerFaction.monarch}」同意派出停戰使者！信賴度 +10`,
+          `「${p.playerFaction.monarch}」이(가) 정전 사자 파견에 동의했습니다! 신뢰도 +10`,
         );
 
         const envoyObj = sc.envoys?.[p.targetFaction.idx];
@@ -3434,7 +3434,7 @@ export class GameBar {
       p.monarchLines = await formatTalkTokens(talkIdx, p.targetName, p.advName);
       sc.trust = Math.max(0, (sc.trust ?? 255) - 20);
       this.app.hud.refreshTrust();
-      this.app.hud.flashEvent(`理由不實！進言被訓斥駁回，信賴度 -20`);
+      this.app.hud.flashEvent(`이유가 사실과 다릅니다! 진언이 기각되었습니다. 신뢰도 -20`);
       this.app.view.draw();
       this._setProposalTimer(3000, () => {
         this.closeProposalAudience();
@@ -3470,7 +3470,7 @@ export class GameBar {
       this.app.completePlayerWarDeclaration?.(p.targetFaction);
       this.app.hud.refreshTrust();
       this.app.hud.flashEvent(
-        `「${p.playerFaction.monarch}」准許對「${p.targetName}」開戰！信賴度 +10`,
+        `「${p.playerFaction.monarch}」이(가) 「${p.targetName}」에 대한 개전을 허락했습니다! 신뢰도 +10`,
       );
       this.app.view.draw();
       this._setProposalTimer(3000, () => {
@@ -3521,7 +3521,7 @@ export class GameBar {
               this.syncClock();
               this.app.hud.buildLegend?.();
               this.app.hud.flashEvent(
-                `與「${targetName}」停戰成功！雙方恢復和平。`,
+                `「${targetName}」과(와)의 정전에 성공했습니다! 양측이 평화를 회복했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3529,7 +3529,7 @@ export class GameBar {
         } else if (outcome === 1) {
           // 支付金钱达成 (Talk 44: "與\3停戰交涉的結果，已經\7成立了。")
           clickSfx();
-          const costStr = `支付${goldRequired}金`;
+          const costStr = `${goldRequired}금 지급`;
           const step2Lines = await formatTalkTokens(
             44,
             targetName,
@@ -3551,7 +3551,7 @@ export class GameBar {
               this.app.hud.buildLegend?.();
               this.app.hud.refreshInfo?.();
               this.app.hud.flashEvent(
-                `與「${targetName}」停戰成功！支付 ${goldRequired} 金。`,
+                `「${targetName}」과(와)의 정전에 성공했습니다! ${goldRequired}금을 지급했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3565,7 +3565,7 @@ export class GameBar {
             autoClose: 3000,
             onClose: () => {
               this.syncClock();
-              this.app.hud.flashEvent(`與「${targetName}」停戰談判破裂！`);
+              this.app.hud.flashEvent(`「${targetName}」과(와)의 정전 협상이 결렬되었습니다!`);
               this.app.view.draw();
             },
           });
@@ -3785,7 +3785,7 @@ export class GameBar {
               this.syncClock();
               this.app.hud.buildLegend?.();
               this.app.hud.flashEvent(
-                `「${allyName}」同意協同進攻「${targetName}」！`,
+                `「${allyName}」이(가) 「${targetName}」 협동 공격에 동의했습니다!`,
               );
               this.app.view.draw();
             },
@@ -3793,7 +3793,7 @@ export class GameBar {
         } else if (outcome === 1) {
           // 支付金钱达成 (Talk 48: "與\3的合作交涉，的結果，已經\7達成協定。")
           clickSfx();
-          const costStr = `支付${goldRequired}金`;
+          const costStr = `${goldRequired}금 지급`;
           const step2Lines = await formatTalkTokens(
             48,
             allyName,
@@ -3816,7 +3816,7 @@ export class GameBar {
               this.app.hud.buildLegend?.();
               this.app.hud.refreshInfo?.();
               this.app.hud.flashEvent(
-                `「${allyName}」同意協同進攻「${targetName}」！支付 ${goldRequired} 金。`,
+                `「${allyName}」이(가) 「${targetName}」 협동 공격에 동의했습니다! ${goldRequired}금을 지급했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3830,7 +3830,7 @@ export class GameBar {
             autoClose: 3000,
             onClose: () => {
               this.syncClock();
-              this.app.hud.flashEvent(`與「${allyName}」的請求協助談判破裂！`);
+              this.app.hud.flashEvent(`「${allyName}」과(와)의 협조 요청 협상이 결렬되었습니다!`);
               this.app.view.draw();
             },
           });
@@ -4167,7 +4167,7 @@ export class GameBar {
         const rInnerW = rWin ? rWin.w : (rTilesW - 1) * 16;
         const rInnerH = rWin ? rWin.h : (rTilesH - 1) * 16;
 
-        const items = ["答應", "提示金額", "拒絕"];
+        const items = ["응　　함", "금액 제시", "거　　절"];
         p.reasonsRect = {
           x: rInnerX,
           y: rInnerY,
@@ -4261,13 +4261,13 @@ export class GameBar {
 
       const items =
         p.step === "incoming_diplomacy_choice"
-          ? ["無條件同意", "提供資金", "拒絕"]
+          ? ["무조건 동의", "자금 제공", "거　　절"]
           : p.reasonsItems || [
-              "外交關係惡劣",
-              "我國較有利",
-              "敵正侵攻他國",
-              "敵勢力疲乏",
-              "撤回進言",
+              "외교 관계 악화",
+              "아국이 유리함",
+              "적이 타국을 침공 중",
+              "적 세력이 피로함",
+              "진언 철회",
             ];
       p.reasonsRect = { x: rInnerX, y: rInnerY, w: rInnerW, h: rInnerH, items };
 
@@ -4659,7 +4659,7 @@ export class GameBar {
       portrait(advisor, this.app.world).catch(() => null),
       portrait(monarch, this.app.world).catch(() => null),
     ]);
-    const targetName = (target.monarch ?? "該勢力").trim();
+    const targetName = (target.monarch ?? "해당 세력").trim();
     const rawRequested = Math.max(0, message.requested | 0);
     const requested = rawRequested > 0 ? Math.max(500, rawRequested) : 0;
     const reportLines = await formatTalkTokens(
@@ -5197,12 +5197,12 @@ export class GameBar {
     // 4: 左備 (弓兵 type: 2)
     // 5: 右備 (弓兵 type: 2)
     const units = [
-      { name: "主將", type: 0, troops: 0 },
-      { name: "前鋒", type: 0, troops: 0 },
-      { name: "左翼", type: 1, troops: 0 },
-      { name: "右翼", type: 1, troops: 0 },
-      { name: "左備", type: 2, troops: 0 },
-      { name: "右備", type: 2, troops: 0 },
+      { name: "주장", type: 0, troops: 0 },
+      { name: "선봉", type: 0, troops: 0 },
+      { name: "좌익", type: 1, troops: 0 },
+      { name: "우익", type: 1, troops: 0 },
+      { name: "좌비", type: 2, troops: 0 },
+      { name: "우비", type: 2, troops: 0 },
     ];
 
     let ox, oy;
@@ -6340,7 +6340,7 @@ export class GameBar {
       ctx.fillText(f.monarch, tx, y);
       y += 22;
     } else {
-      ctx.fillText("中立", tx, y);
+      ctx.fillText("중립", tx, y);
       y += 22;
     }
 
@@ -6367,10 +6367,10 @@ export class GameBar {
       (city.sim ? city.sim.troops : city.troops) ?? city.troops ?? 0;
     const rise = ((city.sim ? city.sim.morale : city.growth) ?? 100) - 100;
     const defence = (city.sim ? city.sim.food : city.defence) ?? 0;
-    drawRow("城兵數", troops * 10);
+    drawRow("성병 수", troops * 10);
     drawRow("생산력", city.prod ?? 0);
-    drawRow("上昇值", rise, { color: rise < 0 ? "#ff4444" : "#ffffff" });
-    drawRow("防災值", defence);
+    drawRow("상승치", rise, { color: rise < 0 ? "#ff4444" : "#ffffff" });
+    drawRow("방재치", defence);
   }
 
   wheel(px, py, dy) {
@@ -6872,7 +6872,7 @@ export class GameBar {
           this.selectedSubmenu = 0;
           this.syncClock();
           this.app.hud.flashEvent(
-            `「${this.adviceMenu.items[i]}」界面還原中…（右鍵取消返回）`,
+            `「${this.adviceMenu.items[i]}」 화면 복원 중… (우클릭으로 취소)`,
           );
           this.app.view.draw();
           return true;
@@ -7585,7 +7585,7 @@ export class GameBar {
   settingsClick(i) {
     const hud = this.app.hud;
     if (this.app.canPersist === false && (i === 0 || i === 1)) {
-      hud?.flashEvent?.("草稿試運行禁止正式存讀檔。");
+      hud?.flashEvent?.("초안 시험 실행에서는 정식 저장/불러오기가 금지됩니다.");
       return;
     }
     if (i === 0) {
@@ -7599,7 +7599,7 @@ export class GameBar {
       const music = this.app.music;
       if (music) music.setType((music.type + 1) % 5);
       clickSfx(); // 原PC确认声不受CF9控制（0CDE→EB11）。
-      hud.flashEvent(`音效：${MUSIC_TYPE_LABELS[music?.type ?? 1]}`);
+      hud.flashEvent(`음향 효과: ${MUSIC_TYPE_LABELS[music?.type ?? 1]}`);
     } else if (i === 3) {
       // 戰略速度：最低速 -> 低速 -> 普通 -> 高速 -> 最高速 循环切换
       const c = this.app.clock;
@@ -7608,7 +7608,7 @@ export class GameBar {
       }
       clickSfx();
       hud.flashEvent(
-        `戰略速度：${STRATEGIC_SPEED_LABELS[this.app.clock?.strategicSpeed ?? 2]}`,
+        `전략 속도: ${STRATEGIC_SPEED_LABELS[this.app.clock?.strategicSpeed ?? 2]}`,
       );
     } else if (i === 4) {
       // 戰術速度：最低速 -> 低速 -> 普通 -> 高速 -> 最高速 循环切换
@@ -7618,7 +7618,7 @@ export class GameBar {
         TACTICAL_SPEED_FACTORS[this.app.tacticalSpeed];
       clickSfx();
       hud.flashEvent(
-        `戰術速度：${TACTICAL_SPEED_LABELS[this.app.tacticalSpeed]}`,
+        `전술 속도: ${TACTICAL_SPEED_LABELS[this.app.tacticalSpeed]}`,
       );
     } else if (i === 5) {
       // 遊戲結束：返回首页
@@ -7639,7 +7639,7 @@ export class GameBar {
     ctx.font = FONT;
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
-    const title = "系　統　選　單";
+    const title = "시　스　템　메　뉴";
     const tw = ctx.measureText(title).width;
     ctx.fillText(title, inner.x + (inner.w - tw) / 2, inner.y + 14);
 
@@ -7660,24 +7660,24 @@ export class GameBar {
     const btnX = inner.x + inner.w - btnW - 10;
 
     const labels = [
-      "資料儲存",
-      "存檔讀取",
-      "音　　效",
-      "戰略速度",
-      "戰術速度",
-      "遊戲結束",
+      "자료 저장",
+      "저장 불러오기",
+      "음향 효과",
+      "전략 속도",
+      "전술 속도",
+      "게임 종료",
     ];
 
     const c = this.app.clock;
     const stratIdx = c?.strategicSpeed ?? 2;
     const tactIdx = this.app.tacticalSpeed ?? 2;
-    const stratText = STRATEGIC_SPEED_LABELS[stratIdx] ?? "普通";
-    const tactText = TACTICAL_SPEED_LABELS[tactIdx] ?? "普通";
+    const stratText = STRATEGIC_SPEED_LABELS[stratIdx] ?? "보통";
+    const tactText = TACTICAL_SPEED_LABELS[tactIdx] ?? "보통";
 
     const musicType = this.app.music?.type ?? 1;
     const btnTexts = [
-      this.app.canPersist === false ? "停用" : "OK",
-      this.app.canPersist === false ? "停用" : "OK",
+      this.app.canPersist === false ? "사용 안 함" : "OK",
+      this.app.canPersist === false ? "사용 안 함" : "OK",
       MUSIC_TYPE_LABELS[musicType],
       stratText,
       tactText,
@@ -7829,8 +7829,8 @@ export class GameBar {
     this.exitConfirmDialog = {
       hover: -1,
       action,
-      message: "刷新或关闭会丢失当前进度，请检查是否已存档。",
-      buttons: ["确定退出", "返回游戏"],
+      message: "새로고침이나 종료 시 현재 진행이 사라집니다. 저장했는지 확인하세요.",
+      buttons: ["종료 확정", "게임으로 돌아가기"],
       defaultButton: 1,
     };
     this.syncClock();
@@ -7898,11 +7898,11 @@ export class GameBar {
     ctx.font = FONT;
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
-    const line1 = "刷新或关闭会丢失当前进度，";
+    const line1 = "새로고침이나 종료 시 현재 진행이 사라집니다,";
     const tw1 = ctx.measureText(line1).width;
     ctx.fillText(line1, inner.x + (inner.w - tw1) / 2, inner.y + 24);
 
-    const line2 = "请检查是否已存档。";
+    const line2 = "저장 여부를 확인하세요.";
     const tw2 = ctx.measureText(line2).width;
     ctx.fillText(line2, inner.x + (inner.w - tw2) / 2, inner.y + 48);
 
@@ -7931,7 +7931,7 @@ export class GameBar {
       btnY,
       btnW,
       btnH,
-      "确定退出",
+      "종료 확정",
       isHov0,
       false,
     );
@@ -7942,7 +7942,7 @@ export class GameBar {
       btnY,
       btnW,
       btnH,
-      "返回游戏",
+      "게임으로 돌아가기",
       isHov1,
       false,
     );
@@ -7994,26 +7994,26 @@ export class GameBar {
         const d = scState?.save_date || s.date;
         if (d) {
           const p = (n) => (n >= 10 ? `${n}` : ` ${n}`);
-          dateStr = `${d.year}年${p(d.month)}月${p(d.day)}日`;
+          dateStr = `${d.year}년 ${p(d.month)}월 ${p(d.day)}일`;
         } else {
-          dateStr = "184年 1月 1日";
+          dateStr = "184년 1월 1일";
         }
-        if (s.label && s.label.includes("勢力：")) {
+        if (s.label && (s.label.includes("勢力：") || s.label.includes("세력:"))) {
           infoText = s.label.trim();
         } else {
           const chNum = (s.scenario_idx ?? 0) + 1;
           const chStr =
-            ["一", "二", "三", "四", "五"][s.scenario_idx ?? 0] ?? chNum;
+            ["1", "2", "3", "4", "5"][s.scenario_idx ?? 0] ?? chNum;
           const fName =
             scState?.factions?.[scState?.player_faction]?.name ||
             scState?.rulerName ||
             "－－";
           const advName =
             scState?.player_advisor?.name || scState?.advisorName || "－－";
-          infoText = `第${chStr}章勢力：${fName}　　軍師：${advName}`;
+          infoText = `제${chStr}장 세력: ${fName}　　군사: ${advName}`;
         }
       } else {
-        infoText = "（未使用）";
+        infoText = "(미사용)";
         dateStr = "－－－－－－－－－－";
       }
       return {
@@ -8057,11 +8057,11 @@ export class GameBar {
     const sc = this.app.scenario;
     const chNum = (this.app.scenarioIdx ?? 0) + 1;
     const chStr =
-      ["一", "二", "三", "四", "五"][this.app.scenarioIdx ?? 0] ?? chNum;
+      ["1", "2", "3", "4", "5"][this.app.scenarioIdx ?? 0] ?? chNum;
     const meF = sc.factions?.[sc.player_faction];
     const rulerName = meF?.monarch || meF?.name || sc.rulerName || "－－";
     const advName = sc.player_advisor?.name || sc.advisorName || "－－";
-    const label = `第${chStr}章勢力：${rulerName.trim()}　　軍師：${advName.trim()}`;
+    const label = `제${chStr}장 세력: ${rulerName.trim()}　　군사: ${advName.trim()}`;
 
     // 关闭弹窗并返回上一级系统选单
     this.systemSaveDialog = null;
@@ -8083,11 +8083,11 @@ export class GameBar {
     ctx.font = FONT;
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
-    const line1 = "現在讀取存檔將會遺失目前遊戲進度，";
+    const line1 = "지금 저장 데이터를 불러오면 현재 진행이 사라집니다,";
     const tw1 = ctx.measureText(line1).width;
     ctx.fillText(line1, inner.x + (inner.w - tw1) / 2, inner.y + 24);
 
-    const line2 = "是否確定？";
+    const line2 = "계속하시겠습니까?";
     const tw2 = ctx.measureText(line2).width;
     ctx.fillText(line2, inner.x + (inner.w - tw2) / 2, inner.y + 48);
 
@@ -8116,7 +8116,7 @@ export class GameBar {
       btnY,
       btnW,
       btnH,
-      "確　認",
+      "확　인",
       isHov0,
       false,
     );
@@ -8127,7 +8127,7 @@ export class GameBar {
       btnY,
       btnW,
       btnH,
-      "取　消",
+      "취　소",
       isHov1,
       false,
     );
@@ -8559,7 +8559,7 @@ export class GameBar {
     const w = 120;
     const h = titleH + Math.min(rows.length, maxVisRows) * rowH;
     this.openListDialog({
-      title: "勢力一覽",
+      title: "세력 일람",
       titleBar: true,
       header: [],
       cols: [
