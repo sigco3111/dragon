@@ -18,6 +18,23 @@ function note(text) {
   if (debug.on && /[\u3400-\u9fff]/.test(text) && debug.seen.size < 800) debug.seen.add(text);
 }
 
+const HANGUL = /[\uac00-\ud7a3]/;
+// 지도 거점 라벨 등은 Noto Serif TC/PMingLiU만 지정해 한글 글리프가 없다. 바뀐 한글 이름에 한해 KR 글꼴을 앞에 붙인다.
+function withKrFont(ctx, orig, text, changed, args) {
+  if (changed && HANGUL.test(text)) {
+    const f = ctx.font;
+    if (typeof f === "string" && !f.includes("Noto Serif KR")) {
+      ctx.font = f.replace(/(px\s+)/, '$1"Noto Serif KR",');
+      try {
+        return orig.call(ctx, text, ...args);
+      } finally {
+        ctx.font = f;
+      }
+    }
+  }
+  return orig.call(ctx, text, ...args);
+}
+
 function patchCtx(proto) {
   if (!proto || proto.__koNamesPatched) return;
   proto.__koNamesPatched = true;
@@ -25,15 +42,18 @@ function patchCtx(proto) {
     const orig = proto[name];
     if (typeof orig !== "function") continue;
     proto[name] = function (text, ...rest) {
-      const t = conv(String(text ?? ""));
+      const raw = String(text ?? "");
+      const t = conv(raw);
       note(t);
-      return orig.call(this, t, ...rest);
+      return withKrFont(this, orig, t, t !== raw, rest);
     };
   }
   const measure = proto.measureText;
   if (typeof measure === "function") {
     proto.measureText = function (text) {
-      return measure.call(this, conv(String(text ?? "")));
+      const raw = String(text ?? "");
+      const t = conv(raw);
+      return withKrFont(this, measure, t, t !== raw, []);
     };
   }
 }
