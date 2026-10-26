@@ -5,12 +5,43 @@ export const KOREAN_NAMES = {"丁原":"정원","丁奉":"정봉","上人":"상�
 const KEYS = Object.keys(KOREAN_NAMES).sort((a, b) => b.length - a.length);
 const MULTI = KEYS.filter((k) => k.length > 1);
 const HAN = /[\u3400-\u9fff]/;
+// 변환된 한글 이름 뒤에 붙는 조사를 마지막 글자 받침에 맞게 고친다.
+// (템플릿이 을/이/은 등 한쪽 조사로 고정돼 있어도 이름마다 올바르게 표시된다)
+function jongseong(ch) {
+  const c = ch.charCodeAt(0);
+  return c >= 0xac00 && c <= 0xd7a3 ? (c - 0xac00) % 28 : -1;
+}
+function adjustJosa(name, tail) {
+  if (!name || !tail) return tail;
+  const jong = jongseong(name[name.length - 1]);
+  if (jong < 0) return tail;
+  const pairs =
+    jong === 0
+      ? [["을", "를"], ["이", "가"], ["은", "는"], ["과", "와"], ["아", "야"]]
+      : [["를", "을"], ["가", "이"], ["는", "은"], ["와", "과"], ["야", "아"]];
+  for (const [from, to] of pairs)
+    if (tail.startsWith(from)) return to + tail.slice(from.length);
+  if (tail.startsWith("으로")) {
+    if (jong === 0 || jong === 8) return "로" + tail.slice(2); // ㄹ 받침도 '로'
+  } else if (tail.startsWith("로") && jong !== 0 && jong !== 8) {
+    return "으로" + tail.slice(1);
+  }
+  return tail;
+}
 export function koreanDisplay(text) {
   if (typeof text !== "string" || !text || !HAN.test(text)) return text;
   const direct = KOREAN_NAMES[text];
   if (direct) return direct;
   let out = text;
-  for (const k of MULTI) if (out.includes(k)) out = out.split(k).join(KOREAN_NAMES[k]);
+  for (const k of MULTI) {
+    let pos = 0;
+    while ((pos = out.indexOf(k, pos)) !== -1) {
+      const v = KOREAN_NAMES[k];
+      const tail = adjustJosa(v, out.slice(pos + k.length));
+      out = out.slice(0, pos) + v + tail;
+      pos += v.length;
+    }
+  }
   if (out === text) return text;
   // 이름 뒤 접미(軍·城 등) 1자까지만 허용하고, 한자 문장 속에 이름만 한글로 섞이는 어색함은 피한다.
   const left = out.match(/[\u3400-\u9fff]/g);
