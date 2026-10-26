@@ -39,12 +39,12 @@ const BATTLE_SPRITE_HEIGHT = 16;
 // 对应军团原始六队槽：大将0、先锋1、左右翼2/3、左右备4/5。
 const BATTLE_CARD_GROUP_ORDER = Object.freeze([2, 4, 0, 1, 5, 3]);
 const BATTLE_CARD_ROLE_LABELS = Object.freeze([
-  "左翼",
-  "左備",
-  "大將",
-  "先鋒",
-  "右備",
-  "右翼",
+  "좌익",
+  "좌비",
+  "대장",
+  "선봉",
+  "우비",
+  "우익",
 ]);
 
 export class BattleView {
@@ -308,7 +308,7 @@ export class BattleView {
     // Do not reset scriptAccumulator here. The final A1C5 A065 has already
     // reached A0F2, so its fractional wait phase also paces the first 9FA0
     // A426→A065 frame (which may start in this same due callback).
-    this.app.hud.flashEvent("⚔ 開戰");
+    this.app.hud.flashEvent("⚔ 개전");
   }
 
   commitNativeDisplay(events) {
@@ -600,26 +600,26 @@ export class BattleView {
     )
       return;
     if (command === "wall" && (before.themeFlag & 0xff) === 0) {
-      this.setCommandHint("此戰場不能下達城壁命令。", "blocked");
+      this.setCommandHint("이 전장에서는 성벽 명령을 내릴 수 없습니다.", "blocked");
       return;
     }
     if (command === "retreat") {
-      this.setCommandHint("全軍開始退卻。", "retreat");
+      this.setCommandHint("전군이 퇴각을 시작합니다.", "retreat");
       this.updateCursor();
       this.syncBattlePanel();
       return;
     }
 
     if (command === "assault") {
-      this.setCommandHint("所選部隊向敵軍突擊。", command);
+      this.setCommandHint("선택 부대가 적군을 향해 돌격합니다.", command);
     } else if (command === "attack") {
-      this.setCommandHint("所選部隊攻擊敵軍。", command);
+      this.setCommandHint("선택 부대가 적군을 공격합니다.", command);
     } else if (command === "formation") {
-      this.setCommandHint("所選部隊按選定陣形與部署位置列陣。", command);
+      this.setCommandHint("선택 부대가 지정한 진형과 배치 위치로 진을 칩니다.", command);
     } else if (command === "wall") {
-      this.setCommandHint("所選部隊集中破壞最近城壁。", command);
+      this.setCommandHint("선택 부대가 가장 가까운 성벽 파괴에 집중합니다.", command);
     } else if (command === "defend") {
-      this.setCommandHint("所選部隊原地守陣。", command);
+      this.setCommandHint("선택 부대가 제자리에서 진을 지킵니다.", command);
     }
     this.syncBattlePanel();
   }
@@ -716,12 +716,12 @@ export class BattleView {
         ),
       );
     };
-    const atkName = this.battle.A?.leader ?? "攻方";
+    const atkName = this.battle.A?.leader ?? "공격측";
     const defName =
       this.battle.D?.leader ??
       def.find((u) => u.gen)?.gen ??
       this.battle.city?.name ??
-      "守方";
+      "수비측";
     const atkTroops = survivorsOf(this.battle, "atk");
     const defTroops = survivorsOf(this.battle, "def");
     const atkMorale = sideMorale("atk");
@@ -754,11 +754,11 @@ export class BattleView {
     };
     let operationName;
     if (this.battle.kind === "siege")
-      operationName = `${this.battle.city?.name ?? "據點"}　作戰`;
+      operationName = `${this.battle.city?.name ?? "거점"}　작전`;
     else {
       const fieldName =
-        this.battle.session.registers.mode === 2 ? "海上" : "陸上";
-      operationName = `${fieldName}　作戰`;
+        this.battle.session.registers.mode === 2 ? "해상" : "육상";
+      operationName = `${fieldName}　작전`;
     }
     const units = this.playerUnits();
     const panel = this.panelState();
@@ -800,7 +800,7 @@ export class BattleView {
 
     document.querySelector("#btitle").textContent = operationName;
     document.querySelector("#bbelligerents").textContent =
-      `${rulerBySide(playerSideName)}　對　${rulerBySide(enemySideName)}`;
+      `${rulerBySide(playerSideName)}　대　${rulerBySide(enemySideName)}`;
     document.querySelector("#batkname").textContent =
       nameBySide[playerSideName];
     document.querySelector("#bdefname").textContent = nameBySide[enemySideName];
@@ -1453,7 +1453,7 @@ export class BattleView {
       } else if (effect.kind === "damage") {
         const x = this.ox + effect.x * this.s;
         const y = this.oy + (effect.y - progress * 18) * this.s;
-        ctx.font = 'bold 12px "Noto Serif TC","PMingLiU",serif';
+        ctx.font = 'bold 12px "Noto Serif KR","Noto Serif TC","PMingLiU",serif';
         ctx.textAlign = "center";
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#160a06";
@@ -1461,11 +1461,11 @@ export class BattleView {
         ctx.fillStyle = effect.color ?? "#ff9a78";
         ctx.fillText(`-${effect.value}`, x, y);
       } else if (effect.kind === "position") {
-        const labels = { flank: "側擊", rear: "背擊", surround: "包圍" };
+        const labels = { flank: "측격", rear: "배격", surround: "포위" };
         const x = this.ox + effect.x * this.s;
         const y = this.oy + (effect.y - progress * 12) * this.s;
-        const text = labels[effect.label] ?? "夾擊";
-        ctx.font = 'bold 13px "Noto Serif TC","PMingLiU",serif';
+        const text = labels[effect.label] ?? "협격";
+        ctx.font = 'bold 13px "Noto Serif KR","Noto Serif TC","PMingLiU",serif';
         ctx.textAlign = "center";
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#241000";
@@ -1475,8 +1475,8 @@ export class BattleView {
       } else if (effect.kind === "charge" || effect.kind === "volley") {
         const x = this.ox + effect.x * this.s;
         const y = this.oy + (effect.y - progress * 12) * this.s;
-        const text = effect.kind === "charge" ? "衝鋒" : `齊射×${effect.count}`;
-        ctx.font = 'bold 13px "Noto Serif TC","PMingLiU",serif';
+        const text = effect.kind === "charge" ? "돌진" : `일제사격×${effect.count}`;
+        ctx.font = 'bold 13px "Noto Serif KR","Noto Serif TC","PMingLiU",serif';
         ctx.textAlign = "center";
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#241000";
