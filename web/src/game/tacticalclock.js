@@ -5,11 +5,11 @@
 // 0xA0F2按CFC个回调等待下一战术逻辑帧。
 
 export const TACTICAL_SPEED_LABELS = [
-  "最低速",
-  "低速",
-  "普通",
-  "高速",
-  "最高速",
+  "최저속",
+  "저속",
+  "보통",
+  "고속",
+  "최고속",
 ];
 
 export const YNSOUND_PIT_INPUT_HZ = 1193182;
