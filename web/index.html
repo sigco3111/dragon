@@ -593,7 +593,9 @@
         overflow: hidden;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
-        word-break: normal;
+        /* 한글은 공백에서만 줄바꿈(끝 음절 고립 방지). 공백 없는 중국어 fallback은
+           overflow-wrap:anywhere가 넘침 방지용으로만 분리한다. */
+        word-break: keep-all;
       }
     </style>
     <link rel="stylesheet" href="intro/styles.css" />
