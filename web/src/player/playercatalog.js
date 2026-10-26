@@ -1,12 +1,12 @@
 // Public title presentation only. The reader owns validation; this view never
 // admits a session, reads storage, navigates, or turns a missing row into deletion.
-const BUILTIN = Object.freeze({ kind: 'builtin', gameId: 'wolong-builtin', name: '卧龙传·三国制霸之计（内置）' });
+const BUILTIN = Object.freeze({ kind: 'builtin', gameId: 'wolong-builtin', name: '와룡전·삼국제패지계(기본)' });
 export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   if (typeof selectionVisible !== 'boolean' || !root?.ownerDocument || typeof root.append !== 'function' || typeof reader?.registry !== 'function')
     throw new TypeError('catalog root and validated player reader required');
   const document = root.ownerDocument;
   const make = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; };
-  const host = make('section'), notice = make('button', '通知暫不可用'), select = make('select');
+  const host = make('section'), notice = make('button', '공지를 불러올 수 없음'), select = make('select');
   host.className = 'player-catalog'; notice.type = 'button';
   notice.className = 'player-catalog-notice'; select.setAttribute('aria-label', '選擇遊戲');
   select.hidden = !selectionVisible;
@@ -19,7 +19,7 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   function options() {
     select.replaceChildren();
     for (const entry of [BUILTIN, ...entries.values()]) {
-      const option = make('option', entry.kind === 'builtin' ? entry.name : `${entry.name}（自建） ${entry.ordinal}`);
+      const option = make('option', entry.kind === 'builtin' ? entry.name : `${entry.name}(자작) ${entry.ordinal}`);
       option.value = entry.gameId; select.append(option);
     }
     select.value = entries.has(wanted) ? wanted : BUILTIN.gameId;
@@ -27,7 +27,7 @@ export function mountPlayerCatalog({ root, reader, selectionVisible = true }) {
   function paint() {
     let message = '暫無發布資訊';
     if (pending) message = '正在取得發布資訊…';
-    else if (announcementError) message = '通知暫不可用';
+    else if (announcementError) message = '공지를 불러올 수 없음';
     else if (announcements.length) message = `${announcements[0].name} ${announcements[0].ordinal}　${announcements[0].creatorAccount}`;
     notice.textContent = message;
     if (!modal) return;
