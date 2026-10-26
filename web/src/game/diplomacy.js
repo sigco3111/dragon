@@ -377,13 +377,13 @@ export function runStrategicDiplomacy(sc) {
  */
 export function relationLabel(v) {
   if (v == null || v === 0xff) return "－－";
-  if (v < 0x80) return "交戰"; // bit 7 = 0 即交战
+  if (v < 0x80) return "교전"; // bit 7 = 0 即交战
   const val = v & 0x7f;
   if (val > 100) return "－－";
   const adj = val === 100 ? 99 : val;
   const tier = Math.floor(adj / 20) + 1; // 1..5
-  const names = ["", "最惡", "險惡", "普通", "良好", "親密"];
-  return names[tier] ?? "普通";
+  const names = ["", "최악", "험악", "보통", "양호", "친밀"];
+  return names[tier] ?? "보통";
 }
 
 /** 外交标签色 (KI.EXE 0x7844: 交戰=0x0A红, 最惡=0x03深蓝, 險惡/普通/良好=0x00黑, 親密=0x05绿) */
