@@ -11,7 +11,7 @@ export function createPortraitCanvas(handle, documentRef = globalThis.document) 
   canvas.width = 128;
   canvas.height = 128;
   canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", "君主頭像");
+  canvas.setAttribute("aria-label", "군주 초상");
   // Same dimensions/pixel sampling/border as web/index.html #card img.
   Object.assign(canvas.style, {
     width: "128px", height: "128px", imageRendering: "pixelated",
