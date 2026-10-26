@@ -14,8 +14,21 @@ let table = null;
 
 async function ensureTable() {
   if (!table) {
-    const j = await loadJSON("talk.json");
-    table = j.strings;
+    // 한국어 전략 대사 오버레이: talk_ko.json은 원본 카탈로그와 별개 파일로,
+    // 없거나 누락된 레코드는 원본 중국어 대사를 그대로 사용한다.
+    const [j, ko] = await Promise.all([
+      loadJSON("talk.json"),
+      loadJSON("talk_ko.json").catch(() => null),
+    ]);
+    table = j.strings.slice();
+    const recs = ko?.records ?? null;
+    if (recs && typeof recs === "object") {
+      for (const [k, v] of Object.entries(recs)) {
+        const idx = Number(k);
+        if (Number.isInteger(idx) && idx >= 0 && idx < table.length)
+          table[idx] = v;
+      }
+    }
   }
   return table;
 }
