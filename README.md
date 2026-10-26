@@ -51,9 +51,13 @@
 
 ## 인명·지명 한글화 (2026-10-26 3차)
 
-| 세력 선택 | 무장 목록 (편성) | 세력 목록 |
+| 세력 선택 | 지도 거점 이름 | 무장 목록 (편성) |
 | --- | --- | --- |
-| ![세력 선택](docs/screenshots/3-R3-faction.png) | ![무장 목록](docs/screenshots/4-R3-generals.png) | ![세력 목록](docs/screenshots/5-R3-factions.png) |
+| ![세력 선택](docs/screenshots/3-R3-faction.png) | ![지도 거점 이름](docs/screenshots/1-R3b-map.png) | ![무장 목록](docs/screenshots/2-R3b-generals.png) |
+
+| 세력 목록 |
+| --- |
+| ![세력 목록](docs/screenshots/3-R3b-factions.png) |
 
 - 조조·유비·손책, 허창·성도·업처럼 익숙한 한국어 독음으로 **무장·거점·세력(군주)명**을 화면에 표시합니다. 한자 독음 사전으로 만들고, 樂進(악진)·郗正(극정) 등 예외 독음은 직접 보정했습니다.
 - **표시 계층 방식**입니다. `web/src/core/koreannames.js`(이름 사전)와 `koreannamespatch.js`(캔버스 글자 그리기·DOM 텍스트 치환)가 화면에 그릴 때만 이름을 바꿉니다. `data.json`과 챕터 데이터의 한자 이름, 내부 ID, 상태, 세이브, 게임 규칙은 **그대로**입니다. 이름 데이터 파일과 내부 ID는 바꾸지 않았음을 저장소에서 확인했습니다. 다만 화면 출력 함수(캔버스 글자 그리기·글자 폭 측정, DOM 텍스트)를 전역으로 가로채는 방식이라, 확인하지 못한 화면(특히 전투 화면)에서 표시 문제가 생길 수 있습니다.
