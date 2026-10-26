@@ -1350,7 +1350,7 @@ export class GameBar {
     if (blocked && notify) {
       const state = legion._retreat ? "퇴각 중" : "교전 중";
       this.app.hud?.flashEvent?.(
-        `「${legion.leader ?? "해당 군단"}」은(는) ${state}이므로 행군 명령을 바꿀 수 없습니다.`,
+        `「${koreanDisplay(legion.leader ?? "해당 군단")}」${koreanJosa(legion.leader ?? "해당 군단", "EUN_NEUN")} ${state}이므로 행군 명령을 바꿀 수 없습니다.`,
       );
       warnSfx();
     }
