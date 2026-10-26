@@ -122,7 +122,7 @@ export class HUD {
     const taxCtl = h(
       "span",
       { id: "taxctl" },
-      "稅率 ",
+      "세율 ",
       taxVal,
       h("span", { class: "tab", id: "taxdn" }, "−"),
       h("span", { class: "tab", id: "taxup" }, "＋"),
@@ -132,8 +132,8 @@ export class HUD {
       " ",
       ...spdTabs,
       h("span", { id: "trustbar" }),
-      h("span", { class: "tab", id: "askadv" }, "進言"),
-      h("span", { class: "tab", id: "savesav" }, "存檔"),
+      h("span", { class: "tab", id: "askadv" }, "건언"),
+      h("span", { class: "tab", id: "savesav" }, "저장"),
       h("span", { class: "tab", id: "sndtgl" }, "🔊"),
       taxCtl,
       h("span", { id: "settlelog" }),
@@ -187,7 +187,7 @@ export class HUD {
     const el = document.querySelector("#trustbar");
     const t = sc.trust ?? 0;
     const b = h("b", { style: `color:${t <= 32 ? "#e04a3a" : "#8fb86b"}` }, t);
-    el.replaceChildren("信賴度 ", b);
+    el.replaceChildren("신뢰도 ", b);
     document.querySelector("#taxval").textContent = (sc.tax ?? 25) + "%";
   }
 
@@ -195,7 +195,7 @@ export class HUD {
     const c = this.app.clock;
     if (!c) return;
     document.querySelector("#datestr").textContent =
-      `${c.year}年${c.month}月${c.day}日 ${String(c.hour).padStart(2, "0")}時`;
+      `${c.year}년 ${c.month}월 ${c.day}일 ${String(c.hour).padStart(2, "0")}시`;
     document
       .querySelectorAll("#clockbar .spd")
       .forEach((b, i) => b.classList.toggle("on", i === c.speed));
@@ -222,7 +222,7 @@ export class HUD {
       document.body.append(banner);
     }
     const detail = String(failure?.message ?? failure).slice(0, 220);
-    const text = `戰略處理失敗，計時已暫停（未存檔）。請由系統選單讀檔或退出。\n${detail}`;
+    const text = `전략 처리 실패로 시간이 정지되었습니다(미저장). 시스템 메뉴에서 불러오거나 종료하세요.\n${detail}`;
     if (banner.textContent !== text) banner.textContent = text;
   }
 
@@ -232,7 +232,7 @@ export class HUD {
       .sort((a, b) => b.income - a.income)
       .slice(0, 3);
     document.querySelector("#settlelog").textContent =
-      `月結算稅收TOP: ` + top.map((r) => `${r.monarch}+${r.income}`).join(" ");
+      `월 결산 세수 TOP: ` + top.map((r) => `${r.monarch}+${r.income}`).join(" ");
   }
 
   buildTabs() {
@@ -240,7 +240,7 @@ export class HUD {
     this.app.data.scenarios.forEach((raw, i) => {
       const t = document.createElement("span");
       t.className = "tab";
-      t.textContent = raw.start.year + "年";
+      t.textContent = raw.start.year + "년";
       t.onclick = () => this.app.setScenario(i);
       el.append(t);
     });
@@ -248,7 +248,7 @@ export class HUD {
 
   buildSeasons() {
     const el = document.querySelector("#seasons");
-    const names = ["春", "夏", "秋", "冬"];
+    const names = ["춘", "하", "추", "동"];
     SEASONS.forEach((s, i) => {
       const b = document.createElement("span");
       b.className = "tab";
@@ -284,17 +284,17 @@ export class HUD {
             "●",
           ),
           ` ${f.monarch} `,
-          h("span", { class: "dim" }, `(${f.n_cities}城/${f.n_generals}將)`),
+          h("span", { class: "dim" }, `(${f.n_cities}성/${f.n_generals}장)`),
         ),
       );
     }
-    lg.append(h("span", { class: "dim", style: "color:#777" }, "● 空城"));
+    lg.append(h("span", { class: "dim", style: "color:#777" }, "● 빈 성"));
   }
 
   refreshInfo() {
     const sc = this.app.scenario;
     document.querySelector("#info").textContent =
-      `${sc.name} · ${sc.cities.length}城 · ${sc.generals.length}将 · ${sc.legions.length}军团`;
+      `${sc.name} · ${sc.cities.length}성 · ${sc.generals.length}명 · ${sc.legions.length}군단`;
     document
       .querySelectorAll("#tabs .tab")
       .forEach((t, j) => t.classList.toggle("on", j === this.app.scenarioIdx));
@@ -2100,4 +2100,4 @@ export class HUD {
     beforeInstall();
     this.card.style.display = "flex";
   }
-}
+        }
