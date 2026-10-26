@@ -36,17 +36,17 @@ async function refresh() {
     }
     const cell = document.createElement('td');
     const button = document.createElement('button');
-    button.textContent = '匯出 JSON';
+    button.textContent = 'JSON 내보내기';
     button.onclick = () => run(async () => {
       const saved = await repository.get(summary.slot);
       download(await encodeSaveFile(saved, await context()), `wolong-save-${summary.slot + 1}.json`);
-      status.textContent = '已匯出經驗證的單檔備份。';
+      status.textContent = '검증된 단일 파일 백업을 내보냈습니다.';
     });
     cell.append(button);
     row.append(cell);
     rows.append(row);
   }
-  status.textContent = `${summaries.filter((entry) => entry.played).length} 個存檔；目錄讀取不載入快照正文。`;
+  status.textContent = `${summaries.filter((entry) => entry.played).length} 개의 저장. 목록만 읽으며 스냅샷 본문은 불러오지 않습니다.`;
 }
 let busy = false;
 async function run(operation) {
@@ -54,7 +54,7 @@ async function run(operation) {
   busy = true;
   document.querySelectorAll('button').forEach((button) => { button.disabled = true; });
   try { await operation(); }
-  catch (error) { status.textContent = `操作失敗，未覆蓋現有存檔：${error.message}`; }
+  catch (error) { status.textContent = `작업에 실패했습니다. 기존 저장을 덮어쓰지 않았습니다: ${error.message}`; }
   finally {
     busy = false;
     document.querySelectorAll('button').forEach((button) => { button.disabled = false; });
@@ -64,11 +64,11 @@ async function run(operation) {
 file.onchange = () => { importButton.disabled = busy || !file.files?.length; };
 importButton.onclick = () => run(async () => {
   const chosen = file.files?.[0];
-  if (!chosen || chosen.size > MAX_SAVE_FILE_BYTES) { throw new TypeError('請選擇不超過 64 MiB 的 JSON 存檔'); }
+  if (!chosen || chosen.size > MAX_SAVE_FILE_BYTES) { throw new TypeError('64 MiB 이하의 JSON 저장 파일을 선택하세요'); }
   const saved = await decodeSaveFile(await chosen.text(), await context());
   const created = await repository.add(saved);
   await refresh();
-  status.textContent = `匯入完成，另存為第 ${created.slot + 1} 檔；未啟動或替換目前遊戲。`;
+  status.textContent = `가져오기 완료. ${created.slot + 1}번 슬롯에 저장했습니다. 현재 게임을 시작하거나 바꾸지 않았습니다.`;
 });
 document.querySelector('#refresh').onclick = () => run(refresh);
 void run(refresh);
