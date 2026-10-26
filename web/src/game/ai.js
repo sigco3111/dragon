@@ -1882,7 +1882,7 @@ function finalizeFactionExtinction(app, factionIdx) {
   if (factionIdx === sc.player_faction) {
     app.endView?.show({
       img: "grf/gameover.png",
-      caption: `大業未成，${faction.monarch}軍覆滅…（點擊返回標題）`,
+      caption: `대업을 이루지 못한 채 ${faction.monarch}군이 멸망했습니다… (클릭하면 타이틀로 돌아갑니다)`,
     });
   }
   return true;
@@ -2597,7 +2597,7 @@ export function triggerNativePlayerDefeat(app, sc, deadOwner) {
     throw new RangeError("native player defeat has no UI");
   app.endView.show({
     img: "grf/gameover.png",
-    caption: `大業未成，${faction?.monarch?.trim?.() || ""}軍覆滅…（點擊返回標題）`,
+    caption: `대업을 이루지 못한 채 ${faction?.monarch?.trim?.() || ""}군이 멸망했습니다… (클릭하면 타이틀로 돌아갑니다)`,
   });
   return "player-defeated";
 }
