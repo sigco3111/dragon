@@ -1010,7 +1010,12 @@ export class BattleView {
       ["line-height", dialogue.lineHeight],
       ["name-margin", dialogue.nameMargin],
       ["top", BATTLE_PANEL_SPECS[dialogue.topAnchor].top],
-      ["bottom", BATTLE_PANEL_SPECS[dialogue.bottomAnchor].bottom],
+      [
+        "bottom",
+        BATTLE_PANEL_SPECS[dialogue.bottomAnchor].bottom +
+          (BATTLE_PANEL_SPECS[dialogue.bottomAnchor].height || 0) +
+          (dialogue.bottomGap || 0),
+      ],
     ])
       rootStyle?.setProperty?.(`--battle-dialogue-${name}`, `${value}px`);
     rootStyle?.setProperty?.(
@@ -1040,7 +1045,11 @@ export class BattleView {
         box.style.bottom = "auto";
       } else {
         box.style.top = "auto";
-        box.style.bottom = `${BATTLE_PANEL_SPECS[dialogue.bottomAnchor].bottom}px`;
+        box.style.bottom = `${
+          BATTLE_PANEL_SPECS[dialogue.bottomAnchor].bottom +
+          (BATTLE_PANEL_SPECS[dialogue.bottomAnchor].height || 0) +
+          (dialogue.bottomGap || 0)
+        }px`;
       }
     }
 
@@ -1614,4 +1623,4 @@ function makeBattleIO(view) {
     unitByte: (offset) =>
       session.pool.read8(groupAddress(activeBase, 0), offset),
   };
-  }
+}
