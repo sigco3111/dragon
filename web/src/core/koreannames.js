@@ -48,3 +48,17 @@ export function koreanDisplay(text) {
   if (left && left.length > 1) return text;
   return out;
 }
+
+// 이름(한자 원본 또는 한글 표기)에 맞는 조사를 돌려준다. 표시 이름 마지막 글자 받침 기준.
+export function koreanJosa(name, kind) {
+  const disp = koreanDisplay(String(name ?? "").trim());
+  const jong = disp ? jongseong(disp[disp.length - 1]) : -1;
+  switch (kind) {
+    case "I_GA": return jong > 0 ? "이" : "가";
+    case "EUL_REUL": return jong > 0 ? "을" : "를";
+    case "EUN_NEUN": return jong > 0 ? "은" : "는";
+    case "GWA_WA": return jong > 0 ? "과" : "와";
+    case "EURO_RO": return jong === 0 || jong === 8 ? "로" : "으로";
+    default: return "";
+  }
+}
