@@ -18,13 +18,13 @@ export function battleCellToScene(x, y, level = 0) {
   };
 }
 
-const ROLE = ["主將", "前鋒", "左翼", "右翼", "左備", "右備"];
+const ROLE = ["주장", "선봉", "좌익", "우익", "좌비", "우비"];
 
 export const TACTICAL_UNIT_TYPES = Object.freeze({
-  [LEGION_UNIT_TYPE.CAVALRY]: Object.freeze({ key: "cavalry", label: "騎" }),
-  [LEGION_UNIT_TYPE.ARCHER]: Object.freeze({ key: "archer", label: "弓" }),
-  [LEGION_UNIT_TYPE.INFANTRY]: Object.freeze({ key: "infantry", label: "步" }),
-  [LEGION_UNIT_TYPE.EMPTY]: Object.freeze({ key: "empty", label: "空" }),
+  [LEGION_UNIT_TYPE.CAVALRY]: Object.freeze({ key: "cavalry", label: "기" }),
+  [LEGION_UNIT_TYPE.ARCHER]: Object.freeze({ key: "archer", label: "궁" }),
+  [LEGION_UNIT_TYPE.INFANTRY]: Object.freeze({ key: "infantry", label: "보" }),
+  [LEGION_UNIT_TYPE.EMPTY]: Object.freeze({ key: "empty", label: "빈" }),
 });
 
 function generalOf(scenario, legion) {
@@ -56,7 +56,7 @@ function projectUnits(side, legion) {
       label:
         group.strategicIndex === 0
           ? legion.leader
-          : (ROLE[group.strategicIndex] ?? `${index + 1}軍`),
+          : (ROLE[group.strategicIndex] ?? `${index + 1}군`),
       morale: Math.max(0, Math.min(255, legion.morale ?? 0)),
       routed: false,
       gone: false,
@@ -88,7 +88,7 @@ function baseView({
     mirror,
     terrain: {
       key: kind === "siege" ? "siege" : "land",
-      label: kind === "siege" ? "攻城戰" : "野戰",
+      label: kind === "siege" ? "공성전" : "야전",
     },
     speakers: { atk: attackerGeneral ?? null, def: defenderGeneral ?? null },
     units: [...projectUnits("atk", attacker), ...projectUnits("def", defender)],
@@ -135,7 +135,7 @@ export function createSiegeProjection(
     theme: map.theme,
     mirror: false,
   });
-  view.title = `${attacker.leader}軍 ⚔ ${city.name} (${defendingLegion.leader ?? "守軍"})`;
+  view.title = `${attacker.leader}군 ⚔ ${city.name} (${defendingLegion.leader ?? "수비군"})`;
   return view;
 }
 
@@ -161,7 +161,7 @@ export function createFieldProjection(
   });
   view.fieldTerrain = fieldTerrain;
   if (fieldTerrain?.terrainClass === 9)
-    view.terrain = { key: "water", label: "水戰" };
-  view.title = `${attacker.leader}軍 ⚔ ${defender.leader}軍`;
+    view.terrain = { key: "water", label: "수전" };
+  view.title = `${attacker.leader}군 ⚔ ${defender.leader}군`;
   return view;
 }
