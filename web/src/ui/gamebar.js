@@ -4298,14 +4298,98 @@ export class GameBar {
     }
   }
 
-  /** 绘制黑底金框发言框 (左侧头像 64×64，右侧多行对白) */
+  /** 绘制黑底金框发言框 (左侧头像 64×64，右侧多行对白)
+   *  표시층 자동 줄바꿈(한글화): 상자 텍스트 폭(cw-86)을 넘는 데이터 행만
+   *  measureText 기준 그리디 랩으로 감싼다. 폭에 들어가는 행은 기존과
+   *  픽셀 동일하게 렌더링된다(데이터·문구·색상 토큰 불변).
+   *  랩 후 줄 수가 상자 높이를 넘으면 상자를 위로 키워(하단 앵커 고정)
+   *  금 테두리 침범을 막는다. */
   _drawSpeechBox(ctx, px, py, w, h, img, lines) {
     const tw = Math.ceil((w + 16) / 16);
     const th = Math.ceil((h + 16) / 16);
-    const win = this._drawWindow(ctx, px, py, tw, th, "black");
+    const cw0 = (tw - 1) * 16;
+    const ch0 = (th - 1) * 16;
+    const lineH = 18;
+    const txOff = 8 + 64 + 14;
+    const maxTextW = Math.max(40, cw0 - txOff);
+
+    // ── 행별 랩: 각 데이터 행의 폭을 재고, 넘는 행만 감싼다 (토큰 배열 지원) ──
+    const measureTok = (text, isNum) => {
+      ctx.font = isNum ? DIN : FONT;
+      return ctx.measureText(text).width;
+    };
+    const rawLines = lines == null ? [] : Array.isArray(lines) ? lines : [lines];
+    const renderLines = [];
+    for (const raw of rawLines) {
+      const frags = [];
+      if (Array.isArray(raw)) {
+        for (const token of raw) {
+          if (typeof token === "string")
+            frags.push({ text: token, color: "#ffffff", isNum: false });
+          else if (token && typeof token === "object")
+            frags.push({
+              text: String(token.text ?? ""),
+              color: token.color || "#ffffff",
+              isNum: !!token.isNum,
+            });
+        }
+      } else {
+        frags.push({ text: String(raw ?? ""), color: "#ffffff", isNum: false });
+      }
+      const lineW = frags.reduce((s, f) => s + measureTok(f.text, f.isNum), 0);
+      if (lineW <= maxTextW) {
+        renderLines.push(raw); // 기존 렌더 경로와 동일
+        continue;
+      }
+      // 그리디 랩 (토큰 내부 분할 허용, 색상/폰트 유지)
+      let curLine = [];
+      let curW = 0;
+      for (const frag of frags) {
+        let rest = frag.text;
+        while (rest) {
+          let take = 0;
+          for (let i = 1; i <= rest.length; i++) {
+            if (curW + measureTok(rest.slice(0, i), frag.isNum) > maxTextW)
+              break;
+            take = i;
+          }
+          if (take === 0) {
+            if (curLine.length) {
+              renderLines.push(curLine);
+              curLine = [];
+              curW = 0;
+              continue;
+            }
+            take = 1;
+          }
+          const piece = rest.slice(0, take);
+          curLine.push({ text: piece, color: frag.color, isNum: frag.isNum });
+          curW += measureTok(piece, frag.isNum);
+          rest = rest.slice(take);
+          if (rest) {
+            renderLines.push(curLine);
+            curLine = [];
+            curW = 0;
+          }
+        }
+      }
+      if (curLine.length) renderLines.push(curLine);
+    }
+
+    // ── 줄 수가 상자 높이를 넘으면 상자를 위로 키운다 (하단 앵커 고정) ──
+    const totalH = renderLines.length * lineH;
+    let useTh = th;
+    let usePy = py;
+    if (totalH + 8 > ch0) {
+      useTh = Math.floor((totalH + 8) / 16) + 2;
+      const grown = (useTh - 1) * 16 - ch0;
+      usePy = Math.max(8, py - grown);
+    }
+
+    const win = this._drawWindow(ctx, px, usePy, tw, useTh, "black");
     const x = win ? win.x : px + 8;
-    const y = win ? win.y : py + 8;
-    const ch = win ? win.h : (th - 1) * 16;
+    const y = win ? win.y : usePy + 8;
+    const ch = win ? win.h : (useTh - 1) * 16;
 
     // 左侧头像 64×64 (垂直居中于黑框内，避免溢出到边框)
     const imgY = y + Math.max(0, Math.floor((ch - 64) / 2));
@@ -4319,14 +4403,11 @@ export class GameBar {
     // 右侧文字
     if (!lines) return;
     ctx.textBaseline = "top";
-    const tx = x + 8 + 64 + 14;
-    const lineH = 18;
-    const rawLines = Array.isArray(lines) ? lines : [lines];
-    const totalH = rawLines.length * lineH;
+    const tx = x + txOff;
     const startY = y + Math.max(8, Math.floor((ch - totalH) / 2));
 
-    for (let li = 0; li < rawLines.length; li++) {
-      const line = rawLines[li];
+    for (let li = 0; li < renderLines.length; li++) {
+      const line = renderLines[li];
       const ly = startY + li * lineH;
       if (Array.isArray(line)) {
         let curX = tx;
