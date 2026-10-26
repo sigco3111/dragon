@@ -1,3 +1,4 @@
+import "./core/koreannamespatch.js";
 import {
   showInstanceMessage,
   startSingleInstance,
