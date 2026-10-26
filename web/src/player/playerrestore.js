@@ -56,7 +56,7 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
   }
   function failed(ticket) {
     if (closed || epoch !== ticket) return;
-    phase = 'error'; heading.textContent = '讀檔暫不可用';
+    phase = 'error'; heading.textContent = '저장 데이터를 불러올 수 없음';
     message.textContent = `資料、版本或存檔檢查未完成，沒有載入存檔。${cleared ? `已清除${cleared}個確認過期的存檔。` : '沒有刪除存檔。'}可重試；版本已變更時請返回重新選擇遊戲。`;
     rows.replaceChildren(); button('重試', () => { void refresh(); });
   }
@@ -65,11 +65,11 @@ export function mountPlayerRestore({ root, reader, selection, store, compilerRev
     if (!choices.length) rows.append(make('p', '目前沒有本機存檔。'));
     for (const choice of choices) {
       if (choice.token) button(`槽${choice.slot + 1}　${choice.label}`, () => { void choose(choice); }, choice.slot);
-      else { const line = make('p', `槽${choice.slot + 1}　不可用`); line.dataset.unavailableSlot = String(choice.slot); rows.append(line); }
+      else { const line = make('p', `슬롯${choice.slot + 1}　사용 불가`); line.dataset.unavailableSlot = String(choice.slot); rows.append(line); }
     }
     button('重新檢查', () => { void refresh(); });
-    if (choices.some(choice => !choice.token)) button('不可用存檔說明', () => {
-      phase = 'unavailable'; heading.textContent = '不可用存檔'; rows.replaceChildren();
+    if (choices.some(choice => !choice.token)) button('사용 불가 저장 설명', () => {
+      phase = 'unavailable'; heading.textContent = '사용 불가 저장'; rows.replaceChildren();
       message.textContent = '這些存檔的版本資料不足、損壞或未通過檢查，不能判定為已作廢的舊版，將保留且不載入。';
       for (const choice of choices.filter(item => !item.token)) rows.append(make('p', `槽${choice.slot + 1}　保留原存檔`));
     });
