@@ -478,7 +478,7 @@ export class HUD {
       w: GENERAL_LIST_WIDTH,
       h: 352,
       footer: {
-        text: "確認指示之武將的能力。",
+        text: "지시한 무장의 능력을 확인합니다.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -869,7 +869,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "請選擇交戰之勢力。",
+        text: "교전할 세력을 선택하세요.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -931,7 +931,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "請選擇停戰之勢力。",
+        text: "정전할 세력을 선택하세요.",
         portrait: "message_npc",
       },
       onPick: async (ri) => {
@@ -1031,7 +1031,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "請選擇協助勢力。",
+        text: "원조할 세력을 선택하세요.",
         portrait: "message_npc",
       },
       onPick: async (ri) => {
@@ -1132,7 +1132,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "請選擇協同進攻之勢力。",
+        text: "함께 공격할 세력을 선택하세요.",
         portrait: "message_npc",
       },
       onCancel: () => {
@@ -1198,7 +1198,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "請選擇遷都的對象據點。",
+        text: "천도할 대상 거점을 선택하세요.",
         portrait: "message_npc",
       },
       onPick: async (ri) => {
@@ -1592,7 +1592,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "將游標移動至指示之據點。",
+        text: "커서를 지시한 거점으로 옮기세요.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -1657,7 +1657,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "將游標移動至指示之勢力的首都據點。",
+        text: "커서를 지시한 세력의 수도 거점으로 옮기세요.",
         portrait: "message_npc",
       },
       onPick: (ri) => {
@@ -1695,13 +1695,13 @@ export class HUD {
         !busy.has(g.name),
     );
     if (!cands.length) {
-      this.flashEvent("無可用大將（皆在閑以外或已帶軍）");
+      this.flashEvent("쓸 수 있는 대장이 없습니다(재야가 아니거나 이미 군을 이끄는 중)");
       return;
     }
     this._listDialog(
       "musterdlg",
-      `編成 — 選將 (預備兵 ${f.troops ?? 0})`,
-      ["무장", "武力", "통솔", "정치", "신분"],
+      `편성 — 장수 선택 (예비병 ${f.troops ?? 0})`,
+      ["무장", "무력", "통솔", "정치", "신분"],
       cands.map((g) => ({
         cells: [
           g.name,
@@ -1743,8 +1743,8 @@ export class HUD {
         h(
           "div",
           {},
-          h("b", {}, `${gen.name} 軍編成`),
-          h("div", { style: "font-size:13px" }, `預備兵：${f.troops ?? 0}`),
+          h("b", {}, `${gen.name} 군 편성`),
+          h("div", { style: "font-size:13px" }, `예비병: ${f.troops ?? 0}`),
         ),
       ),
     );
@@ -1765,7 +1765,7 @@ export class HUD {
           "width:72px; background:#1c150c; color:#efe4c0; border:1px solid #6b5335; padding:2px 4px; text-align:right;",
       });
       inp.oninput = () => {
-        sumEl.textContent = `總兵力 ${total()}`;
+        sumEl.textContent = `총병력 ${total()}`;
       };
       inputs.push(inp);
       grid.append(
@@ -1780,7 +1780,7 @@ export class HUD {
         ),
       );
     }
-    sumEl = h("span", {}, "總兵力 6000");
+    sumEl = h("span", {}, "총병력 6000");
     dlg.append(grid, sumEl);
     dlg.append(
       h(
@@ -1791,8 +1791,8 @@ export class HUD {
           {
             onclick: () => {
               const t = total();
-              if (t < 1) return this.flashEvent("兵力分配為空");
-              if (t > (f.troops ?? 0)) return this.flashEvent("預備兵不足");
+              if (t < 1) return this.flashEvent("병력 배분이 비어 있습니다");
+              if (t > (f.troops ?? 0)) return this.flashEvent("예비병이 부족합니다");
               dlg.remove();
               this._musterConfirm(
                 sc,
@@ -1802,7 +1802,7 @@ export class HUD {
               );
             },
           },
-          "确定",
+          "확정",
         ),
         h("button", { onclick: () => dlg.remove() }, "취소"),
       ),
@@ -1810,7 +1810,7 @@ export class HUD {
     document.body.append(this._modal(dlg));
   }
 
-  /** 編成第三步: 出陣确认 — 军师头像 +「遵命！各位！出陣了！」 */
+  /** 編成第三步: 出陣确认 — 军师头像 +「알겠습니다! 모두! 출진이다!」 */
   _musterConfirm(sc, f, gen, divs) {
     const names = ["주장", "선봉", "좌익", "우익", "좌비", "우비"];
     const advGen = adv.getAdvisor(sc, f);
@@ -1838,7 +1838,7 @@ export class HUD {
           style:
             "display:flex; flex-direction:column; gap:8px; align-items:flex-start",
         },
-        h("div", {}, `「遵命！各位！出陣了！」`),
+        h("div", {}, `「알겠습니다! 모두! 출진이다!」`),
         h(
           "div",
           {
@@ -1857,7 +1857,7 @@ export class HUD {
               this.flashEvent(r.err ?? `✓ ${r.ok}`);
             },
           },
-          "出陣",
+          "출진",
         ),
       ),
     );
@@ -1888,29 +1888,29 @@ export class HUD {
       h(
         "span",
         { style: `color:${factionColorEx(this.app.scenario, f.idx)}` },
-        `${f.monarch}軍`,
+        `${f.monarch}군`,
       ),
       h("br"),
-      `開發 ${city.prod}/${city.max_prod} · 發展度 ${city.development ?? "?"}`,
+      `개발 ${city.prod}/${city.max_prod} · 발전도 ${city.development ?? "?"}`,
       h("br"),
-      `城兵 ${city.sim?.troops ?? city.troops}/${city.sim?.cap ?? city.troops_cap} · 士氣 ${city.sim?.morale ?? "?"} · 儲欉 ${city.sim?.food ?? "?"}`,
+      `성 병력 ${city.sim?.troops ?? city.troops}/${city.sim?.cap ?? city.troops_cap} · 사기 ${city.sim?.morale ?? "?"} · 비축량 ${city.sim?.food ?? "?"}`,
       h("br"),
-      `金 ${f.gold ?? 0} · 信賴度 ${sc.trust ?? "?"}`,
+      `금 ${f.gold ?? 0} · 신뢰도 ${sc.trust ?? "?"}`,
       h(
         "div",
         { style: "margin-top:6px" },
         h(
           "span",
           { class: "tab act", "data-a": "develop" },
-          `內政(${cmd.COST_DEVELOP}金)`,
+          `내정(${cmd.COST_DEVELOP}금)`,
         ),
         h(
           "span",
           { class: "tab act", "data-a": "recruit" },
-          `徵兵(${cmd.COST_RECRUIT}金)`,
+          `징병(${cmd.COST_RECRUIT}금)`,
         ),
-        h("span", { class: "tab act", "data-a": "dispatch" }, "出征"),
-        h("span", { class: "tab act", "data-a": "capital" }, "遷都"),
+        h("span", { class: "tab act", "data-a": "dispatch" }, "출정"),
+        h("span", { class: "tab act", "data-a": "capital" }, "천도"),
         h("span", { class: "tab act", "data-a": "close" }, "✕"),
       ),
     );
@@ -1936,7 +1936,7 @@ export class HUD {
           clickSfx();
           this.app.dispatching = city;
           this.showCityPanel(null);
-          this.flashEvent(`點擊目標城池出兵自${city.name}`);
+          this.flashEvent(`목표 성을 클릭하면 ${city.name}에서 출병합니다`);
         }
       };
     });
@@ -1961,14 +1961,14 @@ export class HUD {
             { style: `color:${factionColorEx(this.app.scenario, f.idx)}` },
             f.monarch,
           )
-        : h("span", { class: "dim" }, "空城"),
+        : h("span", { class: "dim" }, "빈 성"),
       h("br"),
-      `开发 ${city.prod}/${city.max_prod} · 防灾 ${city.defence} · 兵 ${city.troops}千`,
+      `개발 ${city.prod}/${city.max_prod} · 방재 ${city.defence} · 병 ${city.troops}천`,
     );
     if (city.sim)
       this.tip.append(
         h("br"),
-        `士气 ${city.sim.morale} · 兵力 ${city.sim.troops}/${city.sim.cap} · 储粮 ${city.sim.food}`,
+        `사기 ${city.sim.morale} · 병력 ${city.sim.troops}/${city.sim.cap} · 비축량 ${city.sim.food}`,
       );
   }
 
@@ -2082,13 +2082,13 @@ export class HUD {
           f.monarch,
         ),
         h("br"),
-        `都城 ${cap ? cap.name : "?"} · ${f.n_cities}城 ${f.n_generals}将`,
+        `도성 ${cap ? cap.name : "?"} · ${f.n_cities}성 ${f.n_generals}장`,
         h("br"),
-        h("span", { class: "dim" }, "金"),
+        h("span", { class: "dim" }, "금"),
         ` ${f.gold ?? f.money} `,
-        h("span", { class: "dim" }, "粮"),
+        h("span", { class: "dim" }, "량"),
         ` ${f.food ?? 0} `,
-        h("span", { class: "dim" }, "兵"),
+        h("span", { class: "dim" }, "병"),
         ` ${f.troops ?? 0}`,
         quote
           ? h("div", { style: "color:#fd5;margin-top:2px" }, `「${quote}」`)
