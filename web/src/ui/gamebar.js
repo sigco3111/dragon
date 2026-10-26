@@ -11,6 +11,7 @@
 //     点击导航大地图, 遇袭城点闪烁+警示音
 //   - 时钟联动: 仅模态弹窗(進言/列表/存读档)打开时冻结计时, 菜单条/悬停不影响
 import { loadImage, portrait, portraitURL, hasPortraitOverride } from "../core/assets.js";
+import { koreanDisplay, koreanJosa } from "../core/koreannames.js";
 import { mapPanelLayout, insidePanel } from "./mappanellayout.js";
 // M1 自动小地图：统一正逆变换（实际地图矩形，留边不导航），不再各处手写 208/6144 常量。
 const MINIMAP_WORLD = Object.freeze({ width: 384, height: 256, tileSize: 16 });
@@ -1536,7 +1537,7 @@ export class GameBar {
     if (v) {
       promptText = "우클릭하면 돌아갑니다.";
     } else if (m.step === "choose_order" && m.targetCity) {
-      promptText = `${m.targetCity.name.trim()}(으)로 이동합니다. 지휘 방식을 선택하십시오.`;
+      promptText = `${koreanDisplay(m.targetCity.name.trim())}${koreanJosa(m.targetCity.name.trim(), "EURO_RO")} 이동합니다. 지휘 방식을 선택하십시오.`;
     } else {
       promptText = "행군 목표 거점을 선택하십시오.";
     }
@@ -2673,7 +2674,7 @@ export class GameBar {
             this.app.hud.refreshTrust();
             this.app.hud.refreshInfo?.();
             this.app.hud.flashEvent(
-              `「${p.playerFaction.monarch}」이(가) 「${p.cityName}」(으)로의 천도에 동의했습니다! 신뢰도 +10`,
+              `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 「${koreanDisplay(p.cityName)}」${koreanJosa(p.cityName, "EURO_RO")}의 천도에 동의했습니다! 신뢰도 +10`,
             );
             const finishRelocation = () => {
               this.closeProposalAudience();
@@ -2716,7 +2717,7 @@ export class GameBar {
           this.app.hud.refreshTrust();
           this.app.hud.refreshInfo?.();
           this.app.hud.flashEvent(
-            `「${p.playerFaction.monarch}」이(가) 「${p.cityName}」(으)로의 천도에 동의했습니다! 신뢰도 +10`,
+            `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 「${koreanDisplay(p.cityName)}」${koreanJosa(p.cityName, "EURO_RO")}의 천도에 동의했습니다! 신뢰도 +10`,
           );
           this.closeProposalAudience();
           const view = this.app.view;
@@ -6926,13 +6927,13 @@ export class GameBar {
               // 戰鬥指揮 (玩家战术指挥)
               if (!this.assignMarchOrder(L, targetCity, false)) return true;
               this.app.hud?.flashEvent?.(
-                `「${L.leader}」군단이 「${targetCity.name.trim()}」(으)로 출발합니다.`,
+                `「${koreanDisplay(L.leader)}」군단이 「${koreanDisplay(targetCity.name.trim())}」${koreanJosa(targetCity.name.trim(), "EURO_RO")} 출발합니다.`,
               );
             } else if (ci === 1) {
               // 委任 (AI自主指挥)
               if (!this.assignMarchOrder(L, targetCity, true)) return true;
               this.app.hud?.flashEvent?.(
-                `「${L.leader}」군단이 위임 상태로 「${targetCity.name.trim()}」(으)로 진군합니다.`,
+                `「${koreanDisplay(L.leader)}」군단이 위임 상태로 「${koreanDisplay(targetCity.name.trim())}」${koreanJosa(targetCity.name.trim(), "EURO_RO")} 진군합니다.`,
               );
             } else if (ci === 2) {
               // 解體：无论当前驻点，均先写状态11并沿道路返首都；
