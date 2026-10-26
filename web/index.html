@@ -685,7 +685,7 @@
         <canvas class="battle-window-frame" data-battle-panel="dialogue" width="1" height="1" aria-hidden="true"></canvas>
         <img id="bdialogue-atk-face" alt="" />
         <div class="battle-dialogue-copy">
-          <div id="bdialogue-atk-name" class="battle-dialogue-name">攻方</div>
+          <div id="bdialogue-atk-name" class="battle-dialogue-name">공격측</div>
           <div id="bdialogue-atk-text" class="battle-dialogue-text">－－－</div>
         </div>
       </div>
@@ -693,7 +693,7 @@
         <canvas class="battle-window-frame" data-battle-panel="dialogue" width="1" height="1" aria-hidden="true"></canvas>
         <img id="bdialogue-def-face" alt="" />
         <div class="battle-dialogue-copy">
-          <div id="bdialogue-def-name" class="battle-dialogue-name">守方</div>
+          <div id="bdialogue-def-name" class="battle-dialogue-name">수비측</div>
           <div id="bdialogue-def-text" class="battle-dialogue-text">－－－</div>
         </div>
       </div>
@@ -709,13 +709,13 @@
         <div class="battle-enemy-window battle-floating-window">
           <canvas class="battle-window-frame" data-battle-panel="enemy" data-window-cols="12" data-window-rows="7" width="192" height="112" aria-hidden="true"></canvas>
           <div class="battle-banner-row battle-banner-enemy">
-            <span id="bdefname" class="battle-banner-name">守方</span>
+            <span id="bdefname" class="battle-banner-name">수비측</span>
           </div>
           <div class="battle-stats-row def">
-            <div class="battle-stat-line"><span>兵力</span><span id="bdeftroops" class="battle-stat-number">0</span></div>
-            <div class="battle-stat-line"><span>士氣</span><span id="bdefmorale" class="battle-stat-number">0</span></div>
+            <div class="battle-stat-line"><span>병력</span><span id="bdeftroops" class="battle-stat-number">0</span></div>
+            <div class="battle-stat-line"><span>사기</span><span id="bdefmorale" class="battle-stat-number">0</span></div>
           </div>
-          <div class="battle-side-progress enemy" aria-label="敵軍兵力與士氣">
+          <div class="battle-side-progress enemy" aria-label="적군 병력과 사기">
             <div class="battle-side-progress-track"><div id="bdef-troops-fill" class="battle-side-progress-fill troops"></div></div>
             <div class="battle-side-progress-track"><div id="bdef-morale-fill" class="battle-side-progress-fill morale"></div></div>
           </div>
@@ -724,58 +724,58 @@
         <div class="battle-player-window battle-floating-window">
           <canvas class="battle-window-frame" data-battle-panel="player" data-window-cols="12" data-window-rows="18" width="192" height="288" aria-hidden="true"></canvas>
           <div class="battle-banner-row battle-banner-player">
-            <span id="batkname" class="battle-banner-name">攻方</span>
+            <span id="batkname" class="battle-banner-name">공격측</span>
           </div>
           <div class="battle-stats-row atk">
-            <div class="battle-stat-line"><span>兵力</span><span id="batktroops" class="battle-stat-number">0</span></div>
-            <div class="battle-stat-line"><span>士氣</span><span id="batkmorale" class="battle-stat-number">0</span></div>
+            <div class="battle-stat-line"><span>병력</span><span id="batktroops" class="battle-stat-number">0</span></div>
+            <div class="battle-stat-line"><span>사기</span><span id="batkmorale" class="battle-stat-number">0</span></div>
           </div>
-          <div class="battle-side-progress player" aria-label="我軍兵力與士氣">
+          <div class="battle-side-progress player" aria-label="아군 병력과 사기">
             <div class="battle-side-progress-track"><div id="batk-troops-fill" class="battle-side-progress-fill troops"></div></div>
             <div class="battle-side-progress-track"><div id="batk-morale-fill" class="battle-side-progress-fill morale"></div></div>
           </div>
 
         <!-- C863注册整块ID3；C11A在块内细分16种阵形，不自动发命令0。 -->
         <div class="battle-symbols-grid">
-          <button class="battle-symbol-btn" data-formation="0" type="button" aria-label="陣形 1" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="1" type="button" aria-label="陣形 2" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="2" type="button" aria-label="陣形 3" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="3" type="button" aria-label="陣形 4" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="4" type="button" aria-label="陣形 5" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="5" type="button" aria-label="陣形 6" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="6" type="button" aria-label="陣形 7" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="7" type="button" aria-label="陣形 8" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="8" type="button" aria-label="陣形 9" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="9" type="button" aria-label="陣形 10" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="10" type="button" aria-label="陣形 11" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="11" type="button" aria-label="陣形 12" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="12" type="button" aria-label="陣形 13" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="13" type="button" aria-label="陣形 14" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="14" type="button" aria-label="陣形 15" aria-pressed="false"></button>
-          <button class="battle-symbol-btn" data-formation="15" type="button" aria-label="陣形 16" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="0" type="button" aria-label="진형 1" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="1" type="button" aria-label="진형 2" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="2" type="button" aria-label="진형 3" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="3" type="button" aria-label="진형 4" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="4" type="button" aria-label="진형 5" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="5" type="button" aria-label="진형 6" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="6" type="button" aria-label="진형 7" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="7" type="button" aria-label="진형 8" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="8" type="button" aria-label="진형 9" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="9" type="button" aria-label="진형 10" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="10" type="button" aria-label="진형 11" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="11" type="button" aria-label="진형 12" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="12" type="button" aria-label="진형 13" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="13" type="button" aria-label="진형 14" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="14" type="button" aria-label="진형 15" aria-pressed="false"></button>
+          <button class="battle-symbol-btn" data-formation="15" type="button" aria-label="진형 16" aria-pressed="false"></button>
         </div>
 
         <!-- 6 个战术命令按钮 + 阵形预览框 -->
         <div class="battle-command-section">
           <div class="battle-cmd-btn-column">
-            <button id="bassault" class="battle-cmd-img-btn" type="button" title="突擊">突擊</button>
-            <button id="battack" class="battle-cmd-img-btn" type="button" title="攻擊">攻擊</button>
-            <button id="bformation" class="battle-cmd-img-btn" type="button" title="陣形">陣形</button>
-            <button id="bwall" class="battle-cmd-img-btn" type="button" title="城壁">城壁</button>
-            <button id="bdefend" class="battle-cmd-img-btn" type="button" title="守陣">守陣</button>
-            <button id="bretreat" class="battle-cmd-img-btn" type="button" title="退卻">退卻</button>
+            <button id="bassault" class="battle-cmd-img-btn" type="button" title="돌격">돌격</button>
+            <button id="battack" class="battle-cmd-img-btn" type="button" title="공격">공격</button>
+            <button id="bformation" class="battle-cmd-img-btn" type="button" title="진형">진형</button>
+            <button id="bwall" class="battle-cmd-img-btn" type="button" title="성벽">성벽</button>
+            <button id="bdefend" class="battle-cmd-img-btn" type="button" title="수진">수진</button>
+            <button id="bretreat" class="battle-cmd-img-btn" type="button" title="퇴각">퇴각</button>
           </div>
-          <div class="battle-formation-stone" role="group" aria-label="部署位置">
-            <button class="battle-deployment-btn" data-base-x="48" type="button" aria-label="部署 X48" aria-pressed="false"></button>
-            <button class="battle-deployment-btn" data-base-x="28" type="button" aria-label="部署 X28" aria-pressed="false"></button>
-            <button class="battle-deployment-btn" data-base-x="5" type="button" aria-label="部署 X5" aria-pressed="false"></button>
+          <div class="battle-formation-stone" role="group" aria-label="배치 위치">
+            <button class="battle-deployment-btn" data-base-x="48" type="button" aria-label="배치 X48" aria-pressed="false"></button>
+            <button class="battle-deployment-btn" data-base-x="28" type="button" aria-label="배치 X28" aria-pressed="false"></button>
+            <button class="battle-deployment-btn" data-base-x="5" type="button" aria-label="배치 X5" aria-pressed="false"></button>
           </div>
         </div>
 
         </div>
 
         <!-- 命令反馈只供辅助技术读取，不占据画面。 -->
-        <div id="bcommandhint" aria-live="polite">選擇部隊後下達命令。</div>
+        <div id="bcommandhint" aria-live="polite">부대를 선택한 뒤 명령을 내리십시오.</div>
       </div>
     </div>
 
@@ -783,37 +783,37 @@
     <div id="battle-bottom-bar">
       <div id="bunits" class="battle-bottom-inner">
         <button id="bunit0" class="battle-unit-card" data-index="0" type="button" aria-pressed="false">
-          <span class="battle-card-role-label">左翼</span>
+          <span class="battle-card-role-label">좌익</span>
           <span class="battle-card-unit-icon" data-unit-type="infantry"></span>
           <span class="battle-card-status" aria-hidden="true"></span>
           <span class="battle-card-troops-track" aria-hidden="true"><span class="battle-card-troops-fill"></span></span>
         </button>
         <button id="bunit1" class="battle-unit-card" data-index="1" type="button" aria-pressed="false">
-          <span class="battle-card-role-label">左備</span>
+          <span class="battle-card-role-label">좌비</span>
           <span class="battle-card-unit-icon" data-unit-type="archer"></span>
           <span class="battle-card-status" aria-hidden="true"></span>
           <span class="battle-card-troops-track" aria-hidden="true"><span class="battle-card-troops-fill"></span></span>
         </button>
         <button id="bunit2" class="battle-unit-card" data-index="2" type="button" aria-pressed="false">
-          <span class="battle-card-role-label">大將</span>
+          <span class="battle-card-role-label">대장</span>
           <span class="battle-card-unit-icon" data-unit-type="cavalry"></span>
           <span class="battle-card-status" aria-hidden="true"></span>
           <span class="battle-card-troops-track" aria-hidden="true"><span class="battle-card-troops-fill"></span></span>
         </button>
         <button id="bunit3" class="battle-unit-card" data-index="3" type="button" aria-pressed="false">
-          <span class="battle-card-role-label">先鋒</span>
+          <span class="battle-card-role-label">선봉</span>
           <span class="battle-card-unit-icon" data-unit-type="cavalry"></span>
           <span class="battle-card-status" aria-hidden="true"></span>
           <span class="battle-card-troops-track" aria-hidden="true"><span class="battle-card-troops-fill"></span></span>
         </button>
         <button id="bunit4" class="battle-unit-card" data-index="4" type="button" aria-pressed="false">
-          <span class="battle-card-role-label">右備</span>
+          <span class="battle-card-role-label">우비</span>
           <span class="battle-card-unit-icon" data-unit-type="archer"></span>
           <span class="battle-card-status" aria-hidden="true"></span>
           <span class="battle-card-troops-track" aria-hidden="true"><span class="battle-card-troops-fill"></span></span>
         </button>
         <button id="bunit5" class="battle-unit-card" data-index="5" type="button" aria-pressed="false">
-          <span class="battle-card-role-label">右翼</span>
+          <span class="battle-card-role-label">우익</span>
           <span class="battle-card-unit-icon" data-unit-type="infantry"></span>
           <span class="battle-card-status" aria-hidden="true"></span>
           <span class="battle-card-troops-track" aria-hidden="true"><span class="battle-card-troops-fill"></span></span>
