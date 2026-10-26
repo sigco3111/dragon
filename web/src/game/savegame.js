@@ -69,7 +69,7 @@ function assertSnapshotSafe(app) {
 // reconstruct missing old state. Rejection itself does not write any save.
 export function restoreSnapshotState(saved) {
   if (saved?.state?.legionPhaseVersion !== LEGION_PHASE_VERSION) {
-    throw new Error("此為舊版 AI 存檔，已原樣保留；修正版請從新遊戲開始。");
+    throw new Error("구버전 AI 저장으로, 원래 상태 그대로 보존했습니다. 수정본은 새 게임에서 시작하세요.");
   }
   let state;
   try {
@@ -94,7 +94,7 @@ export function restoreSnapshotState(saved) {
     }
     assertLegionPhaseState(state);
   } catch (cause) {
-    throw new Error("存檔的軍團調度資料不完整或已損壞，原存檔未變更。", {
+    throw new Error("저장의 군단 스케줄 데이터가 불완전하거나 손상되었습니다. 원래 저장은 변경하지 않았습니다.", {
       cause,
     });
   }
