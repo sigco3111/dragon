@@ -27,10 +27,10 @@ try {
   f.query.matches = true;
   for (const fn of [...f.listeners]) fn({ matches: true });
   assert.equal(f.listeners.size, 0);
-  assert.equal(f.nodes.size, 3);
+  assert.equal(f.nodes.size, 4);
   const root = f.nodes.get('#mobilecontrols');
   assert.equal(attachMobileControls({}, f.env), root);
-  assert.equal(f.nodes.size, 3);
+  assert.equal(f.nodes.size, 4);
   const direct = fixture(true);
   assert.ok(attachMobileControls({}, direct.env));
   assert.equal(direct.listeners.size, 0);
