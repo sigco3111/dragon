@@ -1837,3 +1837,21 @@ test("real28BF surviving neutral defender uses0603; FF/shortcut return versus mi
     }
   }
 });
+
+test("42AB native diplomacy preserves hostile/peace sign for owner20 outside declared prefix (live 184-7-19 freeze)", async () => {
+  for (const diplomacy of [10, 255]) {
+    const f = await fixture({
+      legion: soldier({faction: 20}),
+      change: (raw) => {
+        raw.cities[1].faction = 2;
+        raw.diplomacy[20][2] = diplomacy;
+      },
+    });
+    assert.equal(f.sc.diplomacy[20], undefined);
+    assert.equal(f.sc.nativeDiplomacyMatrix.rows[20][2], diplomacy);
+    slot(f);
+    assert.equal(f.app._strategicBattleFailure, undefined);
+    assert.equal(f.A.roadStride, diplomacy >= 128 ? -4 : 4);
+    assert.equal(f.A.x, diplomacy >= 128 ? 4 : 6);
+  }
+});
