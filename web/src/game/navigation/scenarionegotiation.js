@@ -29,7 +29,7 @@ import {
   originalBeginTruceEvent3262,
   originalCommitTruceEvent3297,
 } from "./originaltruceconsumer.js";
-import { describeMessageState } from "./scenariowarconsumer.js";
+import { describeMessageState, readScenarioFactionActivity351A } from "./scenariowarconsumer.js";
 
 // 3DC9 罚则 TALK 台词选择器（KI.EXE 实锤）：借位（信赖不足扣 30）时 CX 从
 // 默认 0x1A5(TALK[421] 空串) 改为 0x19E，经 075B 展开为 470+君主个性
@@ -155,7 +155,7 @@ export function createNegotiationIo(sc, rng) {
     missing(`general read ${offset}`);
   };
   return {
-    readFactionAttr: (index) => byte(own(factionAt(index), "attr"), "F00"),
+    readFactionAttr: (index) => byte(readScenarioFactionActivity351A(sc, index), "F00"),
     readFactionTarget: (index) => {
       const value = own(factionAt(index), "target_faction");
       return value === null ? 0xff : byte(value, "F19");
