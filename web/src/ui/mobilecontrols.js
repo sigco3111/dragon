@@ -24,9 +24,10 @@ export function attachMobileControls(app, env = {}) {
   back.type = "button";
   back.id = "mobilecontrols-back";
   back.textContent = "뒤로";
-  // 터치 목표 최소 44px. 게임 표면(640px 논리 폭)이 축소 표시돼도 누를 수 있는 크기.
+  // 게임 표면(논리 640px 폭)이 390px 실기기에서 ~0.61배로 축소 표시되므로,
+  // 실측치 기준 터치 목표를 확보하려면 CSS 크기를 크게 잡는다 (76px -> 실기기 ~46px).
   back.style.cssText =
-    "min-width:48px;min-height:44px;padding:8px 12px;font-size:16px;" +
+    "min-width:76px;min-height:60px;padding:10px 14px;font-size:20px;" +
     "background:rgba(20,16,8,0.85);color:#f0d8a0;border:1px solid #a08040;" +
     "border-radius:4px;touch-action:manipulation;";
   back.addEventListener("click", () => {
