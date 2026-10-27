@@ -14,7 +14,7 @@ import {
 import { isPlayerAdvisorGeneral, playerFaction } from "./playerqueries.js";
 import { cityRawBytes, factionRawByte } from "./legacyrecords.js";
 import { countLegionActivation, countLegionRemoval } from "./legioncounts.js";
-import { hasNativeFactionSlots } from "./nativefactions.js";
+import { hasNativeFactionSlots, nativeFactionAt } from "./nativefactions.js";
 import { hasNativeStrategicEventWheel } from "./nativeevents.js";
 import {
   countNativeAliveFactions,
@@ -5195,8 +5195,17 @@ function settleOriginalEnteredLegionDaily(sc, legion) {
   const cost = edge ? (troops >>> 1) + (troops >>> 2) : (troops >>> 5) + 1;
   const factionAt = (instruction) => {
     const owner = originalDailyUnsigned(legion.faction, 255, instruction);
-    const faction =
-      owner < 24 && sc.factions.find((item) => item.idx === owner);
+    // DOS reads the fixed 22-slot faction table blindly (same rule as
+    // originalcity.js factionAt 4117/3FBF). The named view carries only the
+    // declared factions, so a legion owned by a native slot 0..21 outside it
+    // reads that slot instead of freezing the clock (live 184-6-8, 262B).
+    let faction = owner < 24 && sc.factions.find((item) => item.idx === owner);
+    if (!faction && owner < 22 && hasNativeFactionSlots(sc)) {
+      faction = nativeFactionAt(sc, owner, instruction);
+      const hits = (globalThis.__dragonBranchHits ??= {});
+      const key = `native-faction-fallback@daily:${instruction}`;
+      hits[key] = (hits[key] ?? 0) + 1;
+    }
     if (!faction)
       throw new RangeError(
         `Uncovered native faction address at ${instruction}`,
