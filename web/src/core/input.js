@@ -6,6 +6,9 @@ export function attachInput(view, { onHover, onSelect, uiHit, onWheel }) {
   window.addEventListener(
     "wheel",
     (e) => {
+      // DOM 보조 목록/하단 메뉴는 브라우저 기본 스크롤을 사용한다.
+      // 전략 canvas의 wheel만 기존 목록 경로로 보낸다.
+      if (e.target?.closest?.("#mobilecontrols-list, #mobilecontrols-menubar")) return;
       e.preventDefault();
       onWheel?.(e);
     },
