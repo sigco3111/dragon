@@ -481,6 +481,19 @@ test("43AF gates, actual DI diplomacy/cache aliases, stale raw ignored, exactly 
   slot(low);
   assert.equal(low.A.commandState, 5);
   assert.equal(low.A.moveDelay, 3);
+  // City 44..47 → 43D3 reads faction slots 22/23 (0x580..0x5FF): static
+  // records in the 24-slot state region (re-notes-custom-data.md), all-zero
+  // in official-chapter dumps, no known writer crosses slot 22
+  // (re-notes-ai-diplomacy §39; scenariowarconsumer.aliasStateByte models
+  // the same range as 0). Read 0 → skip RNG; must not throw past the
+  // 22-slot native table (2026-10-27 live clock freeze, city 45 arrival).
+  for (const node of [44, 45, 46, 47]) {
+    const z = await fixture({ node, command: 5 });
+    slot(z);
+    assert.equal(z.app._strategicBattleFailure, undefined);
+    assert.equal(z.A.commandState, 5);
+    assert.equal(z.A.moveDelay, 3);
+  }
 });
 
 test("4300 ordered short circuits and interception BX/DI aliases never balance occupancy", async () => {
