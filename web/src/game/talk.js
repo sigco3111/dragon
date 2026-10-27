@@ -9,6 +9,7 @@
 //       else -> 水戰 (574..581)
 //   - 选句偏移: SINARIO.DAT 武将 byte 0x1E (talk_idx, 0..7), 回退 gen.idx % 8
 import { loadJSON } from "../core/assets.js";
+import { adjustJosa, koreanDisplay } from "../core/koreannames.js";
 
 let table = null;
 
@@ -227,7 +228,7 @@ export async function formatTalkTokens(
           }
           if (val) {
             const isNum = tag === "7" || /^\d+$/.test(val);
-            segs.push({ text: val, color: col, isNum });
+            segs.push({ text: val, color: col, isNum, ph: !isNum });
           }
           i += 2;
           continue;
@@ -238,6 +239,15 @@ export async function formatTalkTokens(
     }
     if (cur) {
       segs.push({ text: cur, color: "#ffffff" });
+    }
+    // 한국어 조사 교정: 이름 치환 뒤에 오는 리터럴의 선두 조사를 표시 이름
+    // 마지막 글자 받침에 맞춘다 (예: "조조이"→"조조가", "장판로"→"장판으로").
+    for (let k = 0; k + 1 < segs.length; k++) {
+      const ph = segs[k];
+      const next = segs[k + 1];
+      if (!ph?.ph || typeof next?.text !== "string") continue;
+      const fixed = adjustJosa(koreanDisplay(ph.text), next.text);
+      if (fixed !== next.text) next.text = fixed;
     }
     return segs;
   });
