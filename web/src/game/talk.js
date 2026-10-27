@@ -8,7 +8,7 @@
 //       field >= naval -> 野戰 (566..573)
 //       else -> 水戰 (574..581)
 //   - 选句偏移: SINARIO.DAT 武将 byte 0x1E (talk_idx, 0..7), 回退 gen.idx % 8
-import { loadJSON } from "../core/assets.js";
+import { loadJSON, loadOptionalJSONWithRetry } from "../core/assets.js";
 import { adjustJosa, koreanDisplay } from "../core/koreannames.js";
 
 let table = null;
@@ -19,17 +19,20 @@ async function ensureTable() {
     // 없거나 누락된 레코드는 원본 중국어 대사를 그대로 사용한다.
     const [j, ko] = await Promise.all([
       loadJSON("talk.json"),
-      loadJSON("talk_ko.json").catch(() => null),
+      loadOptionalJSONWithRetry("talk_ko.json"),
     ]);
-    table = j.strings.slice();
+    const merged = j.strings.slice();
     const recs = ko?.records ?? null;
     if (recs && typeof recs === "object") {
       for (const [k, v] of Object.entries(recs)) {
         const idx = Number(k);
-        if (Number.isInteger(idx) && idx >= 0 && idx < table.length)
-          table[idx] = v;
+        if (Number.isInteger(idx) && idx >= 0 && idx < merged.length)
+          merged[idx] = v;
       }
     }
+    // Do not permanently cache a fallback caused by an offline overlay.
+    if (!ko) return merged;
+    table = merged;
   }
   return table;
 }
