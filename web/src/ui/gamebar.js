@@ -3633,10 +3633,11 @@ export class GameBar {
   enqueueIncomingDiplomacyRequest(payload) {
     if (!payload?.requesterFaction || !payload?.result) return;
     this._strategicMessageQueue.push({
-      type: "incoming-diplomacy",
       ...payload,
-    });
-    this._drainStrategicMessages();
+    
+      diplomacyType: payload.type,
+    
+ type: "incoming-diplomacy",});    this._drainStrategicMessages();
   }
 
   async _finishIncomingDiplomacy(choice, amount = 0) {
@@ -5080,8 +5081,7 @@ export class GameBar {
     this.syncClock();
     if (message.type === "incoming-diplomacy") {
       const opened = await this._showIncomingDiplomacyRequest({
-        ...message,
-        generation,
+ ...message,type:message.diplomacyType,        generation,
       });
       if (generation !== this._scenarioUiGeneration) return;
       if (!opened) this._closeIncomingDiplomacy();
