@@ -1322,3 +1322,27 @@ test("v1 daily defaults, byte21 and nonfinite snapshot behavior remain outside n
   assert.equal(saved.state.factions[0].strategic_city_primary, Infinity);
   assert.equal(sc.legions[0].contactAnimationByte21, 71);
 });
+
+test("262B/2631 entered-legion daily with owner outside the declared faction view falls back to native slot 0..21 (live 184-6-8 freeze)", async () => {
+  const f = await fixture({ command: 4 });
+  const records = f.sc.nativeFactionSlots.records;
+  assert.equal(f.sc.factions.some((item) => item.idx === 19), false);
+  records[19].money = 5000;
+  records[19].legion_morale_cap = 200;
+  f.A.faction = 19;
+  f.A.morale = 100;
+  f.A.moveDelay = 2;
+  f.A._march = { edgeId: 0 };
+  slot(f, true);
+  assert.equal(f.app._strategicBattleFailure, undefined);
+  assert(records[19].money < 5000);
+  assert.equal(records[19].gold, records[19].money);
+  assert.equal(f.A.morale, 110);
+  // Slots outside 0..21 stay fail-closed.
+  const g = await fixture({ command: 4 });
+  g.A.faction = 22;
+  g.A.moveDelay = 2;
+  g.A._march = { edgeId: 0 };
+  slot(g, true);
+  assert.match(g.app._strategicBattleFailure?.error.message ?? "none", /262B/);
+});
