@@ -36,6 +36,16 @@ export function loadJSON(url) {
   }));
 }
 
+// Optional language overlays: retry one transient rejection, then keep the
+// original-language fallback. Failed cache entries are already evicted above.
+export async function loadOptionalJSONWithRetry(url) {
+  try { return await loadJSON(url); }
+  catch {
+    try { return await loadJSON(url); }
+    catch { return null; }
+  }
+}
+
 export function loadBytes(url) {
   return cachedAsset(url, () => fetch(url).then(async (response) => {
     if (!response.ok) { throw new Error(`불러오기 실패: ${url}`); }
