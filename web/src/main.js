@@ -7,6 +7,7 @@ import {
   preloadMarchMarkerImages,
 } from "./render/mapview.js";
 import { attachInput } from "./core/input.js";
+import { attachMobileControls } from "./ui/mobilecontrols.js";
 import { HUD } from "./ui/hud.js";
 import { GameBar } from "./ui/gamebar.js";
 import { createNewGameScenario, seasonOf, SEASONS } from "./game/world.js";
@@ -952,6 +953,7 @@ attachInput(app.view, {
     if (app.gamebar?.wheel(e.clientX, e.clientY, e.deltaY)) return;
   },
 });
+attachMobileControls(app);
 let mouseDown = false;
 // 高频pointer事件只保存最新位置；战略RAF在下一可见帧统一执行hit-test和重绘，
 // 避免一次鼠标移动触发多次完整Canvas重画。
@@ -1263,4 +1265,4 @@ export async function startApp(opening, { trial = null, formal = null } = {}) {
     }
     throw error;
   }
-}
+      }
