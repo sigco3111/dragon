@@ -12,6 +12,6 @@ attachMobileControls(app,{document:doc,search:'?mobileui=1'});tick();const dock=
 for(const button of dock.children){assert.equal(button.style.minHeight,'88px');assert.equal(button.style.fontSize,'32px');button.listeners.click()};assert.equal(clicks,6);
 natives.get('#bwall').disabled=true;tick();assert.equal(dock.children[3].disabled,true);dock.children[3].listeners.click();assert.equal(clicks,6);
 app.battleView.active=false;tick();assert.equal(dock.style.display,'none');dock.children[0].listeners.click();assert.equal(clicks,6);
-assert.equal(attachMobileControls(app,{document:doc,search:'?mobileui=1'}),nodes.get('#mobilecontrols'));assert.equal(nodes.size,4);
+assert.equal(attachMobileControls(app,{document:doc,search:'?mobileui=1'}),nodes.get('#mobilecontrols'));assert.equal(nodes.size,5); // root+list+dock+info panel(+menubar는 body 비경유)
 console.log('mobile battle dock: six native routes, disabled/inactive gates, 44px scaled targets, no duplicate DOM PASS');
 }finally{globalThis.setInterval=oldInterval;globalThis.visualViewport=oldViewport}
