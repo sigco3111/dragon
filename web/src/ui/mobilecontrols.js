@@ -125,13 +125,13 @@ export function attachMobileControls(app, env = {}) {
   const listBox = doc.createElement("div");
   listBox.id = "mobilecontrols-list";
   listBox.style.cssText =
-    "position:fixed;left:0;right:0;top:0;z-index:9998;display:none;" +
+    "position:fixed;left:0;right:0;top:0;bottom:0;z-index:9998;display:none;" +
     "flex-direction:column;background:#efe3c0;color:#000;" +
     "border-bottom:3px solid #a08040;font-family:inherit;";
   const listBar = doc.createElement("div");
   listBar.style.cssText =
     "display:flex;align-items:center;justify-content:space-between;" +
-    "background:#201808;color:#f0d8a0;padding:6px 10px 6px 96px;font-size:26px;";
+    "background:#201808;color:#f0d8a0;padding:6px 10px;font-size:26px;";
   const listTitle = doc.createElement("span");
   const listClose = doc.createElement("button");
   listClose.type = "button";
@@ -150,7 +150,7 @@ export function attachMobileControls(app, env = {}) {
     "display:flex;background:#000;color:#fff;font-size:24px;";
   const listBody = doc.createElement("div");
   listBody.style.cssText =
-    "overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 150px);" +
+    "overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 0;min-height:0;padding-bottom:110px;" +
     "touch-action:pan-y;";
   listBox.append(listBar, listHead, listBody);
   doc.body.appendChild(listBox);
@@ -166,6 +166,7 @@ export function attachMobileControls(app, env = {}) {
     // 무장 카드/편성 창 등 다른 캔버스 창이 위에 있으면 가리지 않도록 숨김.
     if (!d || g.generalCard || g.formationDialog || !app.gameStarted) {
       if (listBox.style.display !== "none") listBox.style.display = "none";
+      root.style.display = "flex";
       listSig = "";
       return;
     }
@@ -181,7 +182,9 @@ export function attachMobileControls(app, env = {}) {
     if (sig === listSig && listBox.style.display === "flex") return;
     listSig = sig;
     listBox.style.display = "flex";
-    listTitle.textContent = d.title || "목록";
+    root.style.display = "none"; // 닫기 버튼이 뒤로 역할, 좌측 버튼이 첫 열을 가리지 않게
+    const subIdx = g.selectedSubmenu;
+    listTitle.textContent = d.title || (subIdx != null ? MENU_LABELS[subIdx] : "") || "목록";
     const cols = d.cols ?? [];
     const total = cols.reduce((a, c) => a + (c.w || 1), 0) || 1;
     const flexOf = (c) => `flex:${(c.w || 1) / total} 1 0;min-width:0;`;
