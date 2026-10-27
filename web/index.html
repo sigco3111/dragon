@@ -437,6 +437,31 @@
       .battle-symbol-btn:focus-visible, .battle-deployment-btn:focus-visible {
         outline: 1px solid #f0e000;
       }
+      /* 모바일(coarse pointer): 전투 명령 버튼 터치 목표와 팝업 글씨 확대 (표시 전용, 규칙 무영향).
+         640px 레이아웃이 기기 폭에 맞춰 ~0.61배 축소 표시되므로 CSS 크기를 크게 잡는다. */
+      @media (pointer: coarse) {
+        .battle-player-window { height: 430px !important; }
+        .battle-cmd-btn-column { width: 92px; }
+        .battle-cmd-img-btn {
+          width: 92px;
+          height: 32px;
+          font-size: 19px;
+          line-height: 28px;
+        }
+        #battle-bottom-bar { height: 52px; }
+        .battle-unit-card { height: 52px; }
+        .battle-card-role-label {
+          width: 48px;
+          height: 26px;
+          font-size: 18px;
+          line-height: 24px;
+        }
+        .battle-dialogue {
+          font-size: 20px !important;
+          line-height: 1.45 !important;
+        }
+      }
+
       #bcommandhint {
         position: absolute;
         width: 1px;
