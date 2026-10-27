@@ -78,6 +78,18 @@ const aliasStateWord = (sc, absolute, at) =>
   aliasStateByte(sc, absolute, at) |
   (aliasStateByte(sc, absolute + 1, at) << 8);
 
+/** KI 351A indexes the state segment, not only declared faction records.
+ * Keep this single read shared by type1 and type2/6/7 activity gates.
+ * This does not create an extra faction or authorize later faction writes.
+ */
+export function readScenarioFactionActivity351A(sc, index) {
+  if (!Number.isInteger(index) || index < 0 || index > 0xff)
+    throw new RangeError("Web engineering Uncovered native attr index at 351A");
+  if (index < 0x16)
+    return own(nativeFactionAt(sc, index, "351A"), "attr", "351A");
+  return aliasStateByte(sc, index * 0x40, "351A");
+}
+
 function warEventIo(sc) {
   const factionAt = (index, at) => nativeFactionAt(sc, index, at);
   // 3091 alias reads only occur for old targets 22..35 (< 0x24, 35C3 gate).
@@ -92,21 +104,7 @@ function warEventIo(sc) {
     readPlayerFactionPointer: () =>
       own(sc, "nativePlayerFactionPointer", "3549/358C"),
     readPlayerFactionByte: () => own(sc, "player_faction", "3558/35AC"),
-    readFactionAttr: (index) => {
-      if (!Number.isInteger(index) || index < 0 || index > 0xff)
-        throw new RangeError(
-          `Web engineering Uncovered native type1 attr index at 351A`,
-        );
-      if (index < 0x16) return own(factionAt(index, "351A"), "attr", "351A");
-      // KI 351A performs no range check (window bytes pinned in
-      // verify_native_budget_consumer: SI=index*0x40, attr=[SI], JB on
-      // bit 7). Indices >=0x16 alias into fixed state regions via the
-      // shared aliasStateByte model (same regions as the 3091 reads):
-      // 0x16/0x17 spare slots read 0, 0x18..0x20 diplomacy bytes,
-      // anything past the model stays fail-closed. The 2F71 empty-city
-      // expansion event (defender=0x18) reaches 3526 through matrix[0][0].
-      return aliasStateByte(sc, index * 0x40, "351A");
-    },
+    readFactionAttr: (index) => readScenarioFactionActivity351A(sc, index),
     readFactionTarget: (index) => {
       const value = own(
         factionAt(index, "352A/35C0"),
