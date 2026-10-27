@@ -215,12 +215,21 @@ export class HUD {
     if (!banner) {
       banner = document.createElement("div");
       banner.id = "failurebanner";
-      banner.style.cssText =
-        "position:fixed;left:8px;bottom:8px;z-index:99;max-width:70%;" +
-        "background:#3a0d0d;color:#ffd88a;border:1px solid #a33;" +
-        "font-size:12px;padding:4px 8px;white-space:pre-wrap;";
+      banner.setAttribute("role", "alert");
+      banner.setAttribute("aria-live", "assertive");
       document.body.append(banner);
     }
+    // The mobile menu is fixed at bottom:8px with z-index:9999 and ~86px
+    // height. Keep the permanent stop explanation above it, not underneath.
+    // This is presentation only: the failure flag and save guard stay intact.
+    const mobile = !!document.querySelector("#mobilecontrols");
+    banner.style.cssText =
+      `position:fixed;left:8px;bottom:${mobile ? 104 : 8}px;z-index:10001;` +
+      `max-width:${mobile ? "calc(100vw - 36px)" : "70%"};` +
+      "max-height:calc(100vh - 200px);overflow:auto;box-sizing:border-box;" +
+      "background:#3a0d0d;color:#ffd88a;border:1px solid #a33;" +
+      `font-size:${mobile ? 22 : 12}px;line-height:1.4;padding:8px;` +
+      "white-space:pre-wrap;overflow-wrap:anywhere;";
     const detail = String(failure?.message ?? failure).slice(0, 220);
     const text = `전략 처리 실패로 시간이 정지되었습니다(미저장). 시스템 메뉴에서 불러오거나 종료하세요.\n${detail}`;
     if (banner.textContent !== text) banner.textContent = text;
