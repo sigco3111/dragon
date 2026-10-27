@@ -12,7 +12,8 @@ export function attachInput(view, { onHover, onSelect, uiHit, onWheel }) {
     { passive: false },
   );
 
-  cv.addEventListener("mousedown", (e) => {
+  cv.style.touchAction = "none"; // 터치 드래그가 페이지 제스처로 가로채이지 않도록
+  cv.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return; // 仅左键触发地图拖拽平移
     drag = {
       mx: e.clientX,
@@ -29,14 +30,14 @@ export function attachInput(view, { onHover, onSelect, uiHit, onWheel }) {
     onSelect?.(view.pick(e.clientX, e.clientY), e);
   });
 
-  addEventListener("mouseup", (e) => {
+  addEventListener("pointerup", (e) => {
     if (e.button === 0) {
       if (drag && !drag.moved) onSelect?.(view.pick(e.clientX, e.clientY), e);
       drag = null;
     }
   });
 
-  addEventListener("mousemove", (e) => {
+  addEventListener("pointermove", (e) => {
     if (drag) {
       const dx = e.clientX - drag.mx,
         dy = e.clientY - drag.my;
