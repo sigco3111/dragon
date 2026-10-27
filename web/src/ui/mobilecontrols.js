@@ -174,6 +174,32 @@ export function attachMobileControls(app, env = {}) {
   listBox.append(listBar, listHead, listBody);
   doc.body.appendChild(listBox);
 
+  // Browsers can clamp scrollTop during transient viewport-meta relayouts.
+  // Retain intent per dialog, not the transient DOM value (and not a new list).
+  const listScroll = new WeakMap();
+  let activeList = null;
+  let resizingList = false;
+  let resizeTimer = null;
+  const restoreListScroll = () => {
+    if (activeList && listBox.style.display === "flex")
+      listBody.scrollTop = listScroll.get(activeList) ?? 0;
+  };
+  listBody.addEventListener("scroll", () => {
+    if (!resizingList && activeList && listBox.style.display === "flex")
+      listScroll.set(activeList, listBody.scrollTop);
+  }, { passive: true });
+  const onListViewportChange = () => {
+    resizingList = true;
+    globalThis.clearTimeout?.(resizeTimer);
+    resizeTimer = globalThis.setTimeout?.(() => {
+      restoreListScroll();
+      // The restore's scroll event must not overwrite a temporarily clamped intent.
+      globalThis.setTimeout?.(() => { resizingList = false; }, 50);
+    }, 350);
+  };
+  globalThis.addEventListener?.("resize", onListViewportChange);
+  globalThis.addEventListener?.("orientationchange", onListViewportChange);
+
   let listSig = "";
   function cellText(c) {
     const v = typeof c === "object" && c !== null ? c.t : c;
@@ -189,6 +215,7 @@ export function attachMobileControls(app, env = {}) {
       listSig = "";
       return;
     }
+    activeList = d;
     const sig = [
       d.title,
       d.rows.length,
@@ -221,7 +248,7 @@ export function attachMobileControls(app, env = {}) {
       });
       listHead.appendChild(el);
     });
-    const prevTop = listBody.scrollTop;
+    const prevTop = listScroll.get(d) ?? 0;
     listBody.textContent = "";
     d.rows.forEach((row, ri) => {
       const rowEl = doc.createElement("div");
@@ -264,7 +291,49 @@ export function attachMobileControls(app, env = {}) {
     });
     listBody.scrollTop = prevTop;
   }
-  const listTimer = globalThis.setInterval?.(syncList, 250);
+  // A touch-sized mirror forwards to the existing tactical buttons, including
+  // their disabled state. It never queues commands by itself or changes rules.
+  const battleDock = doc.createElement("div");
+  battleDock.id = "mobilecontrols-battle";
+  battleDock.style.cssText =
+    "position:fixed;left:8px;right:8px;bottom:76px;z-index:9997;display:none;" +
+    "grid-template-columns:repeat(3,1fr);gap:6px;padding:6px;" +
+    "background:rgba(20,16,8,.94);border:1px solid #a08040;border-radius:6px;";
+  const tacticalButtons = [
+    ["bassault", "돌격"], ["battack", "공격"], ["bformation", "진형"],
+    ["bwall", "성벽"], ["bdefend", "수진"], ["bretreat", "퇴각"],
+  ].map(([id, label]) => {
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.dataset.nativeButton = id;
+    button.style.cssText =
+      "min-height:76px;font-size:26px;background:#402c10;color:#f0d8a0;" +
+      "border:1px solid #a08040;border-radius:4px;touch-action:manipulation;";
+    button.addEventListener("click", () => {
+      const native = doc.querySelector?.("#" + id);
+      if (app.battleView?.active && native && !native.disabled) native.click();
+    });
+    battleDock.appendChild(button);
+    return button;
+  });
+  doc.body.appendChild(battleDock);
+  function syncMobile() {
+    syncList();
+    const battle = Boolean(app.battleView?.active);
+    battleDock.style.display = battle ? "grid" : "none";
+    menu.style.display = battle ? "none" : "";
+    if (battle) menuBar.style.display = "none";
+    const viewportScale = globalThis.visualViewport?.scale || 1;
+    tacticalButtons.forEach((button) => {
+      button.style.minHeight = `${Math.ceil(44 / viewportScale)}px`;
+      button.style.fontSize = `${Math.ceil(16 / viewportScale)}px`;
+      const native = doc.querySelector?.("#" + button.dataset.nativeButton);
+      button.disabled = !native || native.disabled;
+      button.style.opacity = button.disabled ? ".45" : "1";
+    });
+  }
+  const listTimer = globalThis.setInterval?.(syncMobile, 250);
   root.dataset.listSync = listTimer ? "1" : "0";
 
   root.appendChild(back);
