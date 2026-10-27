@@ -491,9 +491,13 @@
         .battle-dialogue[data-original-side="0"] { bottom: 72px !important; }
         .battle-dialogue-copy { height: 96px !important; }
         .battle-dialogue-text { max-height: 58px !important; }
-        /* 모바일 "정보" 토글: 우측 정보 창(적 정보/작전 헤더)을 접어 전장 우측 가림 해소 */
-        body.mobile-battle-info-collapsed .battle-enemy-window,
-        body.mobile-battle-info-collapsed .battle-operation-header {
+        /* 모바일 "정보" 토글: 큰 전투 정보 패널(#mobilecontrols-battleinfo)이
+           원본 정보 창(적 정보/작전 헤더/명령 창/하단 부대 카드)을 대체.
+           명령은 하단 큰 도크(#mobilecontrols-battle)가, 대화창은 그대로 유지. */
+        body.mobile-battle-biginfo .battle-enemy-window,
+        body.mobile-battle-biginfo .battle-operation-header,
+        body.mobile-battle-biginfo .battle-player-window,
+        body.mobile-battle-biginfo #battle-bottom-bar {
           display: none !important;
         }
       }
