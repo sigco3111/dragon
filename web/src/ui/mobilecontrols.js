@@ -255,6 +255,9 @@ export function attachMobileControls(app, env = {}) {
           d.selectedRow = ri;
           d.onPick(ri);
         }
+        // 목록에서 카드로 넘어가면 하단 메뉴를 접어 카드 내용을 가리지 않는다.
+        // 좌측 "메뉴" 버튼으로 언제든 다시 펼칠 수 있다.
+        if (!g.listDialog || g.cityCard || g.generalCard) menuBar.style.display = "none";
         app.view?.draw();
       });
       listBody.appendChild(rowEl);
