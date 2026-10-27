@@ -21,7 +21,7 @@ import {
   issueOriginalCommandByGroupNumber,
   issueOriginalScriptCommand,
 } from "../game/battle/originalcommands.js";
-import { loadBytes, loadImage, loadJSON, portrait } from "../core/assets.js";
+import { loadBytes, loadImage, loadJSON, loadOptionalJSONWithRetry, portrait } from "../core/assets.js";
 import { OriginalBattleDisplayProcess } from "./originalcompositor.js";
 import { clickSfx } from "../core/speaker.js";
 import { consumeTacticalFrameBudget } from "../game/tacticalclock.js";
@@ -217,7 +217,7 @@ export class BattleView {
         loadImage(`grf/battle_terrain_${battle.layout}.png`),
         loadImage("grf/battle_units.png"),
         loadJSON("battle_talk.json"),
-        loadJSON("battle_talk_ko.json").catch(() => null),
+        loadOptionalJSONWithRetry("battle_talk_ko.json"),
         loadBytes("battle_display.bin"),
       ]);
       if (this.app.checkFormalCurrent?.() === false || generation !== this._openGeneration) return;
@@ -1623,4 +1623,4 @@ function makeBattleIO(view) {
     unitByte: (offset) =>
       session.pool.read8(groupAddress(activeBase, 0), offset),
   };
-}
+  }
