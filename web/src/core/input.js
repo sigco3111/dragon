@@ -12,7 +12,14 @@ export function attachInput(view, { onHover, onSelect, uiHit, onWheel }) {
     { passive: false },
   );
 
-  cv.style.touchAction = "none"; // 터치 드래그가 페이지 제스처로 가로채이지 않도록
+  // 한 손가락 드래그(맵 팬)는 그대로 pointer 이벤트로 받고, 두 손가락 핀치는
+  // 브라우저 네이티브 확대/축소에 양보한다 (모바일 작은 글씨 대응, 표시 전용).
+  cv.style.touchAction = "pinch-zoom";
+  // 핀치 시작 시 브라우저가 제스처를 가로채며 pointercancel이 오므로
+  // 진행 중이던 드래그 상태를 반드시 해제한다 (맵이 팬 상태로 멈추는 것 방지).
+  cv.addEventListener("pointercancel", () => {
+    drag = null;
+  });
   cv.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return; // 仅左键触发地图拖拽平移
     drag = {

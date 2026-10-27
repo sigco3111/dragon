@@ -11,19 +11,48 @@ function jongseong(ch) {
   const c = ch.charCodeAt(0);
   return c >= 0xac00 && c <= 0xd7a3 ? (c - 0xac00) % 28 : -1;
 }
-function adjustJosa(name, tail) {
+// 조사 토큰 뒤가 공백·구두점·문장 끝일 때만 조사로 본다 (이동·로그 같은 단어 첫글자 오인 방지).
+const JOSA_BOUNDARY = /^[\s,.!?…~·\u3000]/;
+function josaBoundary(tail, len) {
+  const rest = tail.slice(len);
+  return rest === "" || JOSA_BOUNDARY.test(rest);
+}
+export function adjustJosa(name, tail) {
   if (!name || !tail) return tail;
   const jong = jongseong(name[name.length - 1]);
   if (jong < 0) return tail;
+  // 긴 형태 먼저: 이여/여(호격), 이라면, 이다 — '이' 단자 쌍보다 앞에 둔다.
+  if (jong === 0) {
+    if (tail.startsWith("이여") && josaBoundary(tail, 2)) return "여" + tail.slice(2);
+    if (tail.startsWith("이라면") && josaBoundary(tail, 3)) return "라면" + tail.slice(3);
+    if (tail.startsWith("이다") && josaBoundary(tail, 2)) return "다" + tail.slice(2);
+  } else if (tail.startsWith("여") && josaBoundary(tail, 1)) {
+    return "이여" + tail.slice(1);
+  }
   const pairs =
     jong === 0
       ? [["을", "를"], ["이", "가"], ["은", "는"], ["과", "와"], ["아", "야"]]
       : [["를", "을"], ["가", "이"], ["는", "은"], ["와", "과"], ["야", "아"]];
-  for (const [from, to] of pairs)
-    if (tail.startsWith(from)) return to + tail.slice(from.length);
-  if (tail.startsWith("으로")) {
+  for (const [from, to] of pairs) {
+    if (!tail.startsWith(from)) continue;
+    // '과/와'는 의·는·도가 이어지는 형태(과의/과는/과도)도 조사로 본다.
+    const rest = tail.slice(from.length);
+    const ok =
+      (from === "과" || from === "와"
+        ? /^(의|는|도)/.test(rest)
+        : false) || rest === "" || JOSA_BOUNDARY.test(rest);
+    if (ok) return to + rest;
+  }
+  // '로구나'처럼 체언+로에 어미가 바로 붙는 형태도 허용한다.
+  const RO_TAIL = /^(구나)/;
+  if (tail.startsWith("으로") && josaBoundary(tail, 2)) {
     if (jong === 0 || jong === 8) return "로" + tail.slice(2); // ㄹ 받침도 '로'
-  } else if (tail.startsWith("로") && jong !== 0 && jong !== 8) {
+  } else if (
+    tail.startsWith("로") &&
+    jong !== 0 &&
+    jong !== 8 &&
+    (josaBoundary(tail, 1) || RO_TAIL.test(tail.slice(1)))
+  ) {
     return "으로" + tail.slice(1);
   }
   return tail;
