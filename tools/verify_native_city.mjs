@@ -1037,3 +1037,63 @@ test("zero budget skips missing ability; successful cold next tick matches unint
     /identity|mismatch/i,
   );
 });
+
+test("4117/40C5 owner-19 reinforcement: named-view miss falls back to native faction slot", async () => {
+  // Live RED input (185-05-04, sigco3111.github.io/dragon): a city whose owner
+  // byte is 19 — an ACTIVE native slot (monarch 43, capital 여남100, 4 cities)
+  // that the declared view (idx 0..15 only) does not carry — reached
+  // requestReinforcement and froze on "Uncovered faction 19 at 4117".
+  // DOS reads the fixed 22-slot table blindly; the fix reads the same slot's
+  // native bytes when no named record exists (same rule as the 3FBF reader).
+  const f = await fixture({
+    node: 66,
+    owner: 2,
+    change: (raw) => {
+      // Declared view stays 0..2; every city owner byte becomes 19.
+      for (const c of raw.cities) {
+        c.faction = 19;
+        c._strategicLastFaction = 19;
+      }
+      // 127 original general slots; one idle faction-19 officer for 45C1.
+      raw.generals = Array.from({ length: 127 }, (_, idx) => ({
+        idx,
+        faction: 0,
+        status: 2,
+        ability: { force: 10 },
+      }));
+      raw.generals[50] = { idx: 50, faction: 19, status: 0, ability: { force: 90 } };
+    },
+  });
+  // Synthetic native slot 19: active, funded, capital 100 — the exact bytes
+  // DOS would read (declared view has no slot 19 record).
+  const slot19 = f.sc.nativeFactionSlots.records[19];
+  slot19.attr = 0x80;
+  slot19.active = true;
+  slot19.monarch_idx = 43;
+  slot19.capital = 100;
+  slot19.reserve_cav = 500;
+  slot19.reserve_arc = 400;
+  slot19.reserve_inf = 400;
+  slot19.money = 26000;
+  slot19.n_cities = 4;
+  slot19.n_legions = 0;
+  slot19.strategic_city_primary = null;
+  neighbours(f, [1], [0]); // war neighbour -> work[0]=254 threat path
+  const poolsBefore =
+    slot19.reserve_cav + slot19.reserve_arc + slot19.reserve_inf;
+  const result = military(f);
+  assert.equal(result, "returned");
+  // 40B3 recordRequest wrote through the native slot, not the named view.
+  assert.equal(slot19.strategic_city_primary, 66);
+  // 414F cooldown committed only after the successful formation request.
+  assert.ok(f.sc.cities[66]._aiCooldown > 0);
+  // createOriginalLegion drew 6x50 from the native pools and counted the legion.
+  // createOriginalLegion consumed 200 per pool (600 total) for the new legion.
+  assert.equal(
+    slot19.reserve_cav + slot19.reserve_arc + slot19.reserve_inf,
+    poolsBefore - 600,
+  );
+  assert.equal(slot19.n_legions, 1);
+  // The declared view was not widened to cover the native-only slot.
+  assert.equal(f.sc.factions.length, 3);
+});
