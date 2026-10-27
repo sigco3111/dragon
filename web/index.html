@@ -4,7 +4,33 @@
     <meta charset="UTF-8" />
     <!-- 모바일: 뷰포트 메타 부재 시 980px 폴백으로 전체가 축소 표시됨.
          640px 설계 폭으로 레이아웃하고 기기 폭에 맞춰 축소(표시 전용, 규칙 무영향). -->
-    <meta name="viewport" content="width=640" />
+    <meta name="viewport" id="wylviewport" content="width=640, user-scalable=yes, maximum-scale=3" />
+    <script>
+      // 모바일 방향 대응 뷰포트 (표시 전용, 규칙 무영향).
+      // 세로: 설계 폭 640 유지. 가로: 논리 높이 720이 되도록 폭을 계산해
+      // 전략 UI(상단바+맵+우측 패널) 전체가 화면에 들어오게 한다.
+      // 데스크톱 브라우저는 viewport 메타를 적용하지 않으므로 영향 없음.
+      (function () {
+        var PORTRAIT_W = 640;
+        var LANDSCAPE_H = 720;
+        function applyViewport() {
+          var meta = document.querySelector('meta[name="viewport"]');
+          if (!meta) return;
+          var w = window.innerWidth || 0;
+          var h = window.innerHeight || 0;
+          if (!w || !h) return;
+          var width = PORTRAIT_W;
+          if (w > h) width = Math.max(PORTRAIT_W, Math.round((w / h) * LANDSCAPE_H));
+          var content = "width=" + width + ", user-scalable=yes, maximum-scale=3";
+          if (meta.getAttribute("content") !== content) meta.setAttribute("content", content);
+        }
+        applyViewport();
+        window.addEventListener("resize", applyViewport);
+        window.addEventListener("orientationchange", function () {
+          setTimeout(applyViewport, 100);
+        });
+      })();
+    </script>
     <title>와룡전(臥龍傳)</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
@@ -459,6 +485,11 @@
         .battle-dialogue {
           font-size: 20px !important;
           line-height: 1.45 !important;
+        }
+        /* 모바일 "정보" 토글: 우측 정보 창(적 정보/작전 헤더)을 접어 전장 우측 가림 해소 */
+        body.mobile-battle-info-collapsed .battle-enemy-window,
+        body.mobile-battle-info-collapsed .battle-operation-header {
+          display: none !important;
         }
       }
 
