@@ -5,14 +5,33 @@
 // DOM 오버레이라 시나리오 데이터·게임 규칙·세이브에는 영향이 없다.
 // 검증용으로 ?mobileui=1 을 붙이면 마우스 환경에서도 강제 표시된다.
 
+const pendingPointerDocuments = new WeakSet();
+
 export function attachMobileControls(app, env = {}) {
   const matchMedia = env.matchMedia ?? globalThis.matchMedia?.bind(globalThis);
   const search = env.search ?? globalThis.location?.search ?? "";
   const doc = env.document ?? globalThis.document;
   const forced = new URLSearchParams(search).get("mobileui") === "1";
-  const coarse = matchMedia?.("(pointer: coarse)")?.matches ?? false;
-  if (!forced && !coarse) return null;
+  const pointerQuery = matchMedia?.("(pointer: coarse)");
+  const coarse = pointerQuery?.matches ?? false;
   if (!doc) return null;
+  const existing = doc.querySelector?.("#mobilecontrols");
+  if (existing) return existing;
+  // 화면/입력 환경이 로드 후 터치로 바뀌어도 보조 조작을 놓치지 않는다.
+  // 같은 Document의 반복 초기화가 리스너나 DOM을 중복 생성하지 않게 한다.
+  if (!forced && !coarse) {
+    if (pointerQuery?.addEventListener && !pendingPointerDocuments.has(doc)) {
+      pendingPointerDocuments.add(doc);
+      const onPointerChange = (event) => {
+        if (!event.matches) return;
+        pointerQuery.removeEventListener("change", onPointerChange);
+        pendingPointerDocuments.delete(doc);
+        attachMobileControls(app, env);
+      };
+      pointerQuery.addEventListener("change", onPointerChange);
+    }
+    return null;
+  }
 
   const root = doc.createElement("div");
   root.id = "mobilecontrols";
