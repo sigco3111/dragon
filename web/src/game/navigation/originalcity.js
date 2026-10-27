@@ -32,8 +32,18 @@ function random(rng, at) {
   return byte(rng.nextByte(), `RNG byte at ${at}`);
 }
 function factionAt(sc, owner, at) {
+  // DOS reads the fixed 22-slot faction table blindly (city faction
+  // domain over all 20 chapters is exactly 0..21, same rule as the F19
+  // reader at 3FBF below). The Web named table carries active factions
+  // only; when no named record exists, read the same slot's native bytes
+  // (the exact memory DOS reads) instead of holding. Slots outside 0..21
+  // stay fail-closed.
   const faction =
-    owner < 24 && sc.factions?.find((item) => item?.idx === owner);
+    Number.isInteger(owner) &&
+    owner >= 0 &&
+    owner < 22 &&
+    (sc.factions?.find((item) => item?.idx === owner) ??
+      nativeFactionAt(sc, owner, at));
   if (!faction) stop(`faction ${owner} at ${at}`);
   return faction;
 }

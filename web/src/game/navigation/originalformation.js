@@ -1,6 +1,7 @@
 // KI 6E8F..7027 / 461D..4749. Static instruction contract, march §3.15.
 // Every read is at its consumption point; Uncovered is never original CF1.
 import { nativeLegionAt, rebindNativeLegionViews } from "../nativelegions.js";
+import { nativeFactionAt } from "../nativefactions.js";
 import { movementPlaneAddress } from "./scenariomovementmemory.js";
 
 export function formationUncovered(at) {
@@ -20,7 +21,16 @@ const encoded = (value, at) =>
   value === null ? 255 : formationByte(value, at);
 const pools = ["reserve_cav", "reserve_arc", "reserve_inf"];
 function factionAt(sc, owner, at) {
-  const faction = owner < 24 && sc.factions?.find((f) => f?.idx === owner);
+  // DOS reads the fixed 22-slot faction table blindly (city faction
+  // domain 0..21; same named-or-native rule as originalcity.js). The Web
+  // named table carries active factions only; fall back to the native
+  // slot bytes (the exact memory DOS reads) when no named record exists.
+  const faction =
+    Number.isInteger(owner) &&
+    owner >= 0 &&
+    owner < 22 &&
+    (sc.factions?.find((f) => f?.idx === owner) ??
+      nativeFactionAt(sc, owner, at));
   if (!faction) formationUncovered(`faction ${owner} at ${at}`);
   return faction;
 }
