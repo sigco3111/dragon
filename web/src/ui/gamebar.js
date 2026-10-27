@@ -1924,7 +1924,7 @@ export class GameBar {
       oy,
       wTiles,
       hTiles,
-      items: ["적대 제안", "정전 제안", "협조 요청", "천　　도", "군주 출진 요청"],
+      items: ["적대 제안", "휴전 제안", "협조 요청", "천　　도", "군주 출진 요청"],
       hover: -1,
     };
     this.app.view.draw();
@@ -3357,7 +3357,7 @@ export class GameBar {
         sc.trust = Math.min(255, (sc.trust ?? 255) + 10);
         this.app.hud.refreshTrust();
         this.app.hud.flashEvent(
-          `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 정전 사자 파견에 동의했습니다! 신뢰도 +10`,
+          `「${koreanDisplay(p.playerFaction.monarch)}」${koreanJosa(p.playerFaction.monarch, "I_GA")} 휴전 사자 파견에 동의했습니다! 신뢰도 +10`,
         );
 
         const envoyObj = sc.envoys?.[p.targetFaction.idx];
@@ -3522,7 +3522,7 @@ export class GameBar {
               this.syncClock();
               this.app.hud.buildLegend?.();
               this.app.hud.flashEvent(
-                `「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 정전에 성공했습니다! 양측이 평화를 회복했습니다.`,
+                `「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 휴전에 성공했습니다! 양측이 평화를 회복했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3552,7 +3552,7 @@ export class GameBar {
               this.app.hud.buildLegend?.();
               this.app.hud.refreshInfo?.();
               this.app.hud.flashEvent(
-                `「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 정전에 성공했습니다! ${goldRequired}금을 지급했습니다.`,
+                `「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 휴전에 성공했습니다! ${goldRequired}금을 지급했습니다.`,
               );
               this.app.view.draw();
             },
@@ -3566,7 +3566,7 @@ export class GameBar {
             autoClose: 3000,
             onClose: () => {
               this.syncClock();
-              this.app.hud.flashEvent(`「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 정전 협상이 결렬되었습니다!`);
+              this.app.hud.flashEvent(`「${koreanDisplay(targetName)}」${koreanJosa(targetName, "GWA_WA")}의 휴전 협상이 결렬되었습니다!`);
               this.app.view.draw();
             },
           });

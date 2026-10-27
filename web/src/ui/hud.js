@@ -931,7 +931,7 @@ export class HUD {
       w: 480,
       h: 352,
       footer: {
-        text: "정전할 세력을 선택하세요.",
+        text: "휴전할 세력을 선택하세요.",
         portrait: "message_npc",
       },
       onPick: async (ri) => {
