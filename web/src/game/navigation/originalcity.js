@@ -38,12 +38,19 @@ function factionAt(sc, owner, at) {
   // only; when no named record exists, read the same slot's native bytes
   // (the exact memory DOS reads) instead of holding. Slots outside 0..21
   // stay fail-closed.
-  const faction =
+  let faction =
     Number.isInteger(owner) &&
     owner >= 0 &&
     owner < 22 &&
-    (sc.factions?.find((item) => item?.idx === owner) ??
-      nativeFactionAt(sc, owner, at));
+    sc.factions?.find((item) => item?.idx === owner);
+  if (!faction && Number.isInteger(owner) && owner >= 0 && owner < 22) {
+    faction = nativeFactionAt(sc, owner, at);
+    // Regression telemetry (read-only counter): proves in live play that the
+    // native-slot fallback branch really ran. No gameplay effect.
+    const hits = (globalThis.__dragonBranchHits ??= {});
+    const key = `native-faction-fallback@${at}`;
+    hits[key] = (hits[key] ?? 0) + 1;
+  }
   if (!faction) stop(`faction ${owner} at ${at}`);
   return faction;
 }
