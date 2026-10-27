@@ -67,6 +67,17 @@ function aliasedByte(sc, context, address) {
   // 偶k → 势力[k/2]+0x18（F18 武将数，live nativeGeneralCount）；
   // 奇k → 势力[k/2]+0x38（无直接位移写者，静态初值；别名指针写不可静态排除）。
   if (normalized < 0x600) {
+    // 0x580..0x5FF = state-segment faction slots 22/23. The region is 24
+    // slots x 40h (re-notes-custom-data.md: 0000..05FF), but the faction
+    // rotation wraps at 0x580, so only slots 0..21 have live records;
+    // official-chapter dumps show slots 22/23 all-zero and known writers
+    // (rotation, 3593, 2F71) never cross slot 22 (re-notes-ai-diplomacy
+    // §39; runtime invariance stays the documented inference boundary).
+    // scenariowarconsumer.aliasStateByte already models this exact range
+    // as constant 0 for the 3091 alias reads; mirror it here instead of
+    // throwing past the 22-slot native table (live clock freeze at city
+    // 44..47 arrival, slot 22/23, 2026-10-27 natural replay).
+    if (normalized >= 0x580) return 0;
     const faction = aliasedFactionAt(sc, normalized >>> 6, "43D3 faction alias");
     const offset = normalized & 0x3f;
     if (offset === 0x18)
