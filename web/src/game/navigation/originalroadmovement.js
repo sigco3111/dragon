@@ -3,6 +3,10 @@
 import { searchOriginalRoadMemory } from "./originalroadsearch.js";
 import { movementPlaneAddress } from "./scenariomovementmemory.js";
 import { nativeLegionAt } from "../nativelegions.js";
+import {
+  hasNativeDiplomacyMatrix,
+  nativeDiplomacyAt,
+} from "../nativediplomacy.js";
 import { performScenarioFieldEntry } from "./originalfieldterrain.js";
 import { performScenarioSiegeEntry } from "./originalsiege.js";
 import { performScenarioLegionFate } from "./scenariolegionfate.js";
@@ -342,8 +346,13 @@ export function performOriginalRoadAction(sc, legion, context, rng = null, block
       owner = rb(1),
       other = cityOwner(endpoint);
     if (other !== owner && other !== 0x18) {
+      // The declared sc.diplomacy is only a prefix view of the fixed 24x24
+      // native table (nativediplomacy.js); sibling readers 3FF4/43D3/3E8E
+      // already read the native matrix. Cells outside it stay fail-closed.
       const diplomacy = unsigned(
-        sc.diplomacy?.[owner]?.[other],
+        hasNativeDiplomacyMatrix(sc)
+          ? nativeDiplomacyAt(sc, owner, other, "42AB diplomacy")
+          : sc.diplomacy?.[owner]?.[other],
         255,
         "diplomacy byte",
       );
