@@ -77,7 +77,12 @@ function aliasedByte(sc, context, address) {
     // as constant 0 for the 3091 alias reads; mirror it here instead of
     // throwing past the 22-slot native table (live clock freeze at city
     // 44..47 arrival, slot 22/23, 2026-10-27 natural replay).
-    if (normalized >= 0x580) return 0;
+    if (normalized >= 0x580) {
+      // Regression telemetry (read-only counter); no gameplay effect.
+      const hits = (globalThis.__dragonBranchHits ??= {});
+      hits["43D3-alias-slot22-23"] = (hits["43D3-alias-slot22-23"] ?? 0) + 1;
+      return 0;
+    }
     const faction = aliasedFactionAt(sc, normalized >>> 6, "43D3 faction alias");
     const offset = normalized & 0x3f;
     if (offset === 0x18)
