@@ -483,9 +483,14 @@
           line-height: 24px !important;
         }
         .battle-dialogue {
+          height: 112px !important;
           font-size: 20px !important;
-          line-height: 1.45 !important;
+          line-height: 29px !important;
         }
+        /* 실제 52px 부대 바 위로 대사창을 띄우고 한글 두 줄을 보존한다. */
+        .battle-dialogue[data-original-side="0"] { bottom: 72px !important; }
+        .battle-dialogue-copy { height: 96px !important; }
+        .battle-dialogue-text { max-height: 58px !important; }
         /* 모바일 "정보" 토글: 우측 정보 창(적 정보/작전 헤더)을 접어 전장 우측 가림 해소 */
         body.mobile-battle-info-collapsed .battle-enemy-window,
         body.mobile-battle-info-collapsed .battle-operation-header {
